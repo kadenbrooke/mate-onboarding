@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react"
 import WebsiteStep, { type ResearchResult } from "./website-step"
 import MateChat from "./mate-chat"
 import CardRail, { type CollectedShape } from "./cards/CardRail"
+import SandboxReveal from "./reveal"
 import type { Brand, CompanyData } from "@/lib/research/website"
 
 // Client-side onboarding orchestrator. Bootstraps (or loads) a session, then
@@ -90,6 +91,9 @@ export default function OnboardPage() {
   >([])
   const [bootError, setBootError] = useState<string | null>(null)
   const [ready, setReady] = useState(false)
+  // True once all structured cards are complete (session step === 'ready'). Gates
+  // the personalized sandbox reveal so the owner can text their own agent.
+  const [revealed, setRevealed] = useState(false)
   // Guard against React 18/19 StrictMode double-invoking the bootstrap effect.
   const bootstrapped = useRef(false)
 
@@ -170,6 +174,13 @@ export default function OnboardPage() {
       } else {
         setStep("website")
       }
+
+      // A session already at 'ready' has finished the cards — surface the reveal
+      // straight away so a reload lands the owner back on their agent demo.
+      if (persistedStep === "ready") {
+        setRevealed(true)
+        advancedToReady.current = true
+      }
     }
 
     bootstrap()
@@ -199,6 +210,9 @@ export default function OnboardPage() {
   // Idempotent: guarded so we only patch once per session lifetime.
   const advancedToReady = useRef(false)
   function handleCardsDone() {
+    // Reveal the sandbox as soon as the cards complete, even before the PATCH
+    // round-trips — it reads only in-memory collected, no server dependency.
+    setRevealed(true)
     if (advancedToReady.current || !sessionId) return
     advancedToReady.current = true
     fetch("/api/session", {
@@ -248,6 +262,9 @@ export default function OnboardPage() {
               mateName={mateName}
               initialMessages={priorMessages}
             />
+            {revealed && (
+              <SandboxReveal sessionId={sessionId} collected={collected} />
+            )}
           </>
         )}
       </div>
