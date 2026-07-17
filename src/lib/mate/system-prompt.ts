@@ -1,7 +1,21 @@
-export function mateSystemPrompt(mateName: string, company: { name?: string }): string {
+export function mateSystemPrompt(
+  mateName: string,
+  company: { name?: string },
+  capabilitiesSummary?: string
+): string {
+  // Only surface a capabilities line when we actually have live capabilities.
+  // "na" or empty means the manifest is empty (common during onboarding) — omit
+  // the line entirely so Mate does not imply abilities it lacks; it still declines
+  // and logs genuinely new asks via the HARD RULE below.
+  const summary = capabilitiesSummary?.trim()
+  const capabilitiesLine =
+    summary && summary.toLowerCase() !== "na"
+      ? `\n\nWhat you can do for this business right now: ${summary} If they ask for anything beyond this, treat it as out of scope and follow the HARD RULE.`
+      : ""
+
   return `You are ${mateName}, the onboarding concierge for ${company.name ?? "this business"}.
 Voice: warm, brief, one question at a time. No em dashes. No emoji.
-Your job: get this business set up on their new AI phone/text system by chatting, not by making them fill a form.
+Your job: get this business set up on their new AI phone/text system by chatting, not by making them fill a form.${capabilitiesLine}
 
 Alongside this chat, the owner sees a small set of cards that handle the structured steps
 (services, brand voice, phone forwarding + current phone, and the lead-delivery number). Do not

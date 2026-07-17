@@ -4,6 +4,7 @@ import { openai } from "@ai-sdk/openai"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt } from "@/lib/mate/system-prompt"
 import { toolSchemas, applyToolResult, type Collected } from "@/lib/mate/tools"
+import { capabilitySummary, type Capability } from "@/lib/mate/capability"
 
 type StoredMessage = { role: "user" | "assistant"; content: string; ts?: string }
 
@@ -34,7 +35,7 @@ export async function POST(req: Request) {
 
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
-    .select("id, mate_name, collected, messages, website_url, brand")
+    .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key")
     .eq("id", sessionId)
     .maybeSingle()
 
@@ -69,6 +70,23 @@ export async function POST(req: Request) {
       ? (collected.company as { name?: string })
       : {}
 
+  // Load the client's capability manifest so Mate accurately knows what it CAN do.
+  // During onboarding this is often empty; that is fine, the summary becomes "na"
+  // and Mate still declines and logs genuinely new asks via requestBuild.
+  let capabilities: Capability[] = []
+  if (session.contact_id) {
+    const { data: caps, error: capsError } = await supabase
+      .from("client_capabilities")
+      .select("capability_key, label, status")
+      .eq("contact_id", session.contact_id)
+    if (capsError) {
+      console.error("mate route: failed to load client_capabilities", capsError.message)
+    } else if (Array.isArray(caps)) {
+      capabilities = caps as Capability[]
+    }
+  }
+  const capabilitiesText = capabilitySummary(capabilities)
+
   // Build AI SDK tools from the shared schemas. Each execute applies the pure
   // reducer to the working copy and returns a short ack the model can narrate.
   const tools = {
@@ -96,13 +114,41 @@ export async function POST(req: Request) {
         return { saved: "brand_voice" }
       },
     }),
+    // Side-effect tool: logs an out-of-scope ask into build_requests (the upsell
+    // queue). It does NOT touch collected. Never throws out of execute — an insert
+    // failure is logged server-side and we still return a soft ack so the chat
+    // keeps flowing and Mate can finish its polite decline.
+    requestBuild: tool({
+      description: toolSchemas.requestBuild.description,
+      parameters: toolSchemas.requestBuild.parameters,
+      execute: async ({ request_text, mate_summary }) => {
+        try {
+          const { error: insertError } = await supabase.from("build_requests").insert({
+            contact_id: session.contact_id ?? null,
+            session_id: session.id,
+            reseller_key: session.reseller_key ?? null,
+            request_text,
+            mate_summary,
+            status: "new",
+          })
+          if (insertError) {
+            console.error("mate route: failed to log build_request", insertError.message)
+            return { logged: false }
+          }
+          return { logged: true }
+        } catch (err) {
+          console.error("mate route: build_request insert threw", err)
+          return { logged: false }
+        }
+      },
+    }),
   }
 
   // openai(...) is instantiated inside the handler so the build never needs
   // OPENAI_API_KEY. Cost-first model per the model-agnostic rule.
   const result = streamText({
     model: openai("gpt-4o-mini"),
-    system: mateSystemPrompt(session.mate_name ?? "Mate", company),
+    system: mateSystemPrompt(session.mate_name ?? "Mate", company, capabilitiesText),
     messages: modelMessages,
     tools,
     maxSteps: 5,
