@@ -168,6 +168,21 @@ export default function WebsiteStep({ sessionId, onDone }: WebsiteStepProps) {
       colors: { primary: manualColor, bg: "#141414", accent: "#ede6e6" },
     }
     applyTheme(brand)
+
+    // Persist the manually-chosen brand (logo + primary color) to the session so
+    // a bot-walled client's branding survives a reload. Fire-and-forget: a save
+    // hiccup must not block the owner from continuing into the chat.
+    if (sessionId) {
+      fetch("/api/session", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sessionId, brand }),
+      }).catch(() => {
+        // Non-fatal: the theme is already applied locally and the chat step
+        // carries the brand forward in memory for this session.
+      })
+    }
+
     onDone({ brand, company: {}, botWalled: true })
   }
 

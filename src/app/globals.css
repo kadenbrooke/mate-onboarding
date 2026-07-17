@@ -12,6 +12,15 @@
   font-feature-settings: "ss04";
 }
 
+/* Per-tenant brand theme tokens. Default to the dark shell; the onboarding
+   flow overrides these on :root at runtime (brandToCssVars) once a client's
+   brand is captured, so the whole surface recolors instead of just accent bits. */
+:root {
+  --mate-bg: #141414;
+  --mate-primary: #e14d1a;
+  --mate-accent: #ede6e6;
+}
+
 @theme inline {
   --font-sans: var(--font-body);
   --font-display: 'Syne', sans-serif;

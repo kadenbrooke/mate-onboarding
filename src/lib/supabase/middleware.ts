@@ -31,8 +31,13 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
+  // /onboard is the pre-auth concierge flow for brand-new clients who do not yet
+  // have a login, so it must be public alongside login/auth/api.
   const isPublic =
-    path.startsWith("/login") || path.startsWith("/auth") || path.startsWith("/api/");
+    path.startsWith("/login") ||
+    path.startsWith("/auth") ||
+    path.startsWith("/api/") ||
+    path.startsWith("/onboard");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
