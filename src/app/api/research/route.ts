@@ -4,7 +4,7 @@ import {
   extractBrandFromHtml,
   extractCompanyData,
 } from "@/lib/research/website"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 
 export async function POST(req: NextRequest) {
   // Parse + validate body. Bad JSON or missing url => 400, don't throw.
@@ -36,8 +36,9 @@ export async function POST(req: NextRequest) {
   const botWalled = html === null
 
   if (sessionId) {
-    // Supabase client is created INSIDE the handler, never at module scope.
-    const supabase = await createClient()
+    // Service-role client, created INSIDE the handler, never at module scope.
+    // Bypasses RLS so this trusted server route can persist to onboarding_sessions.
+    const supabase = createServiceClient()
 
     // Read the current collected blob so we shallow-merge instead of clobbering
     // other progressively-collected fields.

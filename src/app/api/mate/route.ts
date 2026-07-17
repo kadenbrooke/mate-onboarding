@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
 import { openai } from "@ai-sdk/openai"
-import { createClient } from "@/lib/supabase/server"
+import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt } from "@/lib/mate/system-prompt"
 import { toolSchemas, applyToolResult, type Collected } from "@/lib/mate/tools"
 
@@ -28,8 +28,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing or invalid message" }, { status: 400 })
   }
 
-  // Supabase client is created INSIDE the handler, never at module scope.
-  const supabase = await createClient()
+  // Service-role client, created INSIDE the handler, never at module scope.
+  // Bypasses RLS so this trusted server route can load/persist onboarding_sessions.
+  const supabase = createServiceClient()
 
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
