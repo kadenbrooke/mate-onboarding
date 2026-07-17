@@ -31,13 +31,16 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  // /onboard is the pre-auth concierge flow for brand-new clients who do not yet
-  // have a login, so it must be public alongside login/auth/api.
+  // /onboard (pre-auth concierge) and /portal (the client's ongoing POC) are
+  // client-facing surfaces for people who do not have an internal login. Both are
+  // session-scoped by an unguessable UUID, not by auth, so they must be public
+  // alongside login/auth/api. Phase-2 hardening: bind a signed session cookie.
   const isPublic =
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
     path.startsWith("/api/") ||
-    path.startsWith("/onboard");
+    path.startsWith("/onboard") ||
+    path.startsWith("/portal");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
