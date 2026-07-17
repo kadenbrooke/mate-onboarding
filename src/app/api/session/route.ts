@@ -122,12 +122,19 @@ function pickCollected(input: unknown): Record<string, unknown> | null {
   return out
 }
 
+// Max length for a mate_name. Long enough for "{Business} Mate" on any real
+// business name, short enough to keep the header from breaking and to reject
+// junk payloads.
+const MATE_NAME_MAX = 60
+
 /**
  * PATCH /api/session — persist small session updates from the UI.
- * Body: { id: string, step?: string, brand?: Brand, collected?: object }
+ * Body: { id: string, step?: string, brand?: Brand, mate_name?: string, collected?: object }
  *
  * - `step` / `brand`: used by the website step's manual fallback (bot-walled
  *   site) so the chosen logo + primary color survive a reload.
+ * - `mate_name`: the concierge's display name, set by the rename control. Stored
+ *   trimmed; must be a non-empty string <= 60 chars.
  * - `collected`: a whitelisted slice written by the action cards. It is
  *   shallow-merged into the existing `collected` (read-modify-write) so a card
  *   save never clobbers other collected fields, including research pre-fill
@@ -143,10 +150,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { id, step, brand, collected } = (body ?? {}) as {
+  const { id, step, brand, mate_name, collected } = (body ?? {}) as {
     id?: unknown
     step?: unknown
     brand?: unknown
+    mate_name?: unknown
     collected?: unknown
   }
 
@@ -166,6 +174,28 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "brand must be an object" }, { status: 400 })
     }
     update.brand = brand
+  }
+  if (mate_name !== undefined) {
+    if (typeof mate_name !== "string") {
+      return NextResponse.json(
+        { error: "mate_name must be a string" },
+        { status: 400 }
+      )
+    }
+    const trimmed = mate_name.trim()
+    if (trimmed === "") {
+      return NextResponse.json(
+        { error: "mate_name must not be empty" },
+        { status: 400 }
+      )
+    }
+    if (trimmed.length > MATE_NAME_MAX) {
+      return NextResponse.json(
+        { error: `mate_name must be ${MATE_NAME_MAX} characters or fewer` },
+        { status: 400 }
+      )
+    }
+    update.mate_name = trimmed
   }
 
   // A collected patch requires a read-modify-write to merge without clobbering.

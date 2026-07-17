@@ -1,8 +1,12 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { PaperPlaneRight } from "@phosphor-icons/react"
+import { PaperPlaneRight, PencilSimple, Check, X } from "@phosphor-icons/react"
 import type { Brand, CompanyData } from "@/lib/research/website"
+
+// Mirror of the server-side cap in /api/session PATCH. Kept in sync so the UI
+// prevents an over-long name before the PATCH round-trips and 400s.
+const MATE_NAME_MAX = 60
 
 type Role = "mate" | "owner"
 interface ChatMessage {
@@ -148,11 +152,56 @@ const S = {
     fontSize: 13,
     color: "#f5a97f",
   } as React.CSSProperties,
+  header: {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    minHeight: 30,
+  } as React.CSSProperties,
+  headerName: {
+    fontSize: 15,
+    fontWeight: 600,
+    color: "var(--mate-accent, #ede6e6)",
+    letterSpacing: "-0.01em",
+  } as React.CSSProperties,
+  renameButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "transparent",
+    border: "none",
+    color: "#888888",
+    cursor: "pointer",
+    padding: 2,
+    lineHeight: 0,
+  } as React.CSSProperties,
+  renameInput: {
+    background: "#1c1c1c",
+    border: "1px solid var(--mate-primary, #e14d1a)",
+    borderRadius: 8,
+    padding: "6px 10px",
+    color: "var(--mate-accent, #ede6e6)",
+    fontSize: 14,
+    outline: "none",
+    minWidth: 0,
+    flex: 1,
+    maxWidth: 260,
+  } as React.CSSProperties,
+  renameIconButton: {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "transparent",
+    border: "none",
+    cursor: "pointer",
+    padding: 4,
+    lineHeight: 0,
+  } as React.CSSProperties,
 }
 
 function greeting(mateName: string, businessName?: string): string {
   const who = businessName?.trim() ? ` for ${businessName.trim()}` : ""
-  return `Hi, I'm ${mateName}${who}. I'll get your new phone and text assistant set up by just chatting with you, no forms. Ready when you are. To start, what does your business do?`
+  return `Hi, I'll be your ${mateName}${who}, or call me something else if you like (use the pencil by my name up top). I'll get your new phone and text assistant set up by just chatting with you, no forms. Ready when you are. To start, what does your business do?`
 }
 
 export default function MateChat({
@@ -162,8 +211,17 @@ export default function MateChat({
   mateName,
   initialMessages,
 }: MateChatProps) {
-  const name = mateName?.trim() || "Mate"
   const businessName = company?.name
+
+  // The live display name. Seeded from the prop, then updated in place when the
+  // owner renames (so the header, greeting reference, and "typing" line all
+  // reflect the new name without a reload).
+  const [name, setName] = useState<string>(mateName?.trim() || "Mate")
+  const [renaming, setRenaming] = useState(false)
+  const [nameDraft, setNameDraft] = useState(name)
+  const [renameError, setRenameError] = useState<string | null>(null)
+  const [savingName, setSavingName] = useState(false)
+  const renameInputRef = useRef<HTMLInputElement>(null)
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const prior = (initialMessages ?? [])
@@ -195,6 +253,75 @@ export default function MateChat({
     root.style.setProperty("--mate-bg", brand.colors.bg)
     root.style.setProperty("--mate-accent", brand.colors.accent)
   }, [brand])
+
+  // Focus + select the rename input when the owner opens it, so they can type
+  // straight over the current name.
+  useEffect(() => {
+    if (renaming && renameInputRef.current) {
+      renameInputRef.current.focus()
+      renameInputRef.current.select()
+    }
+  }, [renaming])
+
+  function openRename() {
+    setNameDraft(name)
+    setRenameError(null)
+    setRenaming(true)
+  }
+
+  function cancelRename() {
+    setRenaming(false)
+    setRenameError(null)
+    setNameDraft(name)
+  }
+
+  async function saveName() {
+    const next = nameDraft.trim()
+    if (next === "") {
+      setRenameError("Name can't be empty.")
+      return
+    }
+    if (next.length > MATE_NAME_MAX) {
+      setRenameError(`Keep it to ${MATE_NAME_MAX} characters or fewer.`)
+      return
+    }
+    // No-op if unchanged: just close the editor.
+    if (next === name) {
+      setRenaming(false)
+      setRenameError(null)
+      return
+    }
+
+    setSavingName(true)
+    setRenameError(null)
+    try {
+      const res = await fetch("/api/session", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sessionId, mate_name: next }),
+      })
+      if (!res.ok) {
+        throw new Error("Couldn't save the name. Try again.")
+      }
+      // Persisted: reflect the new name live everywhere it's rendered.
+      setName(next)
+      setRenaming(false)
+    } catch (err) {
+      setRenameError(err instanceof Error ? err.message : "Rename failed.")
+    } finally {
+      setSavingName(false)
+    }
+  }
+
+  function onRenameKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter") {
+      e.preventDefault()
+      saveName()
+    } else if (e.key === "Escape") {
+      e.preventDefault()
+      cancelRename()
+    }
+  }
 
   async function send() {
     const text = draft.trim()
@@ -294,6 +421,63 @@ export default function MateChat({
 
   return (
     <div style={S.wrap}>
+      <div style={S.header}>
+        {renaming ? (
+          <>
+            <input
+              ref={renameInputRef}
+              type="text"
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={onRenameKeyDown}
+              maxLength={MATE_NAME_MAX}
+              style={S.renameInput}
+              disabled={savingName}
+              aria-label="Rename your Mate"
+            />
+            <button
+              type="button"
+              onClick={saveName}
+              disabled={savingName}
+              style={{
+                ...S.renameIconButton,
+                color: "var(--mate-primary, #e14d1a)",
+                ...(savingName ? S.buttonDisabled : {}),
+              }}
+              aria-label="Save name"
+              title="Save"
+            >
+              <Check size={18} weight="bold" />
+            </button>
+            <button
+              type="button"
+              onClick={cancelRename}
+              disabled={savingName}
+              style={{ ...S.renameIconButton, color: "#888888" }}
+              aria-label="Cancel rename"
+              title="Cancel"
+            >
+              <X size={18} weight="bold" />
+            </button>
+          </>
+        ) : (
+          <>
+            <span style={S.headerName}>{name}</span>
+            <button
+              type="button"
+              onClick={openRename}
+              style={S.renameButton}
+              aria-label="Rename your Mate"
+              title="Rename"
+            >
+              <PencilSimple size={16} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {renameError && <p style={S.error}>{renameError}</p>}
+
       <div ref={logRef} style={S.log}>
         {messages.map((m, i) => (
           <div key={i} style={m.role === "owner" ? S.bubbleOwner : S.bubbleMate}>

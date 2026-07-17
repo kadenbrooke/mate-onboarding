@@ -5,6 +5,7 @@ import {
   extractCompanyData,
 } from "@/lib/research/website"
 import { createServiceClient } from "@/lib/supabase/service"
+import { defaultMateName } from "@/lib/mate/name"
 
 export async function POST(req: NextRequest) {
   // Parse + validate body. Bad JSON or missing url => 400, don't throw.
@@ -41,10 +42,11 @@ export async function POST(req: NextRequest) {
     const supabase = createServiceClient()
 
     // Read the current collected blob so we shallow-merge instead of clobbering
-    // other progressively-collected fields.
+    // other progressively-collected fields, and the current mate_name so we only
+    // seed the default name when the owner hasn't already customized it.
     const { data: existing } = await supabase
       .from("onboarding_sessions")
-      .select("collected")
+      .select("collected, mate_name")
       .eq("id", sessionId)
       .maybeSingle()
 
@@ -53,14 +55,25 @@ export async function POST(req: NextRequest) {
         ? (existing.collected as Record<string, unknown>)
         : {}
 
+    const update: Record<string, unknown> = {
+      website_url: finalUrl,
+      brand,
+      collected: { ...currentCollected, company },
+      updated_at: new Date().toISOString(),
+    }
+
+    // Seed the default "{Business} Mate" name the first time we learn the
+    // business name, but only if mate_name is still unset. Never overwrite a
+    // name the owner already customized via the rename control.
+    const existingName =
+      typeof existing?.mate_name === "string" ? existing.mate_name.trim() : ""
+    if (!existingName && company?.name && company.name.trim() !== "") {
+      update.mate_name = defaultMateName(company.name)
+    }
+
     const { error } = await supabase
       .from("onboarding_sessions")
-      .update({
-        website_url: finalUrl,
-        brand,
-        collected: { ...currentCollected, company },
-        updated_at: new Date().toISOString(),
-      })
+      .update(update)
       .eq("id", sessionId)
 
     if (error) {
