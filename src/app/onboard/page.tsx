@@ -394,6 +394,30 @@ export default function OnboardPage() {
                 </button>
               </>
             )}
+            {!chatComplete && (
+              <button
+                type="button"
+                onClick={goToReview}
+                aria-label="Skip to review"
+                style={{
+                  marginTop: 14,
+                  alignSelf: "center",
+                  background: "none",
+                  border: "none",
+                  padding: 4,
+                  color: "var(--mate-accent, #888)",
+                  fontSize: 13,
+                  opacity: 0.65,
+                  cursor: "pointer",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                }}
+              >
+                Skip to review
+                <ArrowRight size={14} weight="bold" />
+              </button>
+            )}
           </>
         )}
 
