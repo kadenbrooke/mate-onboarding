@@ -209,11 +209,59 @@ export default function OnboardPage() {
   // Advance the session step to 'ready' (sets up the later reveal/portal task).
   // Idempotent: guarded so we only patch once per session lifetime.
   const advancedToReady = useRef(false)
+  // Separate one-shot guard for the provisioning call. Kept distinct from
+  // advancedToReady (which resets on PATCH failure to allow a re-advance) so a
+  // retried PATCH never re-fires completion. The route is itself idempotent, so
+  // a rare double-call is safe; this just avoids spamming it.
+  const completionFired = useRef(false)
   function handleCardsDone() {
     // Reveal the sandbox as soon as the cards complete, even before the PATCH
     // round-trips — it reads only in-memory collected, no server dependency.
     setRevealed(true)
-    if (advancedToReady.current || !sessionId) return
+    if (!sessionId) return
+
+    // Provision the client (create CRM contact, auto-complete materials, seed
+    // capabilities, mark session complete). Fire-and-forget so the reveal is
+    // never blocked, but exactly once per session. Without this, the session's
+    // contact_id stays null and /portal never leaves its unfinished state.
+    if (!completionFired.current) {
+      completionFired.current = true
+      fetch("/api/mate/complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionId }),
+      })
+        .then(async (res) => {
+          if (!res.ok) {
+            // Route failed outright; allow a later cards-done to retry.
+            completionFired.current = false
+            // eslint-disable-next-line no-console
+            console.error(
+              "onboarding completion failed",
+              res.status,
+              await res.text().catch(() => "")
+            )
+            return
+          }
+          // Partial-failure warnings (materials/capabilities) come back in the
+          // body; surface them for debugging without disrupting the reveal.
+          const data = (await res.json().catch(() => null)) as
+            | { warnings?: string[] }
+            | null
+          if (data?.warnings?.length) {
+            // eslint-disable-next-line no-console
+            console.warn("onboarding completion warnings", data.warnings)
+          }
+        })
+        .catch((err) => {
+          // Network error: log, don't crash the reveal, allow a retry.
+          completionFired.current = false
+          // eslint-disable-next-line no-console
+          console.error("onboarding completion request errored", err)
+        })
+    }
+
+    if (advancedToReady.current) return
     advancedToReady.current = true
     fetch("/api/session", {
       method: "PATCH",
