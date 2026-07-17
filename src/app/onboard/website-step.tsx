@@ -132,7 +132,7 @@ export default function WebsiteStep({ sessionId, onDone }: WebsiteStepProps) {
         const hasBrand = brand.logo_url !== null
 
         if (botWalled || !hasBrand) {
-          // Nothing useful pulled — offer the manual path.
+          // Nothing useful pulled, offer the manual path.
           setShowFallback(true)
           if (hasBrand && brand.logo_url) {
             setLogoPreview(brand.logo_url)
@@ -165,7 +165,12 @@ export default function WebsiteStep({ sessionId, onDone }: WebsiteStepProps) {
   function handleManualApply() {
     const brand: Brand = {
       logo_url: manualLogo,
-      colors: { primary: manualColor, bg: "#141414", accent: "#ede6e6" },
+      colors: {
+        primary: manualColor,
+        bg: "#141414",
+        accent: "#ede6e6",
+        source: "default",
+      },
     }
     applyTheme(brand)
 

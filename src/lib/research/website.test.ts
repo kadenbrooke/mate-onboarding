@@ -15,6 +15,7 @@ describe("extractBrandFromHtml", () => {
     const b = extractBrandFromHtml(html, "https://x.com")
     expect(b.logo_url).toBe("https://x.com/logo.png")
     expect(b.colors.primary).toBe("#e14d1a")
+    expect(b.colors.source).toBe("theme-color")
   })
 
   it("resolves relative logo paths against the base url", () => {
@@ -23,10 +24,11 @@ describe("extractBrandFromHtml", () => {
     expect(b.logo_url).toBe("https://x.com/favicon.png")
   })
 
-  it("returns null logo + default colors when nothing found", () => {
+  it("returns null logo + default colors (source=default) when nothing found", () => {
     const b = extractBrandFromHtml("<html></html>", "https://x.com")
     expect(b.logo_url).toBeNull()
     expect(b.colors.primary).toBeTruthy()
+    expect(b.colors.source).toBe("default")
   })
 })
 

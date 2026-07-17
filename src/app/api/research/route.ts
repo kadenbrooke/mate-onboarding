@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server"
 import {
   fetchSite,
   extractBrandFromHtml,
+  resolveBrandColors,
   extractCompanyData,
 } from "@/lib/research/website"
 import { createServiceClient } from "@/lib/supabase/service"
@@ -32,7 +33,10 @@ export async function POST(req: NextRequest) {
   }
 
   const { html, finalUrl } = await fetchSite(url)
-  const brand = extractBrandFromHtml(html ?? "", finalUrl)
+  const baseBrand = extractBrandFromHtml(html ?? "", finalUrl)
+  // Resolve real brand colors via the source chain (logo palette -> theme-color
+  // -> manifest -> defaults). Non-throwing; research must never 500.
+  const brand = await resolveBrandColors(baseBrand, html ?? "", finalUrl)
   const company = await extractCompanyData(html)
   const botWalled = html === null
 
