@@ -4,6 +4,11 @@ import { createServiceClient } from "@/lib/supabase/service"
 // Columns the client is allowed to read back. Deliberately excludes anything
 // sensitive (contact_id, reseller_key, status internals) — the onboarding UI
 // only needs what it renders.
+//
+// SECURITY: `google_token_ref` (the Google OAuth refresh token) MUST NEVER be
+// added here. It is a long-lived credential and the GET below returns this exact
+// list to the browser. It lives in its own column for precisely this reason —
+// keep it out of CLIENT_FIELDS and never `select('*')` in this route.
 const CLIENT_FIELDS = "id, mate_name, website_url, brand, collected, step, messages"
 
 /**

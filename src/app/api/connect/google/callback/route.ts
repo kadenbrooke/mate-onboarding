@@ -7,8 +7,9 @@ import { createServiceClient } from "@/lib/supabase/service"
  * SCAFFOLD ONLY. Exchanges the `code` for tokens at Google's token endpoint and
  * records that the connection succeeded. It does NOT call the GBP data API
  * (access gated on Google approval we lack). The refresh token is stored
- * server-side on the session (`collected.google_token_ref`) and NEVER returned
- * to the browser or logged.
+ * server-side in the dedicated `google_token_ref` COLUMN (never in `collected`,
+ * which the session GET returns to the browser) and is NEVER logged. Only the
+ * `collected.google_connected` boolean is surfaced to the UI.
  *
  * Any error or missing config redirects back to /onboard with a soft
  * `?google=<reason>` param; we never 500 the user mid-onboarding.
@@ -95,20 +96,28 @@ export async function GET(req: NextRequest) {
             ? (session.collected as Record<string, unknown>)
             : {}
 
+        // The `google_connected` boolean is safe to expose to the UI; it stays
+        // in `collected`. The refresh token does NOT — the session GET returns
+        // the whole `collected` blob to the browser, and a column-level select
+        // whitelist cannot exclude a nested JSONB key. So the token goes into
+        // its own top-level `google_token_ref` column, which is NOT in the
+        // GET's CLIENT_FIELDS and therefore never reaches the browser.
         const nextCollected: Record<string, unknown> = {
           ...current,
           google_connected: true,
         }
-        // Store the refresh token server-side, associated with the session.
-        // Never exposed to the browser (the session GET whitelist excludes it).
-        if (refreshToken) nextCollected.google_token_ref = refreshToken
+
+        const update: Record<string, unknown> = {
+          collected: nextCollected,
+          updated_at: new Date().toISOString(),
+        }
+        // Persist the refresh token in the server-only column, never in
+        // `collected`. Do not log it.
+        if (refreshToken) update.google_token_ref = refreshToken
 
         await supabase
           .from("onboarding_sessions")
-          .update({
-            collected: nextCollected,
-            updated_at: new Date().toISOString(),
-          })
+          .update(update)
           .eq("id", sessionId)
 
         // Flip gbp_reviews live for the linked contact, if provisioning already
