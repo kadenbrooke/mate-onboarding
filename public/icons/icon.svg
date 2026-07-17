@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Mate neutral app icon (white-label). NO Auto Mate branding, NO client branding.
+  Dark rounded square (#141414) with a light off-white (#ede6e6) lowercase "m".
+  Per-client branding is applied at runtime via theming; this install icon is generic.
+  Source of truth for the rasterized PNGs in this directory.
+  Regenerate PNGs with: node scripts/gen-icons.mjs
+-->
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mate">
+  <rect width="512" height="512" rx="112" fill="#141414"/>
+  <g fill="none" stroke="#ede6e6" stroke-width="34" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M 148 240 L 148 352"/>
+    <path d="M 148 240 C 148 180 256 180 256 240 L 256 352"/>
+    <path d="M 256 240 C 256 180 364 180 364 240 L 364 352"/>
+  </g>
+</svg>

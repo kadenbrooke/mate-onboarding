@@ -9,7 +9,7 @@ export default function HomePage() {
         className="text-2xl font-bold text-[#ede6e6]"
         style={{ fontFamily: "var(--font-display)" }}
       >
-        Mate — onboarding coming online
+        Mate. Onboarding coming online.
       </h1>
     </div>
   );
