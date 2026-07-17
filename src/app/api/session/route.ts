@@ -81,13 +81,59 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data)
 }
 
+// Keys the action cards + chat fallback may write into `collected`. Anything
+// not on this list is dropped so a caller cannot poke arbitrary keys into the
+// JSONB blob. `collected.company` (research pre-fill) is deliberately NOT
+// writable here — it is set server-side only and the merge below preserves it.
+const COLLECTED_WHITELIST = new Set<string>([
+  // Structured cards
+  "services",
+  "services_pricing",
+  "qualify_criteria",
+  "brand_voice",
+  "current_phone",
+  "forward_confirmed",
+  "published",
+  "lead_delivery_phone",
+  // Contact + carrier basics (collected by chat, mirrored here if a card ever
+  // needs to persist them). Kept whitelisted so parity fields have a home.
+  "contact_name",
+  "contact_email",
+  "second_contact",
+  "legal_business_name",
+  "ein",
+  "business_address",
+  "dba",
+  "notes",
+])
+
+/**
+ * Validate + filter an incoming `collected` patch. Returns only the whitelisted
+ * keys, or null if the value is not a plain object. Does not mutate the input.
+ */
+function pickCollected(input: unknown): Record<string, unknown> | null {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    return null
+  }
+  const out: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+    if (COLLECTED_WHITELIST.has(key)) out[key] = value
+  }
+  return out
+}
+
 /**
  * PATCH /api/session — persist small session updates from the UI.
- * Body: { id: string, step?: string, brand?: Brand }
+ * Body: { id: string, step?: string, brand?: Brand, collected?: object }
  *
- * Used by the website step's manual fallback (bot-walled site): the chosen
- * logo + primary color are saved here so they survive a reload. Only a
- * whitelist of fields is writable; anything else is ignored.
+ * - `step` / `brand`: used by the website step's manual fallback (bot-walled
+ *   site) so the chosen logo + primary color survive a reload.
+ * - `collected`: a whitelisted slice written by the action cards. It is
+ *   shallow-merged into the existing `collected` (read-modify-write) so a card
+ *   save never clobbers other collected fields, including research pre-fill
+ *   (`collected.company`) or fields other cards already saved.
+ *
+ * Only whitelisted fields/keys are writable; anything else is ignored.
  */
 export async function PATCH(req: NextRequest) {
   let body: unknown
@@ -97,10 +143,11 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 })
   }
 
-  const { id, step, brand } = (body ?? {}) as {
+  const { id, step, brand, collected } = (body ?? {}) as {
     id?: unknown
     step?: unknown
     brand?: unknown
+    collected?: unknown
   }
 
   if (typeof id !== "string" || id.trim() === "") {
@@ -121,7 +168,43 @@ export async function PATCH(req: NextRequest) {
     update.brand = brand
   }
 
+  // A collected patch requires a read-modify-write to merge without clobbering.
+  let collectedPatch: Record<string, unknown> | null = null
+  if (collected !== undefined) {
+    collectedPatch = pickCollected(collected)
+    if (collectedPatch === null) {
+      return NextResponse.json(
+        { error: "collected must be an object" },
+        { status: 400 }
+      )
+    }
+  }
+
   const supabase = createServiceClient()
+
+  if (collectedPatch !== null) {
+    // Read the current collected, shallow-merge the whitelisted patch on top,
+    // and write it back. This preserves every existing key (company pre-fill,
+    // prior card saves) and only overwrites the keys in this patch.
+    const { data: existing, error: readError } = await supabase
+      .from("onboarding_sessions")
+      .select("collected")
+      .eq("id", id)
+      .maybeSingle()
+
+    if (readError) {
+      return NextResponse.json({ error: readError.message }, { status: 500 })
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "Session not found" }, { status: 404 })
+    }
+
+    const current =
+      existing.collected && typeof existing.collected === "object" && !Array.isArray(existing.collected)
+        ? (existing.collected as Record<string, unknown>)
+        : {}
+    update.collected = { ...current, ...collectedPatch }
+  }
 
   const { data, error } = await supabase
     .from("onboarding_sessions")

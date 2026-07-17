@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import WebsiteStep, { type ResearchResult } from "./website-step"
 import MateChat from "./mate-chat"
+import CardRail, { type CollectedShape } from "./cards/CardRail"
 import type { Brand, CompanyData } from "@/lib/research/website"
 
 // Client-side onboarding orchestrator. Bootstraps (or loads) a session, then
@@ -20,7 +21,7 @@ interface LoadedSession {
   mate_name: string | null
   website_url: string | null
   brand: Brand | null
-  collected: { company?: CompanyData } | null
+  collected: CollectedShape | null
   step: string | null
   messages: { role: "user" | "assistant"; content: string }[] | null
 }
@@ -82,6 +83,7 @@ export default function OnboardPage() {
   const [step, setStep] = useState<Step>("website")
   const [brand, setBrand] = useState<Brand | null>(null)
   const [company, setCompany] = useState<CompanyData | null>(null)
+  const [collected, setCollected] = useState<CollectedShape>({})
   const [mateName, setMateName] = useState<string | null>(null)
   const [priorMessages, setPriorMessages] = useState<
     { role: "user" | "assistant"; content: string }[]
@@ -149,13 +151,21 @@ export default function OnboardPage() {
         setBrand(data.brand)
         applyBrandTheme(data.brand)
       }
-      if (data.collected?.company) setCompany(data.collected.company)
+      if (data.collected && typeof data.collected === "object") {
+        setCollected(data.collected)
+        if (data.collected.company) setCompany(data.collected.company)
+      }
       if (Array.isArray(data.messages)) setPriorMessages(data.messages)
 
-      // Resume at the chat step if the session already moved past 'website'
-      // (or if a brand was captured), otherwise start at the website step.
+      // Resume at the chat step (chat + card rail) once the session moved past
+      // 'website' — that includes 'chat' and 'ready'. Otherwise start at the
+      // website step. A brand having been captured also implies past 'website'.
       const persistedStep = data.step
-      if (persistedStep === "chat" || (data.brand && persistedStep !== "website")) {
+      if (
+        persistedStep === "chat" ||
+        persistedStep === "ready" ||
+        (data.brand && persistedStep !== "website")
+      ) {
         setStep("chat")
       } else {
         setStep("website")
@@ -168,6 +178,7 @@ export default function OnboardPage() {
   function handleWebsiteDone(result: ResearchResult) {
     setBrand(result.brand)
     setCompany(result.company)
+    setCollected((prev) => ({ ...prev, company: result.company }))
     setStep("chat")
 
     // Persist the advanced step so a reload resumes in the chat, not the
@@ -181,6 +192,23 @@ export default function OnboardPage() {
         // Non-fatal; the client already advanced in memory for this session.
       })
     }
+  }
+
+  // Fired by the card rail once every required structured field is collected.
+  // Advance the session step to 'ready' (sets up the later reveal/portal task).
+  // Idempotent: guarded so we only patch once per session lifetime.
+  const advancedToReady = useRef(false)
+  function handleCardsDone() {
+    if (advancedToReady.current || !sessionId) return
+    advancedToReady.current = true
+    fetch("/api/session", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: sessionId, step: "ready" }),
+    }).catch(() => {
+      // Non-fatal; a later save will re-advance.
+      advancedToReady.current = false
+    })
   }
 
   return (
@@ -207,13 +235,20 @@ export default function OnboardPage() {
         )}
 
         {ready && !bootError && sessionId && step === "chat" && (
-          <MateChat
-            sessionId={sessionId}
-            brand={brand}
-            company={company}
-            mateName={mateName}
-            initialMessages={priorMessages}
-          />
+          <>
+            <CardRail
+              sessionId={sessionId}
+              initialCollected={collected}
+              onAllDone={handleCardsDone}
+            />
+            <MateChat
+              sessionId={sessionId}
+              brand={brand}
+              company={company}
+              mateName={mateName}
+              initialMessages={priorMessages}
+            />
+          </>
         )}
       </div>
     </div>
