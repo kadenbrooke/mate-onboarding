@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+@font-face {
+  font-family: 'Syne';
+  src: url('/fonts/Syne.woff2') format('woff2');
+  font-weight: 400 800;
+  font-style: normal;
+  font-display: swap;
+  font-feature-settings: "ss04";
+}
+
+@theme inline {
+  --font-sans: var(--font-body);
+  --font-display: 'Syne', sans-serif;
+  --color-brand-dark: #141414;
+  --color-brand-orange: #e14d1a;
+  --color-brand-white: #ede6e6;
+  --color-brand-gray: #2a2a2a;
+  --color-brand-border: #333333;
+  --color-brand-orange-hover: #f15d2a;
+  --color-brand-orange-pressed: #c13d0a;
+  --color-brand-muted: #888888;
+}
