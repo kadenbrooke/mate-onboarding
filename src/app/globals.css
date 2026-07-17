@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Fonts are self-hosted only — no Google Fonts (repo rule).
+   --font-body is provided by next/font/local (Syne woff2) in layout.tsx;
+   --font-display uses the @font-face below, the same self-hosted woff2. */
 @font-face {
   font-family: 'Syne';
   src: url('/fonts/Syne.woff2') format('woff2');
