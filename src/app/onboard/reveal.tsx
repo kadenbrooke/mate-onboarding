@@ -277,7 +277,7 @@ export default function SandboxReveal({ sessionId, collected }: SandboxRevealPro
           <h2 style={S.heading}>Meet your First Responder</h2>
         </div>
         <p style={S.sub}>
-          This is your live agent, in your voice. Text it like a customer would and watch it reply.
+          This is a preview of your agent, in your voice. Text it like a customer would and watch it reply.
         </p>
       </div>
 
