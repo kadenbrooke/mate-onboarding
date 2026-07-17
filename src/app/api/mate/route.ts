@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { createServiceClient } from "@/lib/supabase/service"
-import { mateSystemPrompt } from "@/lib/mate/system-prompt"
+import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
 import { toolSchemas, applyToolResult, type Collected } from "@/lib/mate/tools"
 import { capabilitySummary, type Capability } from "@/lib/mate/capability"
 
@@ -65,9 +65,13 @@ export async function POST(req: Request) {
     { role: "user" as const, content: message },
   ]
 
-  const company =
+  // Pass the full researched company profile through to the prompt so Mate can
+  // confirm what it already found (name, services, hours, area, phone, email,
+  // address, channels) instead of asking blind. Set server-side by the website
+  // research step; never client-writable.
+  const company: ResearchedCompany =
     collected.company && typeof collected.company === "object"
-      ? (collected.company as { name?: string })
+      ? (collected.company as ResearchedCompany)
       : {}
 
   // Load the client's capability manifest so Mate accurately knows what it CAN do.

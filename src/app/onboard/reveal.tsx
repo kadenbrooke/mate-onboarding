@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { ChatCircle, PaperPlaneRight, Lightning } from "@phosphor-icons/react"
 import { sandboxGreeting } from "@/lib/mate/sandbox-agent"
-import type { CollectedShape } from "./cards/CardRail"
+import type { CollectedShape } from "./cards/ReviewScreen"
 
 /**
  * SandboxReveal — the "meet your First Responder" moment at the end of onboarding.

@@ -27,6 +27,11 @@ interface MateChatProps {
   // Any prior turns already persisted on the session, so a reload rehydrates
   // the conversation instead of restarting it.
   initialMessages?: PriorMessage[]
+  // Fired after a Mate turn fully streams in and the server has persisted the
+  // updated `collected`. The page re-fetches the session on this signal to see
+  // which required fields Mate has captured and, once complete, offers the
+  // review advance. Optional so the chat still works standalone.
+  onTurnComplete?: () => void
 }
 
 /**
@@ -210,6 +215,7 @@ export default function MateChat({
   company,
   mateName,
   initialMessages,
+  onTurnComplete,
 }: MateChatProps) {
   const businessName = company?.name
 
@@ -392,6 +398,12 @@ export default function MateChat({
       }
 
       if (streamError) setError(streamError)
+
+      // The turn streamed cleanly and (per the AI SDK) the server awaited its
+      // onFinish persistence before closing the stream, so the updated
+      // `collected` is now saved. Signal the page to re-check completion.
+      // Guarded on no stream error so a soft failure doesn't advance the flow.
+      if (!streamError) onTurnComplete?.()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Mate error.")
       // Roll back the optimistic owner bubble and restore the draft.
