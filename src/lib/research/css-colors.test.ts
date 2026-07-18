@@ -78,7 +78,7 @@ describe("extractColorsFromCss", () => {
     expect(extractColorsFromCss("")).toBeNull()
   })
 
-  it("picks a distinct accent when a second saturated color exists", () => {
+  it("derives accent as a distinct, on-brand shade of primary (not a scavenged second color)", () => {
     const css = `
       .primary { color: #e14d1a; }
       .primary2 { color: #e14d1a; }
@@ -89,8 +89,54 @@ describe("extractColorsFromCss", () => {
     `
     const result = extractColorsFromCss(css)
     expect(result).not.toBeNull()
-    // primary is the most frequent (orange), accent is the blue.
-    expect(result!.primary).not.toBe(result!.accent)
+    // primary is the most frequent (orange).
+    expect(result!.primary).toBe("#e14d1a")
+    // accent is a lighter shade of the SAME hue, NOT the scavenged blue #1a73e8.
+    expect(result!.accent).not.toBe(result!.primary)
+    expect(result!.accent).not.toBe("#1a73e8")
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(result!.accent)
+    const ar = parseInt(m![1], 16)
+    const ag = parseInt(m![2], 16)
+    const ab = parseInt(m![3], 16)
+    // Warm/orange family: red channel dominant on the accent too.
+    expect(ar).toBeGreaterThan(ag)
+    expect(ar).toBeGreaterThan(ab)
+  })
+
+  it("does NOT scavenge an incidental green as accent (auto-mate.business real tally)", () => {
+    // Real frequency shape from auto-mate.business: orange dominates (primary),
+    // green #22c55e appears only a handful of times (a single utility class).
+    // Accent must be an orange-family shade, never the phantom green.
+    const parts: string[] = []
+    for (let i = 0; i < 40; i++) parts.push(`.o${i} { color: #e14d1a; }`)
+    for (let i = 0; i < 7; i++) parts.push(`.g${i} { border-color: #22c55e; }`)
+    parts.push(`body { background: #141414; }`)
+    const css = parts.join("\n")
+
+    const result = extractColorsFromCss(css)
+    expect(result).not.toBeNull()
+    expect(result!.primary).toBe("#e14d1a")
+    // The phantom green must never become the accent.
+    expect(result!.accent).not.toBe("#22c55e")
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(result!.accent)
+    const ar = parseInt(m![1], 16)
+    const ag = parseInt(m![2], 16)
+    const ab = parseInt(m![3], 16)
+    // Warm/orange: red dominant, and NOT green (g not dominant).
+    expect(ar).toBeGreaterThan(ag)
+    expect(ar).toBeGreaterThan(ab)
+  })
+
+  it("returns null when the only saturated color is rare/incidental (frequency floor)", () => {
+    // A page whose sole saturated color appears just twice amid neutrals should
+    // NOT be crowned a brand; fall through so the caller keeps walking sources.
+    const css = `
+      body { background: #ffffff; color: #141414; }
+      .card { background: #f5f5f5; border: 1px solid #e5e5e5; }
+      .badge { color: #22c55e; }
+      .badge2 { border-color: #22c55e; }
+    `
+    expect(extractColorsFromCss(css)).toBeNull()
   })
 
   it("chooses a dark bg when the dominant background color is dark", () => {
@@ -99,6 +145,7 @@ describe("extractColorsFromCss", () => {
       .wrap { background-color: #111111; }
       .brand { color: #e14d1a; }
       .brand2 { color: #e14d1a; }
+      .brand3 { border-color: #e14d1a; }
     `
     const result = extractColorsFromCss(css)
     expect(result).not.toBeNull()

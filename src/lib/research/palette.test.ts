@@ -119,4 +119,20 @@ describe("derivePalette", () => {
       expect(v).toMatch(/^#[0-9a-f]{6}$/)
     }
   })
+
+  it("derives accent as a LIGHTER, same-hue shade of primary (on-brand, not a scavenged color)", async () => {
+    // A solid orange logo -> orange primary -> accent must be a lighter orange,
+    // never a different hue. Luminance up, red channel still dominant.
+    const buf = await solidPng({ r: 225, g: 77, b: 26 })
+    const { primary, accent } = await derivePalette(buf)
+    const p = fromHex(primary)
+    const a = fromHex(accent)
+    const lum = (c: { r: number; g: number; b: number }) =>
+      0.299 * c.r + 0.587 * c.g + 0.114 * c.b
+    // Accent is lighter than primary.
+    expect(lum(a)).toBeGreaterThan(lum(p))
+    // Accent stays warm/orange: red channel dominant, not a green/blue drift.
+    expect(a.r).toBeGreaterThan(a.g)
+    expect(a.r).toBeGreaterThan(a.b)
+  })
 })

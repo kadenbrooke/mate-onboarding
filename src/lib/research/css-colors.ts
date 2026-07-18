@@ -5,9 +5,11 @@
  * (inline style="", <style> blocks, and best-effort linked stylesheets — the
  * fetching lives in website.ts), we tally every hex and rgb()/rgba() color,
  * filter out near-neutrals (near-white, near-black, low-saturation greys), and
- * pick the most frequent SATURATED color as the brand primary. A distinct second
- * saturated color becomes accent; the dominant BACKGROUND color decides light vs
- * dark bg.
+ * pick the most frequent SATURATED color as the brand primary (subject to a
+ * frequency floor so a one-off incidental color can't be crowned the brand). The
+ * accent is DERIVED from primary as a lighter same-hue shade (see color-util's
+ * deriveAccent), NOT scavenged from a second saturated color which could drift to
+ * a phantom hue. The dominant BACKGROUND color decides light vs dark bg.
  *
  * This exists because many brands (e.g. auto-mate.business) only expose their
  * brand color in CSS: the logo is a .ico favicon that sharp can't decode, and
@@ -16,6 +18,8 @@
  * Never throws: returns null when nothing saturated is found so the caller can
  * fall through to the next source in the resolution chain.
  */
+
+import { deriveAccent } from "./color-util"
 
 export interface CssPalette {
   primary: string
@@ -36,6 +40,18 @@ const NEAR_BLACK = 24
 // as "brand" colors; requiring real channel spread rejects those muted UI greys
 // while keeping vivid brand colors (orange #e14d1a has spread 199).
 const MIN_CHROMA = 40
+
+// Frequency floor for crowning a saturated color as the brand `primary`. A site
+// whose only saturated color is incidental (e.g. a single `border-[#22c55e]/30`
+// utility appearing a handful of times) should NOT be themed to that one-off
+// color; we'd rather fall through to theme-color / manifest / default. The top
+// saturated color must appear at least this many times, OR clearly lead the next
+// saturated color by a wide margin (a dominant brand color always does).
+const MIN_PRIMARY_ABSOLUTE = 3
+const MIN_PRIMARY_FRACTION = 0.05
+// A top color that laps the runner-up by this factor is clearly the brand even
+// if the page is tiny, so it bypasses the absolute/fraction floor.
+const DOMINANCE_MARGIN = 3
 
 interface Rgb {
   r: number
@@ -145,14 +161,6 @@ function fromKey(key: string): Rgb {
   return { r, g, b }
 }
 
-/** Squared euclidean distance, used to keep accent visibly distinct from primary. */
-function distSq(a: Rgb, b: Rgb): number {
-  const dr = a.r - b.r
-  const dg = a.g - b.g
-  const db = a.b - b.b
-  return dr * dr + dg * dg + db * db
-}
-
 /**
  * Extract a brand palette from a blob of CSS/markup text. Returns null when no
  * saturated (non-neutral) color is present, so the caller keeps walking its
@@ -166,25 +174,41 @@ export function extractColorsFromCss(css: string): CssPalette | null {
 
   // Frequency-tally the SATURATED colors only.
   const satCounts = new Map<string, number>()
+  let totalSatMentions = 0
   for (const c of all) {
     if (!isSaturated(c.r, c.g, c.b)) continue
     const k = keyOf(c)
     satCounts.set(k, (satCounts.get(k) ?? 0) + 1)
+    totalSatMentions++
   }
   if (satCounts.size === 0) return null
 
   const ranked = [...satCounts.entries()].sort((x, y) => y[1] - x[1])
+
+  // Frequency floor: only crown the top saturated color as `primary` when it is
+  // actually the brand and not incidental noise. It qualifies if it clears an
+  // absolute + fractional floor, OR clearly dominates the runner-up. If the top
+  // saturated color is itself rare, return null so the caller falls through to
+  // theme-color / manifest / default rather than theming to a one-off color.
+  const topCount = ranked[0][1]
+  const runnerUpCount = ranked[1]?.[1] ?? 0
+  const floor = Math.max(
+    MIN_PRIMARY_ABSOLUTE,
+    Math.ceil(MIN_PRIMARY_FRACTION * totalSatMentions)
+  )
+  const dominates =
+    runnerUpCount === 0
+      ? topCount >= MIN_PRIMARY_ABSOLUTE
+      : topCount >= runnerUpCount * DOMINANCE_MARGIN
+  if (topCount < floor && !dominates) return null
+
   const primary = fromKey(ranked[0][0])
 
-  // Accent = next most frequent saturated color that is visibly distinct.
-  let accent = primary
-  for (const [k] of ranked.slice(1)) {
-    const c = fromKey(k)
-    if (distSq(c, primary) > 48 * 48) {
-      accent = c
-      break
-    }
-  }
+  // Accent = an on-brand LIGHTER shade of primary (same hue family), NOT a
+  // scavenged second saturated color. Scavenging is what produced the phantom
+  // green accent on auto-mate.business; deriving from primary keeps accent on
+  // brand by construction.
+  const accent = deriveAccent(toHex(primary))
 
   // Background: pick the most frequent color that appears in a background
   // declaration; fall back to the most frequent color overall. Then decide
@@ -203,6 +227,6 @@ export function extractColorsFromCss(css: string): CssPalette | null {
   return {
     primary: toHex(primary),
     bg,
-    accent: toHex(accent),
+    accent,
   }
 }

@@ -1,4 +1,5 @@
 import sharp from "sharp"
+import { deriveAccent } from "./color-util"
 
 /**
  * Palette derivation from a logo image.
@@ -7,7 +8,9 @@ import sharp from "sharp"
  * walk the raw pixels, build a quantized color histogram, and pick the most
  * frequent SATURATED color as the brand primary. Near-transparent pixels and
  * near-neutral (white/black/grey) pixels are excluded when choosing the brand
- * color so a logo on a white or black canvas still yields the real accent.
+ * color so a logo on a white or black canvas still yields the real primary. The
+ * accent is DERIVED from primary as a lighter same-hue shade (deriveAccent), not
+ * scavenged from a second logo color.
  *
  * Never throws: on any sharp/decoding error it returns SAFE_DEFAULT so research
  * can fall through the source chain in the caller.
@@ -87,19 +90,6 @@ function isBrandCandidate(r: number, g: number, b: number): boolean {
   return saturation(r, g, b) >= MIN_SATURATION
 }
 
-/**
- * Distinctness between two packed color buckets, used so `accent` is visibly
- * different from `primary` rather than an adjacent quantization bucket.
- */
-function farEnough(a: number, b: number): boolean {
-  const ca = unpack(a)
-  const cb = unpack(b)
-  const dr = ca.r - cb.r
-  const dg = ca.g - cb.g
-  const db = ca.b - cb.b
-  return dr * dr + dg * dg + db * db > 48 * 48
-}
-
 export async function derivePalette(imageBuffer: Buffer): Promise<Palette> {
   try {
     // Downscale to keep the pixel walk cheap; ensure an alpha channel exists so
@@ -171,15 +161,10 @@ export async function derivePalette(imageBuffer: Buffer): Promise<Palette> {
     const p = unpack(primaryKey)
     primaryHex = rgbToHex(p.r, p.g, p.b)
 
-    // Accent = the next most frequent brand color that is visibly distinct from
-    // primary. Fall back to primary itself if the logo is essentially one hue.
-    const accentEntry = ranked.slice(1).find(([k]) => farEnough(k, primaryKey))
-    if (accentEntry) {
-      const a = unpack(accentEntry[0])
-      accentHex = rgbToHex(a.r, a.g, a.b)
-    } else {
-      accentHex = primaryHex
-    }
+    // Accent = an on-brand LIGHTER shade of primary (same hue family), NOT a
+    // scavenged second logo color. Deriving from primary keeps accent on-brand
+    // by construction, matching the CSS-extraction path.
+    accentHex = deriveAccent(primaryHex)
 
     return { primary: primaryHex, bg, accent: accentHex }
   } catch {
