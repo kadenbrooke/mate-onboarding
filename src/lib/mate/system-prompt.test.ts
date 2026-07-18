@@ -86,4 +86,41 @@ describe("mateSystemPrompt", () => {
     expect(p).not.toContain("Address:")
     expect(p).not.toContain("Phone on site:")
   })
+
+  it("instructs present-and-verify: present found info, never ask for it", () => {
+    const p = mateSystemPrompt("Mate", rich)
+    const lower = p.toLowerCase()
+    // Explicitly tells Mate to present/verify rather than ask for known info.
+    expect(lower).toContain("present")
+    expect(lower).toContain("verify")
+    // Directive against re-asking for researched info.
+    expect(lower).toMatch(/never ask for (a piece of )?info(rmation)? .*(found|research)/)
+  })
+
+  it("groups presentation into a contact block and a services block", () => {
+    const p = mateSystemPrompt("Mate", rich)
+    const lower = p.toLowerCase()
+    expect(lower).toContain("contact")
+    expect(lower).toContain("services")
+    // The 'look right?' / confirm-then-save framing of the contact block.
+    expect(lower).toMatch(/look right|fix anything|correct anything/)
+  })
+
+  it("distinguishes current_phone (found, present it) from lead_delivery_phone (ask for it)", () => {
+    const p = mateSystemPrompt("Mate", rich)
+    const lower = p.toLowerCase()
+    // current_phone is presented (found on site); lead_delivery_phone is asked.
+    expect(p).toContain("current_phone")
+    expect(p).toContain("lead_delivery_phone")
+    // The warm-lead cell is framed as the thing to ASK for.
+    expect(lower).toContain("warm lead")
+  })
+
+  it("frames brand voice and the warm-lead cell as the only genuine gaps to ask", () => {
+    const p = mateSystemPrompt("Mate", rich)
+    const lower = p.toLowerCase()
+    expect(lower).toContain("brand voice")
+    // Only ask what research can't derive.
+    expect(lower).toMatch(/only ask|genuinely missing|genuine gap/)
+  })
 })

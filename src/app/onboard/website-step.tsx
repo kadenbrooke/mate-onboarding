@@ -165,6 +165,9 @@ export default function WebsiteStep({ sessionId, onDone }: WebsiteStepProps) {
   function handleManualApply() {
     const brand: Brand = {
       logo_url: manualLogo,
+      icon_url: null,
+      palette_logo_url: null,
+      palette_logo_is_icon_class: false,
       colors: {
         primary: manualColor,
         bg: "#141414",

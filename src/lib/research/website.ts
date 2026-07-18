@@ -1,6 +1,7 @@
 import { generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { derivePalette } from "./palette"
+import { extractColorsFromCss } from "./css-colors"
 
 const DEFAULT_COLORS = {
   primary: "#1f2937",
@@ -23,10 +24,40 @@ function resolve(base: string, href: string): string {
 }
 
 /** Where a brand's colors ultimately came from, so the caller can tell. */
-export type BrandColorSource = "logo" | "theme-color" | "manifest" | "default"
+export type BrandColorSource =
+  | "logo"
+  | "css"
+  | "theme-color"
+  | "manifest"
+  | "default"
 
 export interface Brand {
+  /**
+   * Best logo URL for DISPLAY. May be a .ico or .svg (all we have), so it is NOT
+   * necessarily safe to hand to sharp — use palette_logo_url for that.
+   */
   logo_url: string | null
+  /**
+   * The raw <link rel="icon"> href, exposed separately so display code can fall
+   * back to it even when a nicer raster (og:image / apple-touch-icon) is used as
+   * the display logo. Usually the favicon (often a .ico).
+   */
+  icon_url: string | null
+  /**
+   * A logo URL that is safe to decode with sharp for palette derivation: a real
+   * raster (.png/.jpg/.jpeg/.webp/.gif). Null when the only logo we found is an
+   * .ico or .svg (sharp can't reliably decode those), so the caller knows to skip
+   * the logo palette step and fall through to CSS/theme-color.
+   */
+  palette_logo_url: string | null
+  /**
+   * True when palette_logo_url came from an ICON-class source (apple-touch-icon
+   * or <link rel=icon>) rather than a substantial og:image. Icon-class rasters
+   * (favicons, home-screen tiles) are tiny and often dark/muddy, so they are a
+   * WEAKER palette signal than a page's CSS. The resolver uses this to order CSS
+   * ahead of an icon-class logo, while a real og:image still wins outright.
+   */
+  palette_logo_is_icon_class: boolean
   colors: {
     primary: string
     bg: string
@@ -35,11 +66,52 @@ export interface Brand {
   }
 }
 
+// Raster extensions sharp can decode reliably. .ico and .svg are deliberately
+// excluded (sharp cannot decode .ico at all, and .svg needs rasterization we
+// don't want to depend on for palette accuracy).
+const RASTER_EXT_RE = /\.(png|jpe?g|webp|gif)(?:[?#].*)?$/i
+
+/** True when the URL clearly points at a raster image sharp can use. */
+function isRasterUrl(url: string): boolean {
+  return RASTER_EXT_RE.test(url)
+}
+
 export function extractBrandFromHtml(html: string, baseUrl: string): Brand {
   const pick = (re: RegExp) => (html.match(re)?.[1] ?? "").trim()
-  const logoRaw =
-    pick(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i) ||
-    pick(/<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']/i)
+
+  // Candidate logo sources, in preference order for producing a REAL raster we
+  // can feed to sharp: og:image -> apple-touch-icon -> <link rel="icon">.
+  const ogImage = pick(
+    /<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i
+  )
+  const appleIcon = pick(
+    /<link[^>]+rel=["'][^"']*apple-touch-icon[^"']*["'][^>]+href=["']([^"']+)["']/i
+  )
+  const linkIcon = pick(
+    /<link[^>]+rel=["'][^"']*icon[^"']*["'][^>]+href=["']([^"']+)["']/i
+  )
+
+  const ogAbs = ogImage ? resolve(baseUrl, ogImage) : null
+  const appleAbs = appleIcon ? resolve(baseUrl, appleIcon) : null
+  const iconAbs = linkIcon ? resolve(baseUrl, linkIcon) : null
+
+  // og:image is a SUBSTANTIAL brand/share image; apple-touch-icon and
+  // <link rel=icon> are ICON-class (tiny, often dark/muddy). We still allow an
+  // icon-class raster as a palette candidate, but flag it so the resolver can
+  // rank CSS ahead of it.
+  const ogIsRaster = ogAbs !== null && isRasterUrl(ogAbs)
+  const iconRaster =
+    [appleAbs, iconAbs].find((u) => u !== null && isRasterUrl(u)) ?? null
+
+  // palette_logo_url: prefer a substantial og:image raster, else an icon raster.
+  // Never a .ico/.svg.
+  const palette_logo_url = ogIsRaster ? ogAbs : iconRaster
+  const palette_logo_is_icon_class = !ogIsRaster && iconRaster !== null
+
+  // logo_url (for display): prefer a real raster, else fall back to whatever icon
+  // we have (even a .ico/.svg) so the UI still shows a logo.
+  const logo_url = palette_logo_url ?? ogAbs ?? appleAbs ?? iconAbs
+
   const themeColor = pick(
     /<meta[^>]+name=["']theme-color["'][^>]+content=["'](#[0-9a-fA-F]{3,8})["']/i
   )
@@ -49,7 +121,10 @@ export function extractBrandFromHtml(html: string, baseUrl: string): Brand {
     : { ...DEFAULT_COLORS, source: "default" as const }
 
   return {
-    logo_url: logoRaw ? resolve(baseUrl, logoRaw) : null,
+    logo_url,
+    icon_url: iconAbs,
+    palette_logo_url,
+    palette_logo_is_icon_class,
     colors,
   }
 }
@@ -147,51 +222,162 @@ async function fetchManifestThemeColor(
 }
 
 /**
- * Resolve a brand's colors through a preference chain, first success wins:
- *   1. logo image  -> derivePalette (pure sharp math, no model)
- *   2. <meta name="theme-color">   (already parsed into base.colors)
- *   3. web manifest theme_color    (best-effort fetch)
- *   4. hardcoded neutral defaults  (LAST)
+ * Best-effort fetch of a linked stylesheet's text. Same-origin only, short
+ * timeout, capped size. Returns "" on any failure. Never throws.
+ */
+async function fetchStylesheet(url: string): Promise<string> {
+  try {
+    if (!/^https?:\/\//i.test(url)) return ""
+    const res = await fetch(url, {
+      headers: { "user-agent": "Mozilla/5.0 (compatible; MateOnboarding/1.0)" },
+      signal: AbortSignal.timeout(4000),
+    })
+    if (!res.ok) return ""
+    const type = res.headers.get("content-type") ?? ""
+    // Best-effort guard: only trust things that look like CSS.
+    if (type && !/css|text\/plain|octet-stream/i.test(type)) return ""
+    const text = await res.text()
+    // Cap so a giant bundle can't blow the budget.
+    return text.slice(0, 400_000)
+  } catch {
+    return ""
+  }
+}
+
+/**
+ * Extract brand colors from a page's MARKUP: inline style="" attributes, inline
+ * <style> blocks, and (best-effort) up to two same-origin linked stylesheets.
+ * Tallies saturated colors and returns primary/accent/bg, or null if nothing
+ * saturated was found. Never throws (research must never 500).
  *
- * `base` is the Brand produced by extractBrandFromHtml; its logo_url and any
- * theme-color it already found are reused. Never throws.
+ * This recovers the real brand color for sites whose logo is an undecodable .ico
+ * favicon and which set no theme-color meta (e.g. auto-mate.business, orange in
+ * CSS only).
+ */
+export async function extractBrandColorsFromMarkup(
+  html: string,
+  baseUrl: string
+): Promise<{ primary: string; bg: string; accent: string } | null> {
+  if (!html) return null
+
+  // Inline <style> blocks.
+  const styleBlocks = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)]
+    .map((m) => m[1])
+    .join("\n")
+
+  // Inline style="" attributes.
+  const inlineStyles = [...html.matchAll(/\bstyle=["']([^"']+)["']/gi)]
+    .map((m) => m[1])
+    .join(";")
+
+  // Same-origin linked stylesheets (cap at 2 to bound the network work).
+  let origin = ""
+  try {
+    origin = new URL(baseUrl).origin
+  } catch {
+    origin = ""
+  }
+
+  const cssLinks = [
+    ...html.matchAll(
+      /<link[^>]+rel=["'][^"']*stylesheet[^"']*["'][^>]*>/gi
+    ),
+  ]
+    .map((m) => (m[0].match(/href=["']([^"']+)["']/i)?.[1] ?? "").trim())
+    .filter(Boolean)
+    .map((href) => resolve(baseUrl, href))
+    .filter((u) => (origin ? u.startsWith(origin) : /^https?:\/\//i.test(u)))
+    .slice(0, 2)
+
+  const linkedCss = (
+    await Promise.all(cssLinks.map((u) => fetchStylesheet(u)))
+  ).join("\n")
+
+  const combined = [styleBlocks, inlineStyles, linkedCss]
+    .filter(Boolean)
+    .join("\n")
+
+  return extractColorsFromCss(combined)
+}
+
+/**
+ * Derive a palette from base.palette_logo_url via sharp, or null if it can't be
+ * fetched or produced only a neutral SAFE_DEFAULT (which would otherwise be
+ * mislabeled as a real logo palette). Never throws.
+ */
+async function logoPalette(
+  base: Brand
+): Promise<{ primary: string; bg: string; accent: string } | null> {
+  if (!base.palette_logo_url) return null
+  const buf = await fetchImageBuffer(base.palette_logo_url)
+  if (!buf) return null
+  const palette = await derivePalette(buf)
+  // derivePalette returns SAFE_DEFAULT (neutral blue) when it finds no brand
+  // color. Only trust the logo when it produced a NON-default palette.
+  const isDefaultish =
+    palette.primary === DEFAULT_COLORS.primary &&
+    palette.accent === DEFAULT_COLORS.accent
+  return isDefaultish ? null : palette
+}
+
+/**
+ * Resolve a brand's colors through a preference chain, first REAL palette wins.
+ * `colors.source` is set HONESTLY to whatever actually produced them:
+ *   1. SUBSTANTIAL logo (og:image) -> derivePalette. A genuine brand image is
+ *      the strongest signal. (.ico/.svg are skipped upstream, so a favicon can
+ *      never masquerade as a logo palette.)
+ *   2. css/markup color extraction (inline styles, <style>, linked stylesheets).
+ *      Ranked ABOVE icon-class logos: a page's CSS is a stronger brand-color
+ *      signal than a tiny, often-dark favicon / home-screen tile.
+ *   3. ICON-class logo (apple-touch-icon / favicon raster) -> derivePalette.
+ *   4. <meta name="theme-color">   (already parsed into base.colors)
+ *   5. web manifest theme_color    (best-effort fetch)
+ *   6. hardcoded neutral defaults  (LAST)
+ *
+ * `base` is the Brand produced by extractBrandFromHtml. Never throws.
  */
 export async function resolveBrandColors(
   base: Brand,
   html: string,
   baseUrl: string
 ): Promise<Brand> {
-  // 1. Logo-derived palette.
-  if (base.logo_url) {
-    const buf = await fetchImageBuffer(base.logo_url)
-    if (buf) {
-      try {
-        const palette = await derivePalette(buf)
-        return {
-          logo_url: base.logo_url,
-          colors: { ...palette, source: "logo" },
-        }
-      } catch {
-        // derivePalette is itself non-throwing, but stay defensive.
-      }
+  // 1. Substantial logo (og:image) palette wins outright.
+  if (!base.palette_logo_is_icon_class) {
+    const palette = await logoPalette(base)
+    if (palette) {
+      return { ...base, colors: { ...palette, source: "logo" } }
     }
   }
 
-  // 2. theme-color meta (extractBrandFromHtml already applied it).
+  // 2. CSS / markup color extraction (above icon-class logos).
+  const cssColors = await extractBrandColorsFromMarkup(html, baseUrl)
+  if (cssColors) {
+    return { ...base, colors: { ...cssColors, source: "css" } }
+  }
+
+  // 3. Icon-class logo palette (weaker signal, so it runs after CSS).
+  if (base.palette_logo_is_icon_class) {
+    const palette = await logoPalette(base)
+    if (palette) {
+      return { ...base, colors: { ...palette, source: "logo" } }
+    }
+  }
+
+  // 4. theme-color meta (extractBrandFromHtml already applied it).
   if (base.colors.source === "theme-color") {
     return base
   }
 
-  // 3. web manifest theme_color.
+  // 5. web manifest theme_color.
   const manifestColor = await fetchManifestThemeColor(html, baseUrl)
   if (manifestColor) {
     return {
-      logo_url: base.logo_url,
+      ...base,
       colors: { ...DEFAULT_COLORS, primary: manifestColor, source: "manifest" },
     }
   }
 
-  // 4. neutral defaults (base already carries source: "default").
+  // 6. neutral defaults (base already carries source: "default").
   return base
 }
 
