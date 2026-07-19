@@ -35,7 +35,15 @@ export async function POST(req: Request) {
   const cookieToken = req.headers.get("cookie")?.match(/(?:^|;\s*)mate_session=([^;]+)/)?.[1]
   if (secret && cookieToken) {
     const { verifySession } = await import("@/lib/session-cookie")
-    const verified = verifySession(decodeURIComponent(cookieToken), secret)
+    // decodeURIComponent throws on malformed percent sequences; a garbage
+    // cookie must fall back to the body sessionId, never 500.
+    let decoded: string | null = null
+    try {
+      decoded = decodeURIComponent(cookieToken)
+    } catch {
+      decoded = null
+    }
+    const verified = decoded ? verifySession(decoded, secret) : null
     if (verified) resolvedSessionId = verified
   }
 
