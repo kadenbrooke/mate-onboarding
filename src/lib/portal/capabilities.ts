@@ -99,6 +99,11 @@ export const AUTO_MATE_5: { key: string; label: string }[] = [
   { key: "command_center", label: "Command Center" },
 ]
 
+// NOTE: `requests` is currently UNUSED (open build requests surface via the
+// portal's buildRequests payload + Business Mate's getAgentStatus instead).
+// The two call sites pass differently-encoded statuses (raw DB enum vs the
+// portal route's friendly labels) — if this ever starts consuming requests,
+// normalize the encoding at the call sites first.
 export function agentRoster(caps: Cap[], requests: Req[]): AgentCard[] {
   const safeCaps = Array.isArray(caps) ? caps : []
   const byKey = new Map(safeCaps.map((c) => [c.capability_key, c]))

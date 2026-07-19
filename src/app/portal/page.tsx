@@ -172,7 +172,7 @@ export default function PortalPage() {
           <>
             <div>
               <h1 style={S.heading}>{data?.businessName ?? "Command Center"}</h1>
-              <p style={S.sub}>Command Center</p>
+              {data?.businessName && <p style={S.sub}>Command Center</p>}
             </div>
 
             {!onboardingComplete && (
@@ -182,22 +182,38 @@ export default function PortalPage() {
               </p>
             )}
 
+            {/* All three panes stay MOUNTED; tabs toggle visibility. Unmounting
+                the chat on tab-away would wipe the visible thread and re-seed
+                the onboarding greeting on return (the server keeps history the
+                client couldn't see). display:none also preserves chat scroll. */}
             <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-              {tab === "home" && <HomeTab baseline={data?.baseline ?? null} />}
-              {tab === "agents" && <AgentsTab agents={data?.agents ?? []} />}
-              {tab === "chat" && sessionId && (
-                <div style={S.chatWrap}>
+              <div style={{ display: tab === "home" ? "block" : "none" }}>
+                <HomeTab baseline={data?.baseline ?? null} />
+              </div>
+              <div style={{ display: tab === "agents" ? "block" : "none" }}>
+                <AgentsTab agents={data?.agents ?? []} />
+              </div>
+              {sessionId && (
+                <div
+                  style={{
+                    ...S.chatWrap,
+                    display: tab === "chat" ? "flex" : "none",
+                  }}
+                >
                   <MateChat sessionId={sessionId} mateName={mateName} />
                 </div>
               )}
             </div>
 
             <nav
+              aria-label="Command Center sections"
               style={{
                 display: "flex",
                 justifyContent: "space-around",
                 borderTop: "1px solid #333333",
                 paddingTop: 10,
+                // iOS standalone-PWA home indicator clearance.
+                paddingBottom: "env(safe-area-inset-bottom, 0px)",
                 flexShrink: 0,
               }}
             >
@@ -212,7 +228,7 @@ export default function PortalPage() {
                   key={key}
                   type="button"
                   onClick={() => setTab(key)}
-                  aria-label={label}
+                  aria-current={tab === key ? "page" : undefined}
                   style={{
                     background: "none",
                     border: "none",

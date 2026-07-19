@@ -38,8 +38,8 @@ export default function HomeTab({ baseline }: { baseline: Baseline | null }) {
           </p>
           <p style={{ fontSize: 12.5, color: "#9a9a9a", margin: 0, lineHeight: 1.5 }}>
             Based on your numbers: {baseline.leadsPerWeek} leads a week at $
-            {baseline.avgJobValue.toLocaleString("en-US")} a job, with 1 in 10
-            currently slipping away unanswered.
+            {baseline.avgJobValue.toLocaleString("en-US")} a job, if even 1 in
+            10 slips away unanswered.
           </p>
         </div>
       )}
