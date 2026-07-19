@@ -118,6 +118,24 @@ export async function POST(req: Request) {
         return { saved: "brand_voice" }
       },
     }),
+    // UI card triggers: no server mutation; the ack tells the model the card is
+    // on screen so it stops talking and waits for the client's confirmation
+    // message (sent automatically by the card on submit).
+    showColorCard: tool({
+      description: toolSchemas.showColorCard.description,
+      parameters: toolSchemas.showColorCard.parameters,
+      execute: async () => ({ shown: "color" }),
+    }),
+    showRegistrationCard: tool({
+      description: toolSchemas.showRegistrationCard.description,
+      parameters: toolSchemas.showRegistrationCard.parameters,
+      execute: async () => ({ shown: "registration" }),
+    }),
+    showChannelsCard: tool({
+      description: toolSchemas.showChannelsCard.description,
+      parameters: toolSchemas.showChannelsCard.parameters,
+      execute: async () => ({ shown: "channels" }),
+    }),
     // Side-effect tool: logs an out-of-scope ask into build_requests (the upsell
     // queue). It does NOT touch collected. Never throws out of execute — an insert
     // failure is logged server-side and we still return a soft ack so the chat
