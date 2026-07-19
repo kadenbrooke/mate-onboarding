@@ -234,14 +234,16 @@ export function extractColorsFromCss(css: string): CssPalette | null {
 export interface ColorCandidates {
   /** Ranked saturated brand-color options, most frequent first. Max 5. */
   primaries: string[]
-  /** Deduped background options (from background declarations), max 3, padded
-   *  with the dark + light defaults so the picker always has a light and a dark
-   *  choice. */
+  /** Deduped background options (from background declarations), max 4 total:
+   *  up to MAX_BG_CANDIDATES page-sourced colors, padded with the guaranteed
+   *  dark + light defaults so the picker always has both. */
   backgrounds: string[]
 }
 
 const MAX_PRIMARY_CANDIDATES = 5
 const MAX_BG_CANDIDATES = 3
+// Total cap: page-sourced candidates + both defaults guaranteed (dark + light).
+const MAX_BG_TOTAL = MAX_BG_CANDIDATES + 1
 
 /**
  * Candidate palette for the ColorCard: every saturated color ranked by
@@ -278,9 +280,9 @@ export function extractColorCandidates(css: string): ColorCandidates {
   // Trim the page-sourced list first so both missing defaults fit within the cap.
   const missingDefaults = [DARK_BG, LIGHT_BG].filter((d) => !backgrounds.includes(d))
   if (missingDefaults.length > 0) {
-    backgrounds.splice(MAX_BG_CANDIDATES + 1 - missingDefaults.length)
+    backgrounds.splice(MAX_BG_TOTAL - missingDefaults.length)
   }
   for (const d of missingDefaults) backgrounds.push(d)
 
-  return { primaries, backgrounds: backgrounds.slice(0, MAX_BG_CANDIDATES + 1) }
+  return { primaries, backgrounds: backgrounds.slice(0, MAX_BG_TOTAL) }
 }

@@ -34,7 +34,7 @@ export const VITALITY_CHIPS: {
   label: string
   unlockedBy: (c: Collected) => boolean
 }[] = [
-  { key: "colors", label: "Has your colors", unlockedBy: (c) => has(c, "brand_colors_confirmed") },
+  { key: "colors", label: "Has your colors", unlockedBy: (c) => c.brand_colors_confirmed === true },
   { key: "trade", label: "Knows your trade", unlockedBy: (c) => has(c, "services") },
   { key: "voice", label: "Speaks your voice", unlockedBy: (c) => has(c, "brand_voice") },
   { key: "calls", label: "Can hear calls", unlockedBy: (c) => has(c, "current_phone") && has(c, "lead_delivery_phone") },
