@@ -5,6 +5,7 @@ import { ArrowRight } from "@phosphor-icons/react"
 import WebsiteStep, { type ResearchResult } from "./website-step"
 import MateChat from "./mate-chat"
 import ReviewScreen, { type CollectedShape } from "./cards/ReviewScreen"
+import VitalityHeader from "./VitalityHeader"
 import { allRequiredPresent } from "@/lib/mate/required-fields"
 import SandboxReveal from "./reveal"
 import type { Brand, CompanyData } from "@/lib/research/website"
@@ -131,6 +132,18 @@ export default function OnboardPage() {
   const [revealed, setRevealed] = useState(false)
   // Guard against React 18/19 StrictMode double-invoking the bootstrap effect.
   const bootstrapped = useRef(false)
+
+  // Auto-advance to review once the chat has everything (spec req #3). A short
+  // beat lets Mate's wrap-up message land first. The skip hatch and the manual
+  // button remain as fallbacks; the ref guards double-fires.
+  const autoAdvanced = useRef(false)
+  useEffect(() => {
+    if (!chatComplete || step !== "chat" || autoAdvanced.current) return
+    autoAdvanced.current = true
+    const t = setTimeout(() => goToReview(), 2000)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatComplete, step])
 
   useEffect(() => {
     if (bootstrapped.current) return
@@ -369,6 +382,7 @@ export default function OnboardPage() {
 
         {ready && !bootError && sessionId && step === "chat" && (
           <>
+            <VitalityHeader collected={collected} />
             <MateChat
               sessionId={sessionId}
               brand={brand}
@@ -380,8 +394,7 @@ export default function OnboardPage() {
             {chatComplete && (
               <>
                 <p style={S.advanceNote}>
-                  That&apos;s everything we need. Review it all and make any final
-                  changes.
+                  That&apos;s everything we need. Taking you to review...
                 </p>
                 <button
                   type="button"
