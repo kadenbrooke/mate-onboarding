@@ -194,7 +194,7 @@ export async function POST(req: Request) {
   // step/status folded into the initial select above (one query, not two).
   const portalMode =
     (session as { step?: string }).step === "ready" ||
-    (session as { status?: string }).status === "completed" ||
+    (session as { status?: string }).status === "complete" ||
     Boolean(session.contact_id)
 
   // Load build_requests for the portal roster (portal mode + contact bound only).

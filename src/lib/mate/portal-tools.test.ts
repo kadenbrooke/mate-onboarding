@@ -68,6 +68,23 @@ describe("portal tools scoping", () => {
     expect(JSON.stringify(profile)).not.toContain("123456789")
     expect(JSON.stringify(profile)).toContain("warm")
   })
+  it("getLeadStats happy path: scoped counts + latest timestamp", async () => {
+    const tools = buildPortalToolFns({
+      supabase: fakeSupabase(ROWS) as never,
+      contactId: "A",
+      collected: {},
+      capabilities: [],
+      requests: [],
+    })
+    const stats = (await tools.getLeadStats()) as {
+      available: boolean
+      totalInteractions: number
+      latestAt: string | null
+    }
+    expect(stats.available).toBe(true)
+    expect(stats.totalInteractions).toBe(1) // contact B's row excluded
+    expect(stats.latestAt).toBe("2026-07-01T00:00:00Z")
+  })
   it("getAgentStatus reflects the roster", async () => {
     const tools = buildPortalToolFns({
       supabase: fakeSupabase([]) as never,
