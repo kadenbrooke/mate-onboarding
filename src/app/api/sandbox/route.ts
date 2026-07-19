@@ -81,7 +81,7 @@ export async function POST(req: Request) {
       ? (session.collected as Record<string, unknown>)
       : {}
 
-  const system = sandboxSystemPrompt(collected)
+  const system = sandboxSystemPrompt(collected, session.mate_name)
   const priorTurns = sanitizeHistory(history)
   const messages: Turn[] = [...priorTurns, { role: "user", content: message }]
 

@@ -282,6 +282,19 @@ export default function OnboardPage() {
     }
   }
 
+  // Navigate back from review to chat (e.g. when brand colors still need to be
+  // confirmed). Persists the step so a reload resumes in chat.
+  function backToChat() {
+    setStep("chat")
+    if (sessionId) {
+      fetch("/api/session", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sessionId, step: "chat" }),
+      }).catch(() => {})
+    }
+  }
+
   // Advance from the completed chat to the single review screen. Persists the
   // step so a reload lands on review. Idempotent-safe: the button is only shown
   // once chat is complete.
@@ -446,6 +459,7 @@ export default function OnboardPage() {
                 sessionId={sessionId}
                 initialCollected={collected}
                 onConfirm={handleFinish}
+                onBackToChat={backToChat}
               />
             )}
             {revealed && (

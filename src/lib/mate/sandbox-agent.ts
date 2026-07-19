@@ -51,18 +51,23 @@ function brandVoice(c: SandboxCollected | null | undefined): string {
 /**
  * Build the system prompt for the sandbox First Responder. Personalized with the
  * business's real name, services, and brand voice; falls back to neutral labels
- * for any missing field so the demo always renders.
+ * for any missing field so the demo always renders. When agentName is provided
+ * (non-empty trimmed string), appends a self-identification sentence.
  */
-export function sandboxSystemPrompt(c: Record<string, unknown>): string {
+export function sandboxSystemPrompt(c: Record<string, unknown>, agentName?: string | null): string {
   const coll = c as SandboxCollected | null | undefined
   const name = businessName(coll)
   const services = serviceList(coll)
   const voice = brandVoice(coll)
+  const nameSentence =
+    typeof agentName === "string" && agentName.trim() !== ""
+      ? ` Your name is ${agentName.trim()}.`
+      : ""
 
   return `You are the after-hours text assistant for ${name}. Voice: ${voice}. No em dashes, no emoji.
 Reply like SMS: 1-2 short sentences, one question at a time. You handle missed-call text-backs and qualify
 leads for: ${services}. Collect name, which service, address, and timeline, then say you'll have ${name}
-reach out. This is a DEMO conversation for the owner to see how their agent will sound.`
+reach out. This is a DEMO conversation for the owner to see how their agent will sound.${nameSentence}`
 }
 
 /**

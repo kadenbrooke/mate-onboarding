@@ -3,9 +3,11 @@
 import { useMemo, useState } from "react"
 import { CheckCircle, Lightning } from "@phosphor-icons/react"
 import type { CompanyData } from "@/lib/research/website"
-import { allRequiredPresent, missingRequired, REQUIRED_LABELS } from "@/lib/mate/required-fields"
+import { allRequiredPresent, isFieldDone, missingRequired, REQUIRED_LABELS } from "@/lib/mate/required-fields"
 import { LEAD_CHANNELS } from "./ChannelsCard"
-import { saveCollected } from "./card-ui"
+import { cardStyles, saveCollected } from "./card-ui"
+import { normalizeEin, ENTITY_TYPES } from "./RegistrationCard"
+import { maskEin } from "@/lib/mate/mask"
 import ServicesCard from "./ServicesCard"
 import BrandVoiceCard from "./BrandVoiceCard"
 import PhoneForwardCard from "./PhoneForwardCard"
@@ -135,10 +137,12 @@ export default function ReviewScreen({
   sessionId,
   initialCollected,
   onConfirm,
+  onBackToChat,
 }: {
   sessionId: string
   initialCollected: CollectedShape
   onConfirm: () => void
+  onBackToChat?: () => void
 }) {
   // Track collected locally so an edit reflects immediately (the completeness
   // gate flips live). Seeded from the server-loaded collected passed in.
@@ -163,6 +167,7 @@ export default function ReviewScreen({
 
       {!ready && (
         <div
+          role="status"
           style={{
             border: "1px solid #f5a97f",
             borderRadius: 10,
@@ -177,7 +182,7 @@ export default function ReviewScreen({
         </div>
       )}
 
-      <ColorsReview collected={collected} />
+      <ColorsReview collected={collected} onBackToChat={onBackToChat} />
 
       <ServicesCard
         sessionId={sessionId}
@@ -243,13 +248,20 @@ export default function ReviewScreen({
 // ---------------------------------------------------------------------------
 
 /** Compact colors row: two swatches + confirmed check. No re-picker on review. */
-function ColorsReview({ collected }: { collected: CollectedShape }) {
+function ColorsReview({
+  collected,
+  onBackToChat,
+}: {
+  collected: CollectedShape
+  onBackToChat?: () => void
+}) {
   const confirmed = collected.brand_colors_confirmed === true
   return (
     <div style={{ ...reviewCardStyle, ...(confirmed ? {} : missingStyle) }}>
-      <h2 style={S.heading as React.CSSProperties}>Brand colors</h2>
+      <h2 style={cardStyles.title}>Brand colors</h2>
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <div
+          role="img"
           aria-label="Background color"
           style={{
             width: 36,
@@ -261,6 +273,7 @@ function ColorsReview({ collected }: { collected: CollectedShape }) {
           }}
         />
         <div
+          role="img"
           aria-label="Primary color"
           style={{
             width: 36,
@@ -276,9 +289,20 @@ function ColorsReview({ collected }: { collected: CollectedShape }) {
             <CheckCircle size={15} weight="fill" /> Confirmed in chat
           </span>
         ) : (
-          <span style={{ fontSize: 13, color: "#f5a97f" }}>
-            Not confirmed yet. Return to chat to pick your colors.
-          </span>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span style={{ fontSize: 13, color: "#f5a97f" }}>
+              Not confirmed yet. Return to chat to pick your colors.
+            </span>
+            {onBackToChat && (
+              <button
+                type="button"
+                onClick={onBackToChat}
+                style={cardStyles.ghostBtn}
+              >
+                Back to chat to pick colors
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
@@ -302,20 +326,33 @@ function RegistrationReview({
   const [error, setError] = useState<string | null>(null)
   const einSaved = typeof collected.ein === "string" && collected.ein !== ""
 
-  const missing = !collected.legal_business_name || !einSaved || !collected.business_address || !collected.entity_type
+  const missing = !isFieldDone("legal_business_name", collected) || !isFieldDone("ein", collected) || !isFieldDone("business_address", collected) || !isFieldDone("entity_type", collected)
 
   async function save() {
     setSaving(true)
     setError(null)
     try {
+      // Validate EIN before attempting to save anything.
+      if (ein.trim() !== "" && normalizeEin(ein) === null) {
+        setError("An EIN is 9 digits.")
+        setSaving(false)
+        return
+      }
       const patch: Record<string, unknown> = {}
       if (legalName.trim()) patch.legal_business_name = legalName.trim()
-      const einDigits = ein.replace(/\D/g, "")
-      if (einDigits.length === 9) patch.ein = einDigits
+      const normalizedEin = ein.trim() !== "" ? normalizeEin(ein) : null
+      if (normalizedEin) patch.ein = normalizedEin
       if (address.trim()) patch.business_address = address.trim()
       if (entityType) patch.entity_type = entityType
       await saveCollected(sessionId, patch)
-      onMerge(patch as Partial<CollectedShape>)
+      // After a successful save with a valid EIN, mask it locally and clear the
+      // input so the full value never lingers in state or the field.
+      const mergedPatch: Partial<CollectedShape> = { ...(patch as Partial<CollectedShape>) }
+      if (normalizedEin) {
+        mergedPatch.ein = maskEin(normalizedEin) ?? "*****"
+        setEin("")
+      }
+      onMerge(mergedPatch)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save.")
     } finally {
@@ -325,23 +362,32 @@ function RegistrationReview({
 
   return (
     <div style={{ ...reviewCardStyle, ...(missing ? missingStyle : {}) }}>
-      <h2 style={S.heading as React.CSSProperties}>Business registration</h2>
-      <label style={fieldLabel}>Legal business name</label>
-      <input style={fieldInput} value={legalName} onChange={(e) => setLegalName(e.target.value)} />
-      <label style={fieldLabel}>EIN {einSaved ? `(saved: ${collected.ein})` : ""}</label>
+      <h2 style={cardStyles.title}>Business registration</h2>
+      <label htmlFor="review-reg-legal-name" style={fieldLabel}>Legal business name</label>
+      <input id="review-reg-legal-name" style={fieldInput} value={legalName} onChange={(e) => setLegalName(e.target.value)} />
+      <label htmlFor="review-reg-ein" style={fieldLabel}>EIN {einSaved ? `(saved: ${collected.ein})` : ""}</label>
       <input
+        id="review-reg-ein"
         style={fieldInput}
         value={ein}
         onChange={(e) => setEin(e.target.value)}
         placeholder={einSaved ? "Enter only to change" : "12-3456789"}
         inputMode="numeric"
       />
-      <label style={fieldLabel}>Business address</label>
-      <input style={fieldInput} value={address} onChange={(e) => setAddress(e.target.value)} />
+      <label htmlFor="review-reg-address" style={fieldLabel}>Business address</label>
+      <input id="review-reg-address" style={fieldInput} value={address} onChange={(e) => setAddress(e.target.value)} />
       <label style={fieldLabel}>Entity type</label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-        {["LLC", "Corporation", "Sole Proprietor", "Partnership"].map((t) => (
-          <button key={t} type="button" onClick={() => setEntityType(t)} style={{ ...chipStyle, ...(entityType === t ? chipSelectedStyle : {}) }}>{t}</button>
+        {ENTITY_TYPES.map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setEntityType(t)}
+            aria-pressed={entityType === t}
+            style={{ ...chipStyle, ...(entityType === t ? chipSelectedStyle : {}) }}
+          >
+            {t}
+          </button>
         ))}
       </div>
       {error && <p style={{ color: "#f5a97f", fontSize: 12.5, margin: 0 }}>{error}</p>}
@@ -368,7 +414,7 @@ function ChannelsReview({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const missing = !collected.lead_channels?.length || !collected.website_editor_contact
+  const missing = !isFieldDone("lead_channels", collected) || !isFieldDone("website_editor_contact", collected)
 
   function toggleChannel(key: string) {
     setSelectedChannels((prev) =>
@@ -398,7 +444,7 @@ function ChannelsReview({
 
   return (
     <div style={{ ...reviewCardStyle, ...(missing ? missingStyle : {}) }}>
-      <h2 style={S.heading as React.CSSProperties}>Channels and website</h2>
+      <h2 style={cardStyles.title}>Channels and website</h2>
 
       <label style={fieldLabel}>Lead channels</label>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
@@ -407,6 +453,7 @@ function ChannelsReview({
             key={key}
             type="button"
             onClick={() => toggleChannel(key)}
+            aria-pressed={selectedChannels.includes(key)}
             style={{ ...chipStyle, ...(selectedChannels.includes(key) ? chipSelectedStyle : {}) }}
           >
             {label}
@@ -414,27 +461,35 @@ function ChannelsReview({
         ))}
       </div>
 
-      <label style={fieldLabel}>Website editor name</label>
-      <input style={fieldInput} value={editorName} onChange={(e) => setEditorName(e.target.value)} placeholder="Ben" />
+      <label htmlFor="review-editor-name" style={fieldLabel}>Website editor name</label>
+      <input id="review-editor-name" style={fieldInput} value={editorName} onChange={(e) => setEditorName(e.target.value)} placeholder="Ben" />
 
-      <label style={fieldLabel}>Website editor contact</label>
-      <input style={fieldInput} value={editorContact} onChange={(e) => setEditorContact(e.target.value)} placeholder="ben@example.com" />
+      <label htmlFor="review-editor-contact" style={fieldLabel}>Website editor contact</label>
+      <input id="review-editor-contact" style={fieldInput} value={editorContact} onChange={(e) => setEditorContact(e.target.value)} placeholder="ben@example.com" />
 
       <label style={fieldLabel}>Client can edit site</label>
       <div style={{ display: "flex", gap: 8 }}>
         {["yes", "no"].map((v) => (
-          <button key={v} type="button" onClick={() => setCanEdit(v)} style={{ ...chipStyle, ...(canEdit === v ? chipSelectedStyle : {}) }}>{v}</button>
+          <button
+            key={v}
+            type="button"
+            onClick={() => setCanEdit(v)}
+            aria-pressed={canEdit === v}
+            style={{ ...chipStyle, ...(canEdit === v ? chipSelectedStyle : {}) }}
+          >
+            {v}
+          </button>
         ))}
       </div>
 
       <div style={{ display: "flex", gap: 8 }}>
         <div style={{ flex: 1 }}>
-          <label style={fieldLabel}>Leads per week</label>
-          <input style={fieldInput} value={leadsPerWeek} onChange={(e) => setLeadsPerWeek(e.target.value)} placeholder="12" inputMode="numeric" />
+          <label htmlFor="review-leads-per-week" style={fieldLabel}>Leads per week</label>
+          <input id="review-leads-per-week" style={fieldInput} value={leadsPerWeek} onChange={(e) => setLeadsPerWeek(e.target.value)} placeholder="12" inputMode="numeric" />
         </div>
         <div style={{ flex: 1 }}>
-          <label style={fieldLabel}>Average job value</label>
-          <input style={fieldInput} value={avgJobValue} onChange={(e) => setAvgJobValue(e.target.value)} placeholder="4800" inputMode="numeric" />
+          <label htmlFor="review-avg-job-value" style={fieldLabel}>Average job value</label>
+          <input id="review-avg-job-value" style={fieldInput} value={avgJobValue} onChange={(e) => setAvgJobValue(e.target.value)} placeholder="4800" inputMode="numeric" />
         </div>
       </div>
 
@@ -445,27 +500,15 @@ function ChannelsReview({
 }
 
 // ---------------------------------------------------------------------------
-// Shared style constants
+// Shared style constants (derived from cardStyles where possible)
 // ---------------------------------------------------------------------------
 
-const reviewCardStyle: React.CSSProperties = {
-  background: "#1a1a1a", border: "1px solid #333333", borderRadius: 16,
-  padding: "20px 18px", display: "flex", flexDirection: "column", gap: 10,
-}
+const reviewCardStyle: React.CSSProperties = { ...cardStyles.card, gap: 10 }
 const missingStyle: React.CSSProperties = { borderColor: "#f5a97f" }
-const fieldLabel: React.CSSProperties = { fontSize: 13, fontWeight: 600, color: "var(--mate-accent, #ede6e6)" }
-const fieldInput: React.CSSProperties = {
-  width: "100%", background: "#0f0f0f", border: "1px solid #333333", borderRadius: 10,
-  padding: "11px 13px", color: "var(--mate-accent, #ede6e6)", fontSize: 15, outline: "none",
-}
-const chipStyle: React.CSSProperties = {
-  fontSize: 13, padding: "7px 12px", borderRadius: 999, border: "1px solid #333333",
-  background: "#0f0f0f", color: "var(--mate-accent, #ede6e6)", cursor: "pointer",
-}
-const chipSelectedStyle: React.CSSProperties = {
-  borderColor: "var(--mate-primary, #e14d1a)",
-  background: "color-mix(in srgb, var(--mate-primary, #e14d1a) 12%, transparent)",
-}
+const fieldLabel: React.CSSProperties = cardStyles.label
+const fieldInput: React.CSSProperties = cardStyles.input
+const chipStyle: React.CSSProperties = cardStyles.chip
+const chipSelectedStyle: React.CSSProperties = { ...cardStyles.chip, ...cardStyles.chipSelected }
 const saveBtnStyle: React.CSSProperties = {
   alignSelf: "flex-start", background: "var(--mate-primary, #e14d1a)", color: "#ffffff",
   border: "none", borderRadius: 10, padding: "10px 16px", fontSize: 14, fontWeight: 700, cursor: "pointer",

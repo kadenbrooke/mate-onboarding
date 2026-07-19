@@ -68,3 +68,12 @@ describe("first words", () => {
     expect(g).not.toContain("undefined")
   })
 })
+
+describe("sandboxSystemPrompt agent name", () => {
+  it("includes the agent name in the system prompt when given", () => {
+    expect(sandboxSystemPrompt({}, "Jack")).toContain("Your name is Jack.")
+  })
+  it("omits the name sentence when absent", () => {
+    expect(sandboxSystemPrompt({})).not.toContain("Your name is")
+  })
+})

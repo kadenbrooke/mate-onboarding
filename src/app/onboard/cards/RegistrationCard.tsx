@@ -11,7 +11,7 @@ import { cardStyles, CardHead, saveCollected } from "./card-ui"
  * server-side only (the session GET masks it to last 4).
  */
 
-const ENTITY_TYPES = ["LLC", "Corporation", "Sole Proprietor", "Partnership"]
+export const ENTITY_TYPES = ["LLC", "Corporation", "Sole Proprietor", "Partnership"]
 
 /** 9 digits, tolerant of the XX-XXXXXXX display format. */
 export function normalizeEin(raw: string): string | null {
