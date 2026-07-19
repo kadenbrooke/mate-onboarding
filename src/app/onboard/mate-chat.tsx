@@ -3,15 +3,31 @@
 import { useEffect, useRef, useState } from "react"
 import { PaperPlaneRight, PencilSimple, Check, X } from "@phosphor-icons/react"
 import type { Brand, CompanyData } from "@/lib/research/website"
+import ColorCard from "./cards/ColorCard"
+import RegistrationCard from "./cards/RegistrationCard"
+import ChannelsCard from "./cards/ChannelsCard"
 
 // Mirror of the server-side cap in /api/session PATCH. Kept in sync so the UI
 // prevents an over-long name before the PATCH round-trips and 400s.
 const MATE_NAME_MAX = 60
 
+type CardKind = "color" | "registration" | "channels"
 type Role = "mate" | "owner"
 interface ChatMessage {
   role: Role
   text: string
+  /** When set, render the interactive card INSTEAD of a text bubble. */
+  card?: CardKind
+  /** Card already submitted (render collapsed confirmation, not the live card). */
+  cardDone?: boolean
+}
+
+// Maps tool names from the AI SDK data stream to the card kind they trigger.
+// Using a plain Record avoids any type fights with the Set<literal> approach.
+const TOOL_TO_CARD: Record<string, CardKind> = {
+  showColorCard: "color",
+  showRegistrationCard: "registration",
+  showChannelsCard: "channels",
 }
 
 interface PriorMessage {
@@ -34,18 +50,24 @@ interface MateChatProps {
   onTurnComplete?: () => void
 }
 
+interface ParsedStream {
+  text: string
+  error: string | null
+  toolCalls: { toolName: string }[]
+  rest: string
+}
+
 /**
  * Parse a chunk of the AI SDK v4 data-stream protocol. Each line is a typed
- * part: `0:"..."` is a text delta (JSON-encoded string) and `3:"..."` is an
- * error. We only care about text and error parts for rendering; tool-call and
- * finish parts are ignored (the server persists the results). Returns the
- * unconsumed tail so a partial trailing line can be carried to the next read.
+ * part: `0:"..."` is a text delta (JSON-encoded string), `3:"..."` is an
+ * error, and `9:{...}` carries a tool call (toolCallId, toolName, args).
+ * Returns the unconsumed tail so a partial trailing line can be carried to the
+ * next read.
  */
-function parseDataStream(
-  buffer: string
-): { text: string; error: string | null; rest: string } {
+function parseDataStream(buffer: string): ParsedStream {
   let text = ""
   let error: string | null = null
+  const toolCalls: { toolName: string }[] = []
 
   const lines = buffer.split("\n")
   // The last element is either "" (clean boundary) or a partial line to keep.
@@ -64,13 +86,16 @@ function parseDataStream(
       } else if (code === "3") {
         const value = JSON.parse(payload)
         error = typeof value === "string" ? value : "Something went wrong."
+      } else if (code === "9") {
+        const value = JSON.parse(payload) as { toolName?: unknown }
+        if (typeof value?.toolName === "string") toolCalls.push({ toolName: value.toolName })
       }
     } catch {
       // Malformed part — skip it rather than aborting the whole stream.
     }
   }
 
-  return { text, error, rest }
+  return { text, error, toolCalls, rest }
 }
 
 const S = {
@@ -204,9 +229,12 @@ const S = {
   } as React.CSSProperties,
 }
 
-function greeting(mateName: string, businessName?: string): string {
+function greeting(mateName: string, businessName?: string, hasResearch?: boolean): string {
   const who = businessName?.trim() ? ` for ${businessName.trim()}` : ""
-  return `Hi, I'll be your ${mateName}${who}, or call me something else if you like (use the pencil by my name up top). I'll get your new phone and text assistant set up by just chatting with you, no forms. Ready when you are. To start, what does your business do?`
+  if (hasResearch) {
+    return `Hi, I'm ${mateName}, your new assistant${who}. You can rename me with the pencil up top. I already scanned your website and pulled the basics, so this will be quick. Ready to check what I found?`
+  }
+  return `Hi, I'm ${mateName}, your new assistant${who}. You can rename me with the pencil up top. I couldn't pull much from your website, so tell me a little about what your business does and we'll go from there.`
 }
 
 export default function MateChat({
@@ -238,7 +266,11 @@ export default function MateChat({
       }))
     if (prior.length > 0) return prior
     // Fresh session: open with Mate's greeting so the owner sees a start point.
-    return [{ role: "mate", text: greeting(name, businessName) }]
+    // Reload note: persisted messages are text-only; cards do not re-render after
+    // a reload. If a card step was not completed, the owner can ask and Mate will
+    // re-trigger the card via the tool call.
+    const hasResearch = !!(company?.services?.length || company?.phone)
+    return [{ role: "mate", text: greeting(name, businessName, hasResearch) }]
   })
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)
@@ -329,11 +361,9 @@ export default function MateChat({
     }
   }
 
-  async function send() {
-    const text = draft.trim()
-    if (!text || busy) return
-
-    setDraft("")
+  // Core fetch-and-stream implementation. Used by both the owner typing a message
+  // (via send()) and by card submissions auto-continuing the flow (handleCardDone).
+  async function sendProgrammatic(text: string) {
     setError(null)
     setBusy(true)
     // Optimistic owner bubble.
@@ -361,14 +391,22 @@ export default function MateChat({
       const decoder = new TextDecoder()
       let carry = ""
       let streamError: string | null = null
+      // Accumulate card kinds seen across all stream chunks so we can append
+      // card messages after the stream finishes (deduped).
+      const seenCards: CardKind[] = []
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
         carry += decoder.decode(value, { stream: true })
-        const { text: delta, error: partError, rest } = parseDataStream(carry)
+        const { text: delta, error: partError, toolCalls, rest } = parseDataStream(carry)
         carry = rest
         if (partError) streamError = partError
+        // Collect card kinds from any tool calls in this chunk.
+        for (const tc of toolCalls) {
+          const kind = TOOL_TO_CARD[tc.toolName]
+          if (kind && !seenCards.includes(kind)) seenCards.push(kind)
+        }
         if (delta) {
           setMessages((prev) => {
             const next = [...prev]
@@ -383,8 +421,12 @@ export default function MateChat({
 
       // Flush any trailing buffered part after the stream closes.
       if (carry.trim() !== "") {
-        const { text: delta, error: partError } = parseDataStream(carry + "\n")
+        const { text: delta, error: partError, toolCalls: trailingCalls } = parseDataStream(carry + "\n")
         if (partError) streamError = partError
+        for (const tc of trailingCalls) {
+          const kind = TOOL_TO_CARD[tc.toolName]
+          if (kind && !seenCards.includes(kind)) seenCards.push(kind)
+        }
         if (delta) {
           setMessages((prev) => {
             const next = [...prev]
@@ -395,6 +437,15 @@ export default function MateChat({
             return next
           })
         }
+      }
+
+      // Append one card message per seen card kind (deduped above), THEN signal
+      // the page. Cards render below Mate's text bubble in the chat log.
+      if (seenCards.length > 0) {
+        setMessages((prev) => [
+          ...prev,
+          ...seenCards.map<ChatMessage>((kind) => ({ role: "mate", text: "", card: kind })),
+        ])
       }
 
       if (streamError) setError(streamError)
@@ -418,10 +469,25 @@ export default function MateChat({
         }
         return trimmed
       })
-      setDraft(text)
     } finally {
       setBusy(false)
     }
+  }
+
+  function send() {
+    const text = draft.trim()
+    if (!text || busy) return
+    setDraft("")
+    sendProgrammatic(text)
+  }
+
+  // Card submit -> collapse the card + auto-send a short confirmation so Mate
+  // continues the flow without the owner typing anything.
+  function handleCardDone(kind: CardKind, continuation: string) {
+    setMessages((prev) =>
+      prev.map((m) => (m.card === kind && !m.cardDone ? { ...m, cardDone: true } : m))
+    )
+    sendProgrammatic(continuation)
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
@@ -491,11 +557,41 @@ export default function MateChat({
       {renameError && <p style={S.error}>{renameError}</p>}
 
       <div ref={logRef} style={S.log}>
-        {messages.map((m, i) => (
-          <div key={i} style={m.role === "owner" ? S.bubbleOwner : S.bubbleMate}>
-            {m.text}
-          </div>
-        ))}
+        {messages.map((m, i) => {
+          if (m.card === "color")
+            return (
+              <ColorCard
+                key={i}
+                sessionId={sessionId}
+                brand={brand}
+                done={!!m.cardDone}
+                onDone={() => handleCardDone("color", "Colors are set.")}
+              />
+            )
+          if (m.card === "registration")
+            return (
+              <RegistrationCard
+                key={i}
+                sessionId={sessionId}
+                done={!!m.cardDone}
+                onDone={() => handleCardDone("registration", "Registration details are in.")}
+              />
+            )
+          if (m.card === "channels")
+            return (
+              <ChannelsCard
+                key={i}
+                sessionId={sessionId}
+                done={!!m.cardDone}
+                onDone={() => handleCardDone("channels", "Lead channels are picked.")}
+              />
+            )
+          return (
+            <div key={i} style={m.role === "owner" ? S.bubbleOwner : S.bubbleMate}>
+              {m.text}
+            </div>
+          )
+        })}
         {busy && <div style={S.thinking}>{name} is typing...</div>}
       </div>
 
