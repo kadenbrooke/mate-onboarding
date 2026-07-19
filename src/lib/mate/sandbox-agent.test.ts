@@ -55,3 +55,16 @@ describe("sandboxGreeting", () => {
     expect(g).not.toContain("—")
   })
 })
+
+describe("first words", () => {
+  it("introduces itself by agent name and business", () => {
+    const g = sandboxGreeting({ company: { name: "J&C Asphalt" } }, "Jack")
+    expect(g).toContain("I'm Jack")
+    expect(g).toContain("J&C Asphalt")
+  })
+  it("falls back gracefully with no name", () => {
+    const g = sandboxGreeting({}, undefined)
+    expect(g.length).toBeGreaterThan(10)
+    expect(g).not.toContain("undefined")
+  })
+})

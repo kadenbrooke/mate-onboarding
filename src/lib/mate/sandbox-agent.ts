@@ -66,10 +66,19 @@ reach out. This is a DEMO conversation for the owner to see how their agent will
 }
 
 /**
- * The seeded first message the owner sees in the sandbox: the agent's missed-call
- * text-back, personalized with the business name. Pure, no em dashes, no emoji.
+ * The agent's FIRST WORDS: the seeded opening the owner sees in the sandbox.
+ * Phase 2 birth amp: the agent introduces ITSELF by its (possibly renamed)
+ * name, tied to the business, before the missed-call text-back framing. Pure,
+ * no em dashes, no emoji.
  */
-export function sandboxGreeting(c: Record<string, unknown>): string {
+export function sandboxGreeting(
+  c: Record<string, unknown>,
+  agentName?: string | null
+): string {
   const name = businessName(c as SandboxCollected | null | undefined)
-  return `Hi, thanks for calling ${name}! Sorry we missed you. What can we help you with?`
+  const self =
+    typeof agentName === "string" && agentName.trim() !== ""
+      ? `I'm ${agentName.trim()}, the new assistant for ${name}. `
+      : ""
+  return `Hi, thanks for calling ${name}! ${self}Sorry we missed you. What can we help you with?`
 }

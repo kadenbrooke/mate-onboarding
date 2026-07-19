@@ -444,7 +444,7 @@ export default function OnboardPage() {
               />
             )}
             {revealed && (
-              <SandboxReveal sessionId={sessionId} collected={collected} />
+              <SandboxReveal sessionId={sessionId} collected={collected} mateName={mateName} />
             )}
           </>
         )}

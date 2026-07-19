@@ -31,6 +31,9 @@ interface SandboxRevealProps {
   // The session's collected blob. Only company.name / services / brand_voice are
   // read (persona seed); passing the whole shape keeps the caller simple.
   collected: CollectedShape
+  /** The agent's current name (from session.mate_name). Used in the first-words
+   *  intro so the owner hears "I'm {name}, the new assistant for {business}." */
+  mateName?: string | null
 }
 
 const S = {
@@ -196,14 +199,14 @@ function businessName(collected: CollectedShape): string {
   return typeof name === "string" && name.trim() !== "" ? name.trim() : "your agent"
 }
 
-export default function SandboxReveal({ sessionId, collected }: SandboxRevealProps) {
+export default function SandboxReveal({ sessionId, collected, mateName }: SandboxRevealProps) {
   const agentLabel = businessName(collected)
 
   // Ephemeral conversation. Seeded with the agent's missed-call text-back so the
   // owner has an opening bubble to reply to, exactly like a real missed-call
   // text-back would arrive.
   const [turns, setTurns] = useState<Turn[]>(() => [
-    { role: "assistant", content: sandboxGreeting(collected as Record<string, unknown>) },
+    { role: "assistant", content: sandboxGreeting(collected as Record<string, unknown>, mateName) },
   ])
   const [draft, setDraft] = useState("")
   const [busy, setBusy] = useState(false)

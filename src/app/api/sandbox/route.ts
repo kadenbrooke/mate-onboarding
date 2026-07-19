@@ -65,7 +65,7 @@ export async function POST(req: Request) {
 
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
-    .select("id, collected")
+    .select("id, collected, mate_name")
     .eq("id", sessionId)
     .maybeSingle()
 
