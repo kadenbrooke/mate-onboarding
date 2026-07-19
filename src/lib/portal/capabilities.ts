@@ -114,7 +114,9 @@ export function agentRoster(caps: Cap[], requests: Req[]): AgentCard[] {
       reason:
         key === "first_responder" && cap?.status === "under_construction"
           ? "License pending carrier approval"
-          : "Not built yet. Ask your Mate to get it on the list.",
+          : cap?.status === "under_construction"
+            ? "In progress. Your team is building this."
+            : "Not built yet. Ask your Mate to get it on the list.",
     }
   })
 }

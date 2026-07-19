@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { COOKIE_NAME } from "@/lib/session-cookie"
 
 /**
  * GET /api/portal?session=<id> — portal data for the post-onboarding client view.
@@ -54,11 +55,16 @@ function emptyPortal(mateName: string | null): EmptyPortal {
 }
 
 export async function GET(req: NextRequest) {
-  // Prefer the signed cookie; fall back to the ?session= param (v1 links).
+  // An EXPLICIT ?session= param wins on this read-only GET: a fresh portal
+  // link must never be shadowed by a stale 90-day cookie from an earlier
+  // session (re-onboard / corrected link). The cookie only fills in when no
+  // param is present. A stolen-UUID attacker gains nothing from this order:
+  // their cookie-less browser hits the param path either way. Write paths
+  // (/api/mate) keep cookie-over-body precedence.
   let sessionId = req.nextUrl.searchParams.get("session")
   const secret = process.env.MATE_SESSION_SECRET
-  const cookieToken = req.cookies.get("mate_session")?.value
-  if (secret && cookieToken) {
+  const cookieToken = req.cookies.get(COOKIE_NAME)?.value
+  if (!sessionId && secret && cookieToken) {
     const { verifySession } = await import("@/lib/session-cookie")
     const verified = verifySession(cookieToken, secret)
     if (verified) sessionId = verified
