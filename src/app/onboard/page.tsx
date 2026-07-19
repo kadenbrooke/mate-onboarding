@@ -409,46 +409,32 @@ export default function OnboardPage() {
               onTurnComplete={refreshCollected}
               onNameChange={setMateName}
             />
+            {/* One big advance button, always visible (founder directive):
+                grey while the conversation is still going, fills with the
+                brand primary the moment everything is collected and Mate
+                recommends moving on. Auto-advance still fires 2s later; this
+                is the visible state + manual path. */}
             {chatComplete && (
-              <>
-                <p style={S.advanceNote}>
-                  That&apos;s everything we need. Taking you to review...
-                </p>
-                <button
-                  type="button"
-                  onClick={goToReview}
-                  style={S.advanceBtn}
-                  aria-label="Review your setup"
-                >
-                  Review your setup
-                  <ArrowRight size={18} weight="bold" />
-                </button>
-              </>
+              <p style={S.advanceNote}>
+                That&apos;s everything we need. Taking you to review...
+              </p>
             )}
-            {!chatComplete && (
-              <button
-                type="button"
-                onClick={goToReview}
-                aria-label="Skip to review"
-                style={{
-                  marginTop: 14,
-                  alignSelf: "center",
-                  background: "none",
-                  border: "none",
-                  padding: 4,
-                  color: "var(--mate-accent, #888)",
-                  fontSize: 13,
-                  opacity: 0.65,
-                  cursor: "pointer",
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                }}
-              >
-                Skip to review
-                <ArrowRight size={14} weight="bold" />
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={goToReview}
+              aria-label={chatComplete ? "Review your setup" : "Skip to review"}
+              style={{
+                ...S.advanceBtn,
+                background: chatComplete
+                  ? "var(--mate-primary, #e14d1a)"
+                  : "#3a3a3a",
+                color: chatComplete ? "#ffffff" : "#a8a8a8",
+                transition: "background 400ms ease, color 400ms ease",
+              }}
+            >
+              {chatComplete ? "Review your setup" : "Skip to review"}
+              <ArrowRight size={18} weight="bold" />
+            </button>
           </>
         )}
 

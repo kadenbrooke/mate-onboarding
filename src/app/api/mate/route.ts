@@ -4,6 +4,11 @@ import { z } from "zod"
 import { openai } from "@ai-sdk/openai"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
+import {
+  missingRequired,
+  REQUIRED_LABELS,
+  type RequiredCollected,
+} from "@/lib/mate/required-fields"
 import { matePortalPrompt } from "@/lib/mate/portal-prompt"
 import { toolSchemas, applyToolResult, type Collected } from "@/lib/mate/tools"
 import { capabilitySummary, type Capability } from "@/lib/mate/capability"
@@ -253,7 +258,17 @@ export async function POST(req: Request) {
     model: openai("gpt-4o-mini"),
     system: portalMode
       ? matePortalPrompt(session.mate_name ?? "Mate", businessName, capabilitiesText)
-      : mateSystemPrompt(session.mate_name ?? "Mate", company, capabilitiesText),
+      : mateSystemPrompt(
+          session.mate_name ?? "Mate",
+          company,
+          capabilitiesText,
+          // Server-checked finish line: the model wrapped up early in founder
+          // testing when left to its own memory. Labels of still-missing
+          // required fields, computed from the REAL collected blob each turn.
+          missingRequired(collected as RequiredCollected).map(
+            (k) => REQUIRED_LABELS[k]
+          )
+        ),
     messages: modelMessages,
     tools: portalMode ? portalTools : tools,
     maxSteps: 5,

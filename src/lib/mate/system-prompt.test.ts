@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { mateSystemPrompt, type ResearchedCompany } from "./system-prompt"
+import { mateSystemPrompt, collectionStatusBlock, type ResearchedCompany } from "./system-prompt"
 
 const rich: ResearchedCompany = {
   name: "Summit Paving",
@@ -155,5 +155,33 @@ describe("phase 2 flow", () => {
   })
   it("no em dashes anywhere in the prompt's client-facing examples", () => {
     expect(p).not.toContain("—")
+  })
+})
+
+describe("collection status + warmth (founder feedback 2026-07-19)", () => {
+  const company = { name: "J&C Asphalt", services: ["paving"] }
+  it("injects the still-missing list and forbids wrapping up", () => {
+    const p = mateSystemPrompt("Jack", company, undefined, ["EIN", "Lead channels"])
+    expect(p).toContain("still missing - EIN, Lead channels")
+    expect(p).toContain("Do NOT wrap up")
+  })
+  it("tells the model to wrap up when nothing is missing", () => {
+    const p = mateSystemPrompt("Jack", company, undefined, [])
+    expect(p).toContain("everything is captured")
+    expect(p).not.toContain("still missing")
+  })
+  it("omits the status block entirely when labels are not provided", () => {
+    const p = mateSystemPrompt("Jack", company)
+    expect(p).not.toContain("COLLECTION STATUS")
+  })
+  it("carries the warmth directives", () => {
+    const p = mateSystemPrompt("Jack", company)
+    expect(p).toContain("WARMTH")
+    expect(p).toContain("React to what they share")
+    expect(p.toLowerCase()).toContain("never a form")
+  })
+  it("collectionStatusBlock is exported and pure", () => {
+    expect(collectionStatusBlock([])).toContain("everything is captured")
+    expect(collectionStatusBlock(["EIN"])).toContain("EIN")
   })
 })

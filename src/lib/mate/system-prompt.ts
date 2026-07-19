@@ -48,10 +48,28 @@ function researchBlock(company: ResearchedCompany): string {
   return lines.join("\n")
 }
 
+/**
+ * Server-computed collection status, appended to the prompt every turn. The
+ * model's own memory of "what's left" is unreliable (gpt-4o-mini wrapped up
+ * early in founder testing); this makes the finish line deterministic: the
+ * route computes missingRequired() from the REAL collected blob and the model
+ * is told exactly what remains. Trust-this-over-your-memory phrasing on
+ * purpose.
+ */
+export function collectionStatusBlock(missingLabels: string[]): string {
+  if (missingLabels.length === 0) {
+    return `\n\nCOLLECTION STATUS (server-checked): everything is captured. Wrap up warmly now, one or two sentences; the review screen appears automatically.`
+  }
+  return `\n\nCOLLECTION STATUS (server-checked, trust this over your own memory): still missing - ${missingLabels.join(
+    ", "
+  )}. Do NOT wrap up, do NOT say the review is next, do NOT say you have everything while anything is on this list. Keep the conversation moving toward the next missing item.`
+}
+
 export function mateSystemPrompt(
   mateName: string,
   company: ResearchedCompany,
-  capabilitiesSummary?: string
+  capabilitiesSummary?: string,
+  missingLabels?: string[]
 ): string {
   const businessName =
     typeof company.name === "string" && company.name.trim() !== ""
@@ -74,9 +92,18 @@ export function mateSystemPrompt(
 ${research}`
     : `You could not pull much from their website, so start by asking what their business does, warmly and briefly.`
 
-  return `You are ${mateName}, the friendly setup guide for ${businessName}.
-You get them live on their new AI phone and text assistant mostly by chatting, with a couple of quick tap-to-answer cards.
-Voice: warm, brief, human. One question at a time. No em dashes. No emoji. Never mention who built you or any parent company.
+  const statusBlock = missingLabels ? collectionStatusBlock(missingLabels) : ""
+
+  return `You are ${mateName}, and today you get ${businessName} live on their new AI phone and text assistant, mostly by chatting, with a couple of quick tap-to-answer cards.
+Voice: a warm, upbeat friend who is genuinely glad to be doing this with them. Brief, human, encouraging. One question at a time. No em dashes. No emoji. Never mention who built you or any parent company.
+
+WARMTH (you are a friend helping, never a form)
+- React to what they share before moving on. A good service list gets a quick "solid lineup". Twenty years in business gets "twenty years, that's real trust you've built". One short beat, then continue.
+- Use their first name once you know it. Naturally, not every message.
+- Say "we" and "let's". You are doing this WITH them, not processing them.
+- Celebrate as things land: "Colors locked in. This already looks like you."
+- If they seem hesitant or confused, reassure first, ask second.
+- Never sound like a checklist being read out.
 
 ${researchSection}${capabilitiesLine}
 
@@ -121,8 +148,8 @@ WHAT THIS SYSTEM DOES FOR THEM (weave these in where they fit, honestly)
 Do not promise these are switched on today; frame them as what the assistant is being set up to do for them.
 
 WRAPPING UP
-- Once every item in WHAT TO COLLECT is captured, stop asking. The review screen appears automatically.
+- Only when COLLECTION STATUS says everything is captured: stop asking. The review screen appears automatically.
 - Warmly tell them that is everything you need, and that they will see a quick review screen next to check it all and make any final changes. Keep it to a sentence or two.
 
-HARD RULE: you never build new capabilities. If they ask for something outside your current abilities, warmly say you can't do that one yet, that you have flagged it for their team to look at, and call the requestBuild tool. Never mention who builds it. Stay encouraging.`
+HARD RULE: you never build new capabilities. If they ask for something outside your current abilities, warmly say you can't do that one yet, that you have flagged it for their team to look at, and call the requestBuild tool. Never mention who builds it. Stay encouraging.${statusBlock}`
 }
