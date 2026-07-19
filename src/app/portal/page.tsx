@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react"
 import { House, Robot, ChatCircleDots } from "@phosphor-icons/react"
 import MateChat from "../onboard/mate-chat"
+import SandboxReveal from "../onboard/reveal"
+import { CaretLeft } from "@phosphor-icons/react"
 import HomeTab, { type Baseline } from "./HomeTab"
 import AgentsTab from "./AgentsTab"
 import type { Cap, Req, AgentCard } from "@/lib/portal/capabilities"
@@ -100,6 +102,8 @@ export default function PortalPage() {
   // session whose onboarding simply is not finished.
   const [noSession, setNoSession] = useState(false)
   const [tab, setTab] = useState<Tab>("home")
+  // The First Responder DEMO card opens the sandbox inline on the Agents tab.
+  const [sandboxOpen, setSandboxOpen] = useState(false)
   const loaded = useRef(false)
 
   useEffect(() => {
@@ -191,7 +195,40 @@ export default function PortalPage() {
                 <HomeTab baseline={data?.baseline ?? null} />
               </div>
               <div style={{ display: tab === "agents" ? "block" : "none" }}>
-                <AgentsTab agents={data?.agents ?? []} />
+                {sandboxOpen && sessionId ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => setSandboxOpen(false)}
+                      style={{
+                        alignSelf: "flex-start",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: 6,
+                        background: "none",
+                        border: "1px solid #333333",
+                        borderRadius: 999,
+                        padding: "7px 14px",
+                        color: "var(--mate-accent, #ede6e6)",
+                        fontSize: 13,
+                        cursor: "pointer",
+                      }}
+                    >
+                      <CaretLeft size={14} weight="bold" />
+                      Back to agents
+                    </button>
+                    <SandboxReveal
+                      sessionId={sessionId}
+                      collected={{ company: { name: data?.businessName ?? undefined } }}
+                      mateName={mateName}
+                    />
+                  </div>
+                ) : (
+                  <AgentsTab
+                    agents={data?.agents ?? []}
+                    onDemoTap={() => setSandboxOpen(true)}
+                  />
+                )}
               </div>
               {sessionId && (
                 <div

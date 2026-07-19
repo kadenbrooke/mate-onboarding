@@ -126,7 +126,15 @@ export function agentRoster(caps: Cap[], requests: Req[]): AgentCard[] {
   return AUTO_MATE_5.map(({ key, label }) => {
     const cap = byKey.get(key)
     if (cap?.status === "live") return { key, label, status: "live" as const, reason: null }
-    if (cap?.status === "demo") return { key, label, status: "demo" as const, reason: null }
+    if (cap?.status === "demo")
+      return {
+        key,
+        label,
+        status: "demo" as const,
+        // Honest + inviting: the demo is playable now, the real number is
+        // waiting on the carrier registration.
+        reason: "Try the demo while your texting license clears carriers.",
+      }
     return {
       key,
       label,

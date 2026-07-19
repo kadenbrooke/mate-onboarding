@@ -108,3 +108,14 @@ describe("agentRoster capability aliases", () => {
     expect(roster[3].status).toBe("coming_soon")
   })
 })
+
+describe("demo card reason", () => {
+  it("demo cards carry the honest license-pending invite", () => {
+    const roster = agentRoster(
+      [{ capability_key: "first_responder_sms", label: "x", status: "demo" }],
+      []
+    )
+    expect(roster[0].status).toBe("demo")
+    expect(roster[0].reason).toContain("Try the demo")
+  })
+})

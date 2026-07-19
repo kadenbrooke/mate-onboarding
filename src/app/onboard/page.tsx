@@ -6,8 +6,9 @@ import WebsiteStep, { type ResearchResult } from "./website-step"
 import MateChat from "./mate-chat"
 import ReviewScreen, { type CollectedShape } from "./cards/ReviewScreen"
 import VitalityHeader from "./VitalityHeader"
+import { GatheringTransition, BirthTransition } from "./transitions"
+import { vitality } from "@/lib/mate/vitality"
 import { allRequiredPresent } from "@/lib/mate/required-fields"
-import SandboxReveal from "./reveal"
 import type { Brand, CompanyData } from "@/lib/research/website"
 
 // Client-side onboarding orchestrator. Chat-first flow:
@@ -127,9 +128,12 @@ export default function OnboardPage() {
   // True once Mate has captured every required field (checked by re-fetching the
   // session after each turn). Gates the "Review your setup" advance.
   const [chatComplete, setChatComplete] = useState(false)
-  // True once the review screen is confirmed (session step === 'ready'). Gates
-  // the personalized sandbox reveal so the owner can text their own agent.
-  const [revealed, setRevealed] = useState(false)
+  // Birth-sequence transition overlays: "gathering" plays chat -> review,
+  // "birth" plays review -> Command Center (then navigates to /portal). The
+  // sandbox demo now lives on the Command Center's First Responder card.
+  const [transition, setTransition] = useState<null | "gathering" | "birth">(
+    null
+  )
   // Guard against React 18/19 StrictMode double-invoking the bootstrap effect.
   const bootstrapped = useRef(false)
 
@@ -220,10 +224,9 @@ export default function OnboardPage() {
       // conversation. A brand having been captured also implies past 'website'.
       const persistedStep = data.step
       if (persistedStep === "ready") {
-        setStep("review")
-        setRevealed(true)
-        confirmed.current = true
-        completionFired.current = true
+        // Finished sessions live in the Command Center now, not /onboard.
+        window.location.replace("/portal")
+        return
       } else if (persistedStep === "review") {
         setStep("review")
       } else if (
@@ -295,11 +298,12 @@ export default function OnboardPage() {
     }
   }
 
-  // Advance from the completed chat to the single review screen. Persists the
-  // step so a reload lands on review. Idempotent-safe: the button is only shown
-  // once chat is complete.
+  // Advance from the completed chat toward the review screen, via the
+  // "gathering" transition beat. Persists the step so a reload lands on
+  // review. Guarded so a double-tap during the beat can't restart it.
   function goToReview() {
-    setStep("review")
+    if (step === "review" || transition !== null) return
+    setTransition("gathering")
     if (sessionId) {
       fetch("/api/session", {
         method: "PATCH",
@@ -311,15 +315,21 @@ export default function OnboardPage() {
     }
   }
 
-  // Fired by the review screen's "Confirm and finish". Reveals the sandbox,
-  // provisions the client (CRM contact, materials, capabilities, session
-  // complete), and advances the session step to 'ready'. Guards keep the
-  // provision + step-advance to exactly once per session.
+  function handleGatheringDone() {
+    setTransition(null)
+    setStep("review")
+  }
+
+  // Fired by the review screen's "Confirm and finish". Plays the birth
+  // transition (their agent wakes up + first words), provisions the client
+  // (CRM contact, materials, capabilities, session complete), then lands them
+  // on the full Command Center. Guards keep the provision + step-advance to
+  // exactly once per session.
   const confirmed = useRef(false)
   const completionFired = useRef(false)
   function handleFinish() {
-    // Reveal the sandbox immediately — it reads only in-memory collected.
-    setRevealed(true)
+    // Start the birth moment immediately; provisioning runs behind it.
+    setTransition("birth")
     if (!sessionId) return
 
     // Provision the client. Fire-and-forget so the reveal is never blocked, but
@@ -397,7 +407,24 @@ export default function OnboardPage() {
           </>
         )}
 
-        {ready && !bootError && sessionId && step === "chat" && (
+        {/* Birth-sequence transitions replace the step content while playing. */}
+        {ready && !bootError && sessionId && transition === "gathering" && (
+          <GatheringTransition
+            chips={vitality(collected)
+              .chips.filter((c) => c.unlocked)
+              .map((c) => c.label)}
+            onDone={handleGatheringDone}
+          />
+        )}
+        {ready && !bootError && sessionId && transition === "birth" && (
+          <BirthTransition
+            agentName={mateName?.trim() || "your new assistant"}
+            businessName={company?.name?.trim() || "your business"}
+            onDone={() => window.location.assign("/portal")}
+          />
+        )}
+
+        {ready && !bootError && sessionId && transition === null && step === "chat" && (
           <>
             <VitalityHeader collected={collected} />
             <MateChat
@@ -438,20 +465,13 @@ export default function OnboardPage() {
           </>
         )}
 
-        {ready && !bootError && sessionId && step === "review" && (
-          <>
-            {!revealed && (
-              <ReviewScreen
-                sessionId={sessionId}
-                initialCollected={collected}
-                onConfirm={handleFinish}
-                onBackToChat={backToChat}
-              />
-            )}
-            {revealed && (
-              <SandboxReveal sessionId={sessionId} collected={collected} mateName={mateName} />
-            )}
-          </>
+        {ready && !bootError && sessionId && transition === null && step === "review" && (
+          <ReviewScreen
+            sessionId={sessionId}
+            initialCollected={collected}
+            onConfirm={handleFinish}
+            onBackToChat={backToChat}
+          />
         )}
       </div>
     </div>

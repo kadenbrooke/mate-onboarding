@@ -1,9 +1,10 @@
 "use client"
 
+import { CaretRight } from "@phosphor-icons/react"
 import type { AgentCard } from "@/lib/portal/capabilities"
 
-/** The Auto Mate 5 as status cards: LIVE (green) / DEMO (amber) / COMING SOON
- *  (gray + honest reason). */
+/** The Auto Mate 5 as status cards: LIVE (green) / DEMO (amber, tappable ->
+ *  opens the sandbox) / COMING SOON (gray + honest reason). */
 
 const badgeBase: React.CSSProperties = {
   fontSize: 10.5,
@@ -25,36 +26,63 @@ const LABELS: Record<AgentCard["status"], string> = {
   coming_soon: "COMING SOON",
 }
 
-export default function AgentsTab({ agents }: { agents: AgentCard[] }) {
+export default function AgentsTab({
+  agents,
+  onDemoTap,
+}: {
+  agents: AgentCard[]
+  /** Fired when a DEMO card is tapped (opens the sandbox for that agent). */
+  onDemoTap?: (key: string) => void
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {agents.map((a) => (
-        <div
-          key={a.key}
-          style={{
-            background: "#1a1a1a",
-            border: "1px solid #333333",
-            borderRadius: 14,
-            padding: "14px 16px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: 10,
-          }}
-        >
-          <div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: "var(--mate-accent, #ede6e6)", margin: 0 }}>
-              {a.label}
-            </p>
-            {a.reason && (
-              <p style={{ fontSize: 12, color: "#888888", margin: "3px 0 0", lineHeight: 1.4 }}>
-                {a.reason}
+      {agents.map((a) => {
+        const tappable = a.status === "demo" && !!onDemoTap
+        const inner = (
+          <>
+            <div style={{ textAlign: "left" }}>
+              <p style={{ fontSize: 15, fontWeight: 700, color: "var(--mate-accent, #ede6e6)", margin: 0 }}>
+                {a.label}
               </p>
-            )}
+              {a.reason && (
+                <p style={{ fontSize: 12, color: "#888888", margin: "3px 0 0", lineHeight: 1.4 }}>
+                  {a.reason}
+                </p>
+              )}
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+              <span style={BADGES[a.status]}>{LABELS[a.status]}</span>
+              {tappable && <CaretRight size={16} color="#e0c04c" />}
+            </div>
+          </>
+        )
+        const cardStyle: React.CSSProperties = {
+          background: "#1a1a1a",
+          border: tappable ? "1px solid #5a4a1a" : "1px solid #333333",
+          borderRadius: 14,
+          padding: "14px 16px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          width: "100%",
+        }
+        return tappable ? (
+          <button
+            key={a.key}
+            type="button"
+            onClick={() => onDemoTap?.(a.key)}
+            aria-label={`Try the ${a.label} demo`}
+            style={{ ...cardStyle, cursor: "pointer", font: "inherit", color: "inherit" }}
+          >
+            {inner}
+          </button>
+        ) : (
+          <div key={a.key} style={cardStyle}>
+            {inner}
           </div>
-          <span style={BADGES[a.status]}>{LABELS[a.status]}</span>
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }

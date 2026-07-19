@@ -245,7 +245,10 @@ export async function POST(req: NextRequest) {
     {
       capability_key: "first_responder_sms",
       label: "Missed-call text-back + lead qualifier",
-      status: "under_construction",
+      // Seeded as a playable DEMO: the sandbox on the Command Center's First
+      // Responder card works from day one while the real build + 10DLC
+      // registration happen. Kaden flips this to 'live' at go-live.
+      status: "demo",
     },
     {
       capability_key: "gbp_reviews",
