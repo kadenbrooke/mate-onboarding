@@ -54,7 +54,16 @@ function emptyPortal(mateName: string | null): EmptyPortal {
 }
 
 export async function GET(req: NextRequest) {
-  const sessionId = req.nextUrl.searchParams.get("session")
+  // Prefer the signed cookie; fall back to the ?session= param (v1 links).
+  let sessionId = req.nextUrl.searchParams.get("session")
+  const secret = process.env.MATE_SESSION_SECRET
+  const cookieToken = req.cookies.get("mate_session")?.value
+  if (secret && cookieToken) {
+    const { verifySession } = await import("@/lib/session-cookie")
+    const verified = verifySession(cookieToken, secret)
+    if (verified) sessionId = verified
+  }
+
   if (!sessionId || sessionId.trim() === "") {
     return NextResponse.json(
       { error: "Missing session" },

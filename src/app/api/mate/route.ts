@@ -30,6 +30,15 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing or invalid message" }, { status: 400 })
   }
 
+  let resolvedSessionId = sessionId
+  const secret = process.env.MATE_SESSION_SECRET
+  const cookieToken = req.headers.get("cookie")?.match(/(?:^|;\s*)mate_session=([^;]+)/)?.[1]
+  if (secret && cookieToken) {
+    const { verifySession } = await import("@/lib/session-cookie")
+    const verified = verifySession(decodeURIComponent(cookieToken), secret)
+    if (verified) resolvedSessionId = verified
+  }
+
   // Service-role client, created INSIDE the handler, never at module scope.
   // Bypasses RLS so this trusted server route can load/persist onboarding_sessions.
   const supabase = createServiceClient()
@@ -37,7 +46,7 @@ export async function POST(req: Request) {
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
     .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key")
-    .eq("id", sessionId)
+    .eq("id", resolvedSessionId)
     .maybeSingle()
 
   if (loadError) {
@@ -208,7 +217,7 @@ export async function POST(req: Request) {
             messages: nextMessages,
             updated_at: now,
           })
-          .eq("id", sessionId)
+          .eq("id", resolvedSessionId)
 
         if (saveError) {
           console.error("mate route: failed to persist session", saveError.message)

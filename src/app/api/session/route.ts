@@ -56,7 +56,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  return NextResponse.json({ id: data.id }, { status: 201 })
+  const response = NextResponse.json({ id: data.id }, { status: 201 })
+  const secret = process.env.MATE_SESSION_SECRET
+  if (secret) {
+    const { signSession, COOKIE_NAME } = await import("@/lib/session-cookie")
+    response.cookies.set(COOKIE_NAME, signSession(data.id, secret), {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: process.env.NODE_ENV === "production",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 90, // 90 days
+    })
+  }
+  return response
 }
 
 /**
