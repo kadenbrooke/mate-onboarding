@@ -48,6 +48,9 @@ interface MateChatProps {
   // which required fields Mate has captured and, once complete, offers the
   // review advance. Optional so the chat still works standalone.
   onTurnComplete?: () => void
+  // Fired when the owner renames their Mate, so the page can keep its own
+  // mate_name state in sync (the reveal's first-words intro reads it).
+  onNameChange?: (name: string) => void
 }
 
 interface ParsedStream {
@@ -244,6 +247,7 @@ export default function MateChat({
   mateName,
   initialMessages,
   onTurnComplete,
+  onNameChange,
 }: MateChatProps) {
   const businessName = company?.name
 
@@ -343,6 +347,7 @@ export default function MateChat({
       }
       // Persisted: reflect the new name live everywhere it's rendered.
       setName(next)
+      onNameChange?.(next)
       setRenaming(false)
     } catch (err) {
       setRenameError(err instanceof Error ? err.message : "Rename failed.")

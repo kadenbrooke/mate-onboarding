@@ -249,6 +249,10 @@ export default function OnboardPage() {
       const res = await fetch(`/api/session?id=${encodeURIComponent(sessionId)}`)
       if (!res.ok) return
       const data = (await res.json()) as LoadedSession
+      // Keep mate_name in sync on the fresh-session path too, so the reveal's
+      // first-words intro fires without a reload (research sets the default
+      // name server-side; hydrate only covers resumes).
+      if (data.mate_name) setMateName(data.mate_name)
       if (data.collected && typeof data.collected === "object") {
         setCollected(data.collected)
         if (data.collected.company) setCompany(data.collected.company)
@@ -390,6 +394,7 @@ export default function OnboardPage() {
               mateName={mateName}
               initialMessages={priorMessages}
               onTurnComplete={refreshCollected}
+              onNameChange={setMateName}
             />
             {chatComplete && (
               <>
