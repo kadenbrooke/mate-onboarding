@@ -24,10 +24,13 @@ export const LEAD_CHANNELS: { key: string; label: string }[] = [
 export default function ChannelsCard({
   sessionId,
   done,
+  streaming,
   onDone,
 }: {
   sessionId: string
   done: boolean
+  /** True while the parent chat is mid-stream; disables submit to prevent concurrent card submissions. */
+  streaming?: boolean
   onDone: () => void
 }) {
   const [selected, setSelected] = useState<string[]>([])
@@ -85,6 +88,7 @@ export default function ChannelsCard({
             key={key}
             type="button"
             onClick={() => toggle(key)}
+            aria-pressed={selected.includes(key)}
             style={{ ...cardStyles.chip, ...(selected.includes(key) ? cardStyles.chipSelected : {}) }}
           >
             {label}
@@ -125,8 +129,8 @@ export default function ChannelsCard({
       <button
         type="button"
         onClick={submit}
-        disabled={selected.length === 0 || saving}
-        style={{ ...cardStyles.confirmBtn, ...(selected.length === 0 || saving ? cardStyles.confirmBtnDisabled : {}) }}
+        disabled={selected.length === 0 || saving || !!streaming}
+        style={{ ...cardStyles.confirmBtn, ...(selected.length === 0 || saving || !!streaming ? cardStyles.confirmBtnDisabled : {}) }}
       >
         <CheckCircle size={16} weight="fill" />
         That is where they come in

@@ -22,10 +22,13 @@ export function normalizeEin(raw: string): string | null {
 export default function RegistrationCard({
   sessionId,
   done,
+  streaming,
   onDone,
 }: {
   sessionId: string
   done: boolean
+  /** True while the parent chat is mid-stream; disables submit to prevent concurrent card submissions. */
+  streaming?: boolean
   onDone: () => void
 }) {
   const [legalName, setLegalName] = useState("")
@@ -81,14 +84,15 @@ export default function RegistrationCard({
       </p>
 
       <div>
-        <span style={cardStyles.label}>Legal business name</span>
-        <input style={cardStyles.input} value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="J and C Asphalt LLC" />
+        <label htmlFor="reg-legal-name" style={cardStyles.label}>Legal business name</label>
+        <input id="reg-legal-name" style={cardStyles.input} value={legalName} onChange={(e) => setLegalName(e.target.value)} placeholder="J and C Asphalt LLC" />
       </div>
 
       <div>
-        <span style={cardStyles.label}>EIN</span>
+        <label htmlFor="reg-ein" style={cardStyles.label}>EIN</label>
         <p style={cardStyles.hint}>Your 9 digit federal tax ID, like 12-3456789. Kept private.</p>
         <input
+          id="reg-ein"
           style={{ ...cardStyles.input, ...(ein !== "" && !einOk ? cardStyles.inputError : {}) }}
           value={ein}
           onChange={(e) => setEin(e.target.value)}
@@ -99,13 +103,13 @@ export default function RegistrationCard({
       </div>
 
       <div>
-        <span style={cardStyles.label}>Business address</span>
+        <label htmlFor="reg-street" style={cardStyles.label}>Business address</label>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <input style={cardStyles.input} value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street address" />
+          <input id="reg-street" style={cardStyles.input} value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street address" />
           <div style={{ display: "flex", gap: 8 }}>
-            <input style={{ ...cardStyles.input, flex: 2 }} value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" />
-            <input style={{ ...cardStyles.input, flex: 1 }} value={state} onChange={(e) => setState(e.target.value)} placeholder="State" maxLength={2} />
-            <input style={{ ...cardStyles.input, flex: 1 }} value={zip} onChange={(e) => setZip(e.target.value)} placeholder="ZIP" inputMode="numeric" />
+            <input id="reg-city" style={{ ...cardStyles.input, flex: 2 }} value={city} onChange={(e) => setCity(e.target.value)} placeholder="City" />
+            <input id="reg-state" style={{ ...cardStyles.input, flex: 1 }} value={state} onChange={(e) => setState(e.target.value)} placeholder="State" maxLength={2} />
+            <input id="reg-zip" style={{ ...cardStyles.input, flex: 1 }} value={zip} onChange={(e) => setZip(e.target.value)} placeholder="ZIP" inputMode="numeric" />
           </div>
         </div>
       </div>
@@ -118,6 +122,7 @@ export default function RegistrationCard({
               key={t}
               type="button"
               onClick={() => setEntityType(t)}
+              aria-pressed={entityType === t}
               style={{ ...cardStyles.chip, ...(entityType === t ? cardStyles.chipSelected : {}) }}
             >
               {t}
@@ -131,8 +136,8 @@ export default function RegistrationCard({
       <button
         type="button"
         onClick={submit}
-        disabled={!complete || saving}
-        style={{ ...cardStyles.confirmBtn, ...(!complete || saving ? cardStyles.confirmBtnDisabled : {}) }}
+        disabled={!complete || saving || !!streaming}
+        style={{ ...cardStyles.confirmBtn, ...(!complete || saving || !!streaming ? cardStyles.confirmBtnDisabled : {}) }}
       >
         <CheckCircle size={16} weight="fill" />
         Save official info

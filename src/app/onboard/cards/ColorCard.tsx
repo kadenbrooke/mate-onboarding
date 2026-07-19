@@ -28,21 +28,30 @@ export default function ColorCard({
   sessionId,
   brand,
   done,
+  streaming,
   onDone,
 }: {
   sessionId: string
   brand?: Brand | null
   done: boolean
+  /** True while the parent chat is mid-stream; disables confirm to prevent concurrent submissions. */
+  streaming?: boolean
   onDone: () => void
 }) {
-  const primaries =
+  // Prepend the brand's current primary to the candidate list if absent, so the
+  // initial selection always matches a rendered swatch and the original pick is recoverable.
+  const rawPrimaries =
     brand?.candidates?.primaries?.length
       ? brand.candidates.primaries
       : [brand?.colors?.primary ?? "#e14d1a"]
-  const backgrounds =
+  const primaries = [...new Set([brand?.colors?.primary, ...rawPrimaries].filter(Boolean) as string[])]
+
+  // Same for backgrounds: prepend the current bg so the initial selection always has a swatch.
+  const rawBackgrounds =
     brand?.candidates?.backgrounds?.length
       ? brand.candidates.backgrounds
       : FALLBACK_BGS
+  const backgrounds = [...new Set([brand?.colors?.bg, ...rawBackgrounds].filter(Boolean) as string[])]
 
   const [bg, setBg] = useState<string>(brand?.colors?.bg ?? backgrounds[0])
   const [primary, setPrimary] = useState<string>(
@@ -72,7 +81,9 @@ export default function ColorCard({
   }
   function fixForMe() {
     setPrimary(fixed)
-    applyTheme(fixed, bg)
+    // Only re-theme if the fixed combo actually passes — nearestAA can still
+    // fail on mid-tone backgrounds (the disabled confirm is the safety net).
+    if (meetsAA(fixed, bg)) applyTheme(fixed, bg)
   }
 
   async function confirm() {
@@ -119,6 +130,7 @@ export default function ColorCard({
       type="button"
       onClick={onClick}
       aria-label={`Color ${hex}`}
+      aria-pressed={selected}
       style={{
         width: 44,
         height: 44,
@@ -184,10 +196,10 @@ export default function ColorCard({
       <button
         type="button"
         onClick={confirm}
-        disabled={!passes || saving}
+        disabled={!passes || saving || !!streaming}
         style={{
           ...cardStyles.confirmBtn,
-          ...(!passes || saving ? cardStyles.confirmBtnDisabled : {}),
+          ...(!passes || saving || !!streaming ? cardStyles.confirmBtnDisabled : {}),
         }}
       >
         <CheckCircle size={16} weight="fill" />

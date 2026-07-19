@@ -363,7 +363,10 @@ export default function MateChat({
 
   // Core fetch-and-stream implementation. Used by both the owner typing a message
   // (via send()) and by card submissions auto-continuing the flow (handleCardDone).
-  async function sendProgrammatic(text: string) {
+  // opts.restoreDraft: if true and the send fails, re-populate the input with the
+  // original text. Only typed sends pass this; card continuations do not (their
+  // text is synthetic and there is no draft slot to restore).
+  async function sendProgrammatic(text: string, opts?: { restoreDraft?: boolean }) {
     setError(null)
     setBusy(true)
     // Optimistic owner bubble.
@@ -469,6 +472,9 @@ export default function MateChat({
         }
         return trimmed
       })
+      // Restore the typed draft so the owner can retry without retyping.
+      // Card continuations never set this flag — their text is synthetic.
+      if (opts?.restoreDraft) setDraft(text)
     } finally {
       setBusy(false)
     }
@@ -478,12 +484,17 @@ export default function MateChat({
     const text = draft.trim()
     if (!text || busy) return
     setDraft("")
-    sendProgrammatic(text)
+    sendProgrammatic(text, { restoreDraft: true })
   }
 
   // Card submit -> collapse the card + auto-send a short confirmation so Mate
   // continues the flow without the owner typing anything.
+  // The confirm button on each card is disabled when streaming=true (primary
+  // guard). This belt-and-braces return handles the race where busy flips true
+  // just after the button render but before the click handler fires, preventing
+  // index drift and lost turns server-side.
   function handleCardDone(kind: CardKind, continuation: string) {
+    if (busy) return
     setMessages((prev) =>
       prev.map((m) => (m.card === kind && !m.cardDone ? { ...m, cardDone: true } : m))
     )
@@ -565,6 +576,7 @@ export default function MateChat({
                 sessionId={sessionId}
                 brand={brand}
                 done={!!m.cardDone}
+                streaming={busy}
                 onDone={() => handleCardDone("color", "Colors are set.")}
               />
             )
@@ -574,6 +586,7 @@ export default function MateChat({
                 key={i}
                 sessionId={sessionId}
                 done={!!m.cardDone}
+                streaming={busy}
                 onDone={() => handleCardDone("registration", "Registration details are in.")}
               />
             )
@@ -583,6 +596,7 @@ export default function MateChat({
                 key={i}
                 sessionId={sessionId}
                 done={!!m.cardDone}
+                streaming={busy}
                 onDone={() => handleCardDone("channels", "Lead channels are picked.")}
               />
             )

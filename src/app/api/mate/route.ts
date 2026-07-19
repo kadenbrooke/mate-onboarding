@@ -178,10 +178,19 @@ export async function POST(req: Request) {
     messages: modelMessages,
     tools,
     maxSteps: 5,
-    onFinish: async ({ text }) => {
+    onFinish: async ({ text, steps }) => {
       // Persist after the stream completes: the accumulated collected blob plus
       // the appended user + assistant turns. Failures are logged, not thrown,
       // so a persistence hiccup does not corrupt the already-streamed reply.
+      //
+      // Multi-step flows (e.g. lead-in text → showColorCard tool → stop) emit
+      // `text` as only the LAST step's text, which can be empty. Join all step
+      // texts so the persisted turn captures the full assistant turn including
+      // the lead-in that precedes a card trigger.
+      const joinedText = Array.isArray(steps)
+        ? steps.map((s) => s.text ?? "").filter((t) => t.trim() !== "").join("\n\n")
+        : ""
+      const fullText = joinedText || text
       try {
         const now = new Date().toISOString()
         const nextMessages: StoredMessage[] = [
@@ -189,7 +198,7 @@ export async function POST(req: Request) {
           // transcript rows get cleaned on the next write.
           ...priorMessages.map((m) => ({ ...m, content: scrubEinPatterns(m.content) })),
           { role: "user", content: scrubEinPatterns(message), ts: now },
-          { role: "assistant", content: scrubEinPatterns(text), ts: now },
+          { role: "assistant", content: scrubEinPatterns(fullText), ts: now },
         ]
 
         const { error: saveError } = await supabase
