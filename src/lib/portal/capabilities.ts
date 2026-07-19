@@ -99,6 +99,16 @@ export const AUTO_MATE_5: { key: string; label: string }[] = [
   { key: "command_center", label: "Command Center" },
 ]
 
+// Legacy capability keys (the Phase 1 seed in /api/mate/complete writes
+// `first_responder_sms`) map onto their product agent so seeded rows light up
+// the roster. Without this, a seeded First Responder never matches its card:
+// the license-pending reason and any later live flip would be invisible.
+// gbp_reviews is deliberately unmapped: a Google connection alone must not
+// claim the Reputation Builder agent is live.
+const CAPABILITY_ALIASES: Record<string, string> = {
+  first_responder_sms: "first_responder",
+}
+
 // NOTE: `requests` is currently UNUSED (open build requests surface via the
 // portal's buildRequests payload + Business Mate's getAgentStatus instead).
 // The two call sites pass differently-encoded statuses (raw DB enum vs the
@@ -106,7 +116,12 @@ export const AUTO_MATE_5: { key: string; label: string }[] = [
 // normalize the encoding at the call sites first.
 export function agentRoster(caps: Cap[], requests: Req[]): AgentCard[] {
   const safeCaps = Array.isArray(caps) ? caps : []
-  const byKey = new Map(safeCaps.map((c) => [c.capability_key, c]))
+  const byKey = new Map(
+    safeCaps.map((c) => [
+      CAPABILITY_ALIASES[c.capability_key] ?? c.capability_key,
+      c,
+    ])
+  )
 
   return AUTO_MATE_5.map(({ key, label }) => {
     const cap = byKey.get(key)

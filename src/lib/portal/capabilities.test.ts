@@ -83,3 +83,28 @@ describe("agentRoster", () => {
     expect(roster[0].reason).toBeTruthy()
   })
 })
+
+describe("agentRoster capability aliases", () => {
+  it("maps the Phase 1 seed key first_responder_sms onto the First Responder card", () => {
+    const roster = agentRoster(
+      [{ capability_key: "first_responder_sms", label: "Missed-call text-back", status: "under_construction" }],
+      []
+    )
+    expect(roster[0].status).toBe("coming_soon")
+    expect(roster[0].reason).toBe("License pending carrier approval")
+  })
+  it("a live first_responder_sms lights the card up", () => {
+    const roster = agentRoster(
+      [{ capability_key: "first_responder_sms", label: "x", status: "live" }],
+      []
+    )
+    expect(roster[0].status).toBe("live")
+  })
+  it("gbp_reviews does NOT claim the Reputation Builder", () => {
+    const roster = agentRoster(
+      [{ capability_key: "gbp_reviews", label: "x", status: "live" }],
+      []
+    )
+    expect(roster[3].status).toBe("coming_soon")
+  })
+})
