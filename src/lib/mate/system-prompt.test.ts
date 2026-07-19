@@ -172,7 +172,7 @@ describe("collection status + warmth (founder feedback 2026-07-19)", () => {
   })
   it("omits the status block entirely when labels are not provided", () => {
     const p = mateSystemPrompt("Jack", company)
-    expect(p).not.toContain("COLLECTION STATUS")
+    expect(p).not.toContain("server-checked")
   })
   it("carries the warmth directives", () => {
     const p = mateSystemPrompt("Jack", company)
