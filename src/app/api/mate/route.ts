@@ -185,7 +185,9 @@ export async function POST(req: Request) {
       try {
         const now = new Date().toISOString()
         const nextMessages: StoredMessage[] = [
-          ...priorMessages,
+          // Belt-and-braces: scrub prior rows too so any pre-scrub historical
+          // transcript rows get cleaned on the next write.
+          ...priorMessages.map((m) => ({ ...m, content: scrubEinPatterns(m.content) })),
           { role: "user", content: scrubEinPatterns(message), ts: now },
           { role: "assistant", content: scrubEinPatterns(text), ts: now },
         ]
