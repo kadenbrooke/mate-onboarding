@@ -1,11 +1,14 @@
 import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
+import { z } from "zod"
 import { openai } from "@ai-sdk/openai"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
+import { matePortalPrompt } from "@/lib/mate/portal-prompt"
 import { toolSchemas, applyToolResult, type Collected } from "@/lib/mate/tools"
 import { capabilitySummary, type Capability } from "@/lib/mate/capability"
 import { isMaskedValue, scrubEinPatterns } from "@/lib/mate/mask"
+import { buildPortalToolFns } from "@/lib/mate/portal-tools"
 
 type StoredMessage = { role: "user" | "assistant"; content: string; ts?: string }
 
@@ -53,7 +56,7 @@ export async function POST(req: Request) {
 
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
-    .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key")
+    .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key, step, status")
     .eq("id", resolvedSessionId)
     .maybeSingle()
 
@@ -187,13 +190,72 @@ export async function POST(req: Request) {
     }),
   }
 
+  // Portal mode: derived from the SESSION ROW, never from client input.
+  // step/status folded into the initial select above (one query, not two).
+  const portalMode =
+    (session as { step?: string }).step === "ready" ||
+    (session as { status?: string }).status === "completed" ||
+    Boolean(session.contact_id)
+
+  // Load build_requests for the portal roster (portal mode + contact bound only).
+  let buildRequests: { request_text: string; mate_summary: string; status: string }[] = []
+  if (portalMode && session.contact_id) {
+    const { data: reqs } = await supabase
+      .from("build_requests")
+      .select("request_text, mate_summary, status")
+      .eq("contact_id", session.contact_id)
+    if (Array.isArray(reqs)) buildRequests = reqs
+  }
+
+  // Portal tool factory: every query is hard-scoped to this session's contact.
+  // capabilities is cast: Capability.label is optional; Cap.label is required.
+  // The factory and agentRoster handle missing labels gracefully via || fallback.
+  const portalToolFns = buildPortalToolFns({
+    supabase,
+    contactId: session.contact_id ?? null,
+    collected,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    capabilities: capabilities as any,
+    requests: buildRequests,
+  })
+
+  const portalTools = {
+    // Reuse the existing side-effect requestBuild tool.
+    requestBuild: tools.requestBuild,
+    getAgentStatus: tool({
+      description: "Live/demo/coming-soon status of the client's five agents plus open build requests.",
+      parameters: z.object({}),
+      execute: async () => portalToolFns.getAgentStatus(),
+    }),
+    getLeadStats: tool({
+      description: "Real lead interaction counts for this business. Honest 'no data yet' when empty.",
+      parameters: z.object({}),
+      execute: async () => portalToolFns.getLeadStats(),
+    }),
+    getRecentLeads: tool({
+      description: "The five most recent lead interactions for this business.",
+      parameters: z.object({}),
+      execute: async () => portalToolFns.getRecentLeads(),
+    }),
+    getBusinessProfile: tool({
+      description: "Everything collected at setup: services, brand voice, phones, channels, website.",
+      parameters: z.object({}),
+      execute: async () => portalToolFns.getBusinessProfile(),
+    }),
+  }
+
+  const businessName =
+    (company.name && String(company.name)) || session.mate_name || "your business"
+
   // openai(...) is instantiated inside the handler so the build never needs
   // OPENAI_API_KEY. Cost-first model per the model-agnostic rule.
   const result = streamText({
     model: openai("gpt-4o-mini"),
-    system: mateSystemPrompt(session.mate_name ?? "Mate", company, capabilitiesText),
+    system: portalMode
+      ? matePortalPrompt(session.mate_name ?? "Mate", businessName, capabilitiesText)
+      : mateSystemPrompt(session.mate_name ?? "Mate", company, capabilitiesText),
     messages: modelMessages,
-    tools,
+    tools: portalMode ? portalTools : tools,
     maxSteps: 5,
     onFinish: async ({ text, steps }) => {
       // Persist after the stream completes: the accumulated collected blob plus
