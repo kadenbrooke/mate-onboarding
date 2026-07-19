@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { maskCollectedForClient } from "@/lib/mate/mask"
 
 // Columns the client is allowed to read back. Deliberately excludes anything
 // sensitive (contact_id, reseller_key, status internals) — the onboarding UI
@@ -83,7 +84,14 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
-  return NextResponse.json(data)
+  // Mask server-only fields (EIN -> last 4) before anything leaves the server.
+  const safe = {
+    ...data,
+    collected: maskCollectedForClient(
+      (data as { collected?: Record<string, unknown> | null }).collected ?? null
+    ),
+  }
+  return NextResponse.json(safe)
 }
 
 // Keys the action cards + chat fallback may write into `collected`. Anything
@@ -110,6 +118,16 @@ const COLLECTED_WHITELIST = new Set<string>([
   "business_address",
   "dba",
   "notes",
+  // Phase 2: color confirm, 10DLC registration, channels, website editor,
+  // value-math baselines.
+  "brand_colors_confirmed",
+  "entity_type",
+  "lead_channels",
+  "leads_per_week",
+  "avg_job_value",
+  "website_editor_name",
+  "website_editor_contact",
+  "website_can_edit",
 ])
 
 /**
@@ -124,6 +142,9 @@ function pickCollected(input: unknown): Record<string, unknown> | null {
   for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
     if (COLLECTED_WHITELIST.has(key)) out[key] = value
   }
+  // Never persist a masked EIN over the real one. A client re-submitting the
+  // masked display value is a no-op; only a fresh full EIN overwrites.
+  if (typeof out.ein === "string" && out.ein.startsWith("*****")) delete out.ein
   return out
 }
 
