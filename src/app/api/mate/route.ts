@@ -5,6 +5,7 @@ import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
 import { toolSchemas, applyToolResult, type Collected } from "@/lib/mate/tools"
 import { capabilitySummary, type Capability } from "@/lib/mate/capability"
+import { isMaskedValue, scrubEinPatterns } from "@/lib/mate/mask"
 
 type StoredMessage = { role: "user" | "assistant"; content: string; ts?: string }
 
@@ -98,6 +99,9 @@ export async function POST(req: Request) {
       description: toolSchemas.saveField.description,
       parameters: toolSchemas.saveField.parameters,
       execute: async ({ key, value }) => {
+        if (key === "ein" && isMaskedValue(value)) {
+          return { saved: false, reason: "masked value ignored" }
+        }
         collected = applyToolResult(collected, { tool: "saveField", args: { key, value } })
         return { saved: key }
       },
@@ -182,8 +186,8 @@ export async function POST(req: Request) {
         const now = new Date().toISOString()
         const nextMessages: StoredMessage[] = [
           ...priorMessages,
-          { role: "user", content: message, ts: now },
-          { role: "assistant", content: text, ts: now },
+          { role: "user", content: scrubEinPatterns(message), ts: now },
+          { role: "assistant", content: scrubEinPatterns(text), ts: now },
         ]
 
         const { error: saveError } = await supabase

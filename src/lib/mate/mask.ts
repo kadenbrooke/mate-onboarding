@@ -19,6 +19,23 @@ export function maskEin(v: unknown): string | null {
   return `*****${digits.slice(-4)}`
 }
 
+/** True when a value looks like our masked display form, never a real value. */
+export function isMaskedValue(v: unknown): boolean {
+  return typeof v === "string" && v.startsWith("*****")
+}
+
+/**
+ * Scrub EIN-shaped values from free text before it is persisted where a
+ * browser can read it back (chat transcripts). Matches the canonical
+ * XX-XXXXXXX form and bare word-bounded 9-digit runs.
+ */
+export function scrubEinPatterns(text: string): string {
+  if (typeof text !== "string" || text === "") return text
+  return text
+    .replace(/\b\d{2}-\d{7}\b/g, "*****")
+    .replace(/(?<!\d)\d{9}(?!\d)/g, "*****")
+}
+
 /** Copy of collected safe to return to the session's own browser. */
 export function maskCollectedForClient(
   collected: Record<string, unknown> | null | undefined
@@ -27,6 +44,7 @@ export function maskCollectedForClient(
   const out: Record<string, unknown> = { ...collected }
   const masked = maskEin(out.ein)
   if (masked !== null) out.ein = masked
+  else if ("ein" in out && typeof out.ein === "string") out.ein = "*****"
   else if ("ein" in out && typeof out.ein !== "string") delete out.ein
   return out
 }

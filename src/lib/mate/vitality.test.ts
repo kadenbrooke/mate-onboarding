@@ -60,4 +60,8 @@ describe("vitality", () => {
       "colors", "trade", "voice", "calls", "license",
     ])
   })
+  it("keeps the colors chip locked for a non-boolean truthy value", () => {
+    const v = vitality({ brand_colors_confirmed: "yes" })
+    expect(v.chips.find((c) => c.key === "colors")?.unlocked).toBe(false)
+  })
 })

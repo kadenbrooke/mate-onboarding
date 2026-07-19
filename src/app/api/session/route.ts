@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
-import { maskCollectedForClient } from "@/lib/mate/mask"
+import { maskCollectedForClient, isMaskedValue } from "@/lib/mate/mask"
 
 // Columns the client is allowed to read back. Deliberately excludes anything
 // sensitive (contact_id, reseller_key, status internals) — the onboarding UI
@@ -144,7 +144,7 @@ function pickCollected(input: unknown): Record<string, unknown> | null {
   }
   // Never persist a masked EIN over the real one. A client re-submitting the
   // masked display value is a no-op; only a fresh full EIN overwrites.
-  if (typeof out.ein === "string" && out.ein.startsWith("*****")) delete out.ein
+  if (isMaskedValue(out.ein)) delete out.ein
   return out
 }
 
