@@ -30,13 +30,20 @@ describe("mateSystemPrompt", () => {
     expect(p).toContain("Summit Paving")
   })
 
-  it("defines the four required fields to finish", () => {
+  it("defines all required fields to finish (phase 2 expanded set)", () => {
     const p = mateSystemPrompt("Mate", rich)
     for (const key of [
       "services",
       "brand_voice",
       "current_phone",
       "lead_delivery_phone",
+      "brand_colors_confirmed",
+      "legal_business_name",
+      "ein",
+      "business_address",
+      "entity_type",
+      "lead_channels",
+      "website_editor_contact",
     ]) {
       expect(p).toContain(key)
     }
@@ -122,5 +129,31 @@ describe("mateSystemPrompt", () => {
     expect(lower).toContain("brand voice")
     // Only ask what research can't derive.
     expect(lower).toMatch(/only ask|genuinely missing|genuine gap/)
+  })
+})
+
+describe("phase 2 flow", () => {
+  const company = { name: "J&C Asphalt", services: ["paving"], phone: "8015551234" }
+  const p = mateSystemPrompt("Jack", company)
+
+  it("never asks what the business does when research exists", () => {
+    expect(p).not.toContain("what does your business do")
+  })
+  it("directs the card steps via the trigger tools", () => {
+    expect(p).toContain("showColorCard")
+    expect(p).toContain("showRegistrationCard")
+    expect(p).toContain("showChannelsCard")
+  })
+  it("forbids asking for EIN in chat (form card only)", () => {
+    expect(p.toLowerCase()).toContain("never ask for the ein in chat")
+  })
+  it("asks for the website editor contact", () => {
+    expect(p).toContain("website_editor_contact")
+  })
+  it("keeps the capability hard rule", () => {
+    expect(p).toContain("requestBuild")
+  })
+  it("no em dashes anywhere in the prompt's client-facing examples", () => {
+    expect(p).not.toContain("—")
   })
 })
