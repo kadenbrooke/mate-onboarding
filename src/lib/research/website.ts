@@ -1,7 +1,7 @@
 import { generateText } from "ai"
 import { openai } from "@ai-sdk/openai"
 import { derivePalette } from "./palette"
-import { extractColorsFromCss } from "./css-colors"
+import { extractColorsFromCss, extractColorCandidates } from "./css-colors"
 
 const DEFAULT_COLORS = {
   primary: "#1f2937",
@@ -63,6 +63,12 @@ export interface Brand {
     bg: string
     accent: string
     source: BrandColorSource
+  }
+  /** Ranked picker candidates for the ColorCard (Phase 2). Optional: older
+   *  persisted sessions won't have it; the card falls back to colors.primary. */
+  candidates?: {
+    primaries: string[]
+    backgrounds: string[]
   }
 }
 
@@ -257,7 +263,7 @@ async function fetchStylesheet(url: string): Promise<string> {
 export async function extractBrandColorsFromMarkup(
   html: string,
   baseUrl: string
-): Promise<{ primary: string; bg: string; accent: string } | null> {
+): Promise<{ primary: string; bg: string; accent: string; candidates?: { primaries: string[]; backgrounds: string[] } } | null> {
   if (!html) return null
 
   // Inline <style> blocks.
@@ -297,7 +303,9 @@ export async function extractBrandColorsFromMarkup(
     .filter(Boolean)
     .join("\n")
 
-  return extractColorsFromCss(combined)
+  const palette = extractColorsFromCss(combined)
+  if (!palette) return null
+  return { ...palette, candidates: extractColorCandidates(combined) }
 }
 
 /**
@@ -352,7 +360,12 @@ export async function resolveBrandColors(
   // 2. CSS / markup color extraction (above icon-class logos).
   const cssColors = await extractBrandColorsFromMarkup(html, baseUrl)
   if (cssColors) {
-    return { ...base, colors: { ...cssColors, source: "css" } }
+    const { candidates: cssCandidates, ...cssColorFields } = cssColors
+    return {
+      ...base,
+      colors: { ...cssColorFields, source: "css" },
+      candidates: cssCandidates,
+    }
   }
 
   // 3. Icon-class logo palette (weaker signal, so it runs after CSS).

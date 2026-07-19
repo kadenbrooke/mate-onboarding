@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { extractColorsFromCss, isSaturated } from "./css-colors"
+import { extractColorsFromCss, isSaturated, extractColorCandidates } from "./css-colors"
 
 describe("isSaturated", () => {
   it("treats a vivid orange as saturated", () => {
@@ -152,5 +152,41 @@ describe("extractColorsFromCss", () => {
     const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(result!.bg)
     const r = parseInt(m![1], 16)
     expect(r).toBeLessThan(90)
+  })
+})
+
+describe("extractColorCandidates", () => {
+  const css = `
+    .a { color: #e14d1a } .b { background: #e14d1a } .c { border-color: #e14d1a }
+    .d { color: #2a6f4d } .e { background-color: #2a6f4d }
+    .f { color: #c0392b }
+    body { background: #101418 } .g { background-color: #101418 }
+    .h { background: #f5f2ec }
+    .i { color: #ffffff } .j { color: #000000 }
+  `
+  it("ranks saturated primaries by frequency", () => {
+    const c = extractColorCandidates(css)
+    expect(c.primaries[0]).toBe("#e14d1a")
+    expect(c.primaries).toContain("#2a6f4d")
+    expect(c.primaries).toContain("#c0392b")
+  })
+  it("caps primaries at 5", () => {
+    const many = Array.from({ length: 9 }, (_, i) => `.x${i} { color: #${i}${i}44${i}${i} }`).join("\n")
+    expect(extractColorCandidates(many).primaries.length).toBeLessThanOrEqual(5)
+  })
+  it("collects background candidates from background declarations, deduped", () => {
+    const c = extractColorCandidates(css)
+    expect(c.backgrounds).toContain("#101418")
+    expect(c.backgrounds).toContain("#f5f2ec")
+    expect(new Set(c.backgrounds).size).toBe(c.backgrounds.length)
+  })
+  it("caps backgrounds at 3 and always includes the dark + light defaults when short", () => {
+    const c = extractColorCandidates(".a { color: #e14d1a }")
+    expect(c.backgrounds.length).toBeGreaterThanOrEqual(2)
+    expect(c.backgrounds).toContain("#141414")
+    expect(c.backgrounds).toContain("#ffffff")
+  })
+  it("returns empty primaries for a colorless page (never throws)", () => {
+    expect(extractColorCandidates("").primaries).toEqual([])
   })
 })

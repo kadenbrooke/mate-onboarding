@@ -230,3 +230,53 @@ export function extractColorsFromCss(css: string): CssPalette | null {
     accent,
   }
 }
+
+export interface ColorCandidates {
+  /** Ranked saturated brand-color options, most frequent first. Max 5. */
+  primaries: string[]
+  /** Deduped background options (from background declarations), max 3, padded
+   *  with the dark + light defaults so the picker always has a light and a dark
+   *  choice. */
+  backgrounds: string[]
+}
+
+const MAX_PRIMARY_CANDIDATES = 5
+const MAX_BG_CANDIDATES = 3
+
+/**
+ * Candidate palette for the ColorCard: every saturated color ranked by
+ * frequency (the client picks; no frequency floor here because a human is
+ * choosing, not an algorithm crowning), plus the page's background colors.
+ * Never throws; empty CSS yields empty primaries + the two default bgs.
+ */
+export function extractColorCandidates(css: string): ColorCandidates {
+  const all = collectColors(css ?? "")
+
+  const satCounts = new Map<string, number>()
+  for (const c of all) {
+    if (!isSaturated(c.r, c.g, c.b)) continue
+    const k = keyOf(c)
+    satCounts.set(k, (satCounts.get(k) ?? 0) + 1)
+  }
+  const primaries = [...satCounts.entries()]
+    .sort((x, y) => y[1] - x[1])
+    .slice(0, MAX_PRIMARY_CANDIDATES)
+    .map(([k]) => toHex(fromKey(k)))
+
+  const bgSeen = new Set<string>()
+  const backgrounds: string[] = []
+  for (const c of collectBackgroundColors(css ?? "")) {
+    // Skip saturated brand colors: they belong in primaries, not the bg picker.
+    if (isSaturated(c.r, c.g, c.b)) continue
+    const hex = toHex(c)
+    if (bgSeen.has(hex)) continue
+    bgSeen.add(hex)
+    backgrounds.push(hex)
+    if (backgrounds.length >= MAX_BG_CANDIDATES) break
+  }
+  // Guarantee a dark and a light option so the picker is never a dead end.
+  if (!backgrounds.includes(DARK_BG)) backgrounds.push(DARK_BG)
+  if (!backgrounds.includes(LIGHT_BG)) backgrounds.push(LIGHT_BG)
+
+  return { primaries, backgrounds: backgrounds.slice(0, MAX_BG_CANDIDATES + 1) }
+}
