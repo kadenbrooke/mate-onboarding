@@ -64,6 +64,17 @@ const CHANNEL_LABELS: Record<string, string> = {
   signage: "Vehicle / signage",
 };
 
+// Human labels for the `lead_channels` values written by ChannelsCard. Kept in
+// sync with that card's LEAD_CHANNELS list; unknown tokens fall back raw.
+const LEAD_CHANNEL_LABELS: Record<string, string> = {
+  missed_calls: "Missed phone calls",
+  web_form: "Website form",
+  fb_ig_dm: "Facebook / Instagram DMs",
+  google_business: "Google Business",
+  phone_answered: "Calls answered live",
+  other: "Other",
+};
+
 /** Trim to a non-empty string, else null. Never coerces non-strings. */
 function str(v: unknown): string | null {
   if (typeof v !== "string") return null;
@@ -100,6 +111,16 @@ function showChannels(v: unknown): string {
   return labels.length ? labels.join(", ") : NOT_PROVIDED;
 }
 
+/** Map lead_channels tokens (from ChannelsCard) to human labels, joined. */
+function showLeadChannels(v: unknown): string {
+  if (!Array.isArray(v)) return NOT_PROVIDED;
+  const labels = v
+    .map(str)
+    .filter((s): s is string => s !== null)
+    .map((token) => LEAD_CHANNEL_LABELS[token] ?? token);
+  return labels.length ? labels.join(", ") : NOT_PROVIDED;
+}
+
 /**
  * Build the First Responder brief from a session row. `collected` is treated as
  * an opaque object; anything missing renders as NOT_PROVIDED. Never throws on a
@@ -132,6 +153,26 @@ export function buildBrief(session: HandoffSession): Brief {
         { label: "DBA", value: show(collected.dba) },
         { label: "Business address", value: show(collected.business_address) },
         { label: "EIN", value: show(collected.ein) },
+      ],
+    },
+    {
+      title: "10DLC registration",
+      fields: [
+        { label: "Legal business name", value: show(collected.legal_business_name) },
+        { label: "EIN", value: show(collected.ein) },
+        { label: "Business address", value: show(collected.business_address) },
+        { label: "Entity type", value: show(collected.entity_type) },
+        { label: "Website editor", value: show(collected.website_editor_name) },
+        { label: "Website editor contact", value: show(collected.website_editor_contact) },
+        { label: "Client can edit site", value: show(collected.website_can_edit) },
+      ],
+    },
+    {
+      title: "Lead channels & baseline",
+      fields: [
+        { label: "Lead channels", value: showLeadChannels(collected.lead_channels) },
+        { label: "Leads per week", value: show(collected.leads_per_week) },
+        { label: "Average job value", value: show(collected.avg_job_value) },
       ],
     },
     {

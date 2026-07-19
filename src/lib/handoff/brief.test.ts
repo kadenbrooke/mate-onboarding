@@ -144,3 +144,46 @@ describe("buildBrief", () => {
     expect(copyText).not.toContain("—")
   })
 })
+
+describe("phase 2 brief groups", () => {
+  const session = {
+    id: "s1",
+    collected: {
+      legal_business_name: "J&C Asphalt LLC",
+      ein: "123456789",
+      business_address: "123 Main St, Orem, UT 84058",
+      entity_type: "LLC",
+      lead_channels: ["missed_calls", "web_form"],
+      leads_per_week: "12",
+      avg_job_value: "4800",
+      website_editor_name: "Ben",
+      website_editor_contact: "ben@example.com",
+      website_can_edit: "yes",
+    },
+  }
+  const brief = buildBrief(session)
+  const flat = brief.copyText
+
+  it("renders a 10DLC Registration group with entity type", () => {
+    expect(flat).toContain("## 10DLC registration")
+    expect(flat).toContain("Entity type: LLC")
+    expect(flat).toContain("EIN: 123456789")
+  })
+  it("renders lead channels with human labels", () => {
+    expect(flat).toContain("Missed phone calls")
+    expect(flat).toContain("Website form")
+  })
+  it("renders the website editor + can-edit flag (opt-in compliance)", () => {
+    expect(flat).toContain("Website editor: Ben")
+    expect(flat).toContain("ben@example.com")
+    expect(flat).toContain("Client can edit site: yes")
+  })
+  it("renders the ROI baseline numbers", () => {
+    expect(flat).toContain("Leads per week: 12")
+    expect(flat).toContain("Average job value: 4800")
+  })
+  it("missing phase-2 fields render the sentinel, never fabricated", () => {
+    const empty = buildBrief({ id: "s2", collected: {} })
+    expect(empty.copyText).toContain("Entity type: (not provided)")
+  })
+})
