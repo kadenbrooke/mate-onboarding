@@ -75,3 +75,46 @@ export function splitCapabilities(
 
   return { live, underConstruction }
 }
+
+// ---- Phase 2: the Auto Mate 5 agent roster for the Command Center ----
+
+export type AgentStatus = "live" | "demo" | "coming_soon"
+
+export interface AgentCard {
+  key: string
+  label: string
+  status: AgentStatus
+  /** Honest reason line for coming_soon (never fabricated). */
+  reason: string | null
+}
+
+/** The five product agents, display order fixed. capability_key convention:
+ *  a client_capabilities row whose capability_key matches an agent key sets
+ *  that agent's card status. */
+export const AUTO_MATE_5: { key: string; label: string }[] = [
+  { key: "first_responder", label: "First Responder" },
+  { key: "cultivator", label: "Cultivator" },
+  { key: "reactivator", label: "Reactivator" },
+  { key: "reputation_builder", label: "Reputation Builder" },
+  { key: "command_center", label: "Command Center" },
+]
+
+export function agentRoster(caps: Cap[], requests: Req[]): AgentCard[] {
+  const safeCaps = Array.isArray(caps) ? caps : []
+  const byKey = new Map(safeCaps.map((c) => [c.capability_key, c]))
+
+  return AUTO_MATE_5.map(({ key, label }) => {
+    const cap = byKey.get(key)
+    if (cap?.status === "live") return { key, label, status: "live" as const, reason: null }
+    if (cap?.status === "demo") return { key, label, status: "demo" as const, reason: null }
+    return {
+      key,
+      label,
+      status: "coming_soon" as const,
+      reason:
+        key === "first_responder" && cap?.status === "under_construction"
+          ? "License pending carrier approval"
+          : "Not built yet. Ask your Mate to get it on the list.",
+    }
+  })
+}

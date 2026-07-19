@@ -49,3 +49,37 @@ describe("splitCapabilities", () => {
     }
   })
 })
+
+import { agentRoster, AUTO_MATE_5 } from "./capabilities"
+
+describe("agentRoster", () => {
+  it("always returns exactly the Auto Mate 5, in order", () => {
+    const roster = agentRoster([], [])
+    expect(roster.map((a) => a.key)).toEqual([
+      "first_responder", "cultivator", "reactivator", "reputation_builder", "command_center",
+    ])
+    expect(roster.every((a) => a.status === "coming_soon")).toBe(true)
+  })
+  it("maps a live capability onto its agent", () => {
+    const roster = agentRoster(
+      [{ capability_key: "first_responder", label: "First Responder", status: "live" }],
+      []
+    )
+    expect(roster[0].status).toBe("live")
+  })
+  it("maps a demo capability", () => {
+    const roster = agentRoster(
+      [{ capability_key: "first_responder", label: "x", status: "demo" }],
+      []
+    )
+    expect(roster[0].status).toBe("demo")
+  })
+  it("surfaces a pending-license reason on the First Responder when under construction", () => {
+    const roster = agentRoster(
+      [{ capability_key: "first_responder", label: "x", status: "under_construction" }],
+      []
+    )
+    expect(roster[0].status).toBe("coming_soon")
+    expect(roster[0].reason).toBeTruthy()
+  })
+})
