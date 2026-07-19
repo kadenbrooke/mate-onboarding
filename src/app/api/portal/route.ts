@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { COOKIE_NAME } from "@/lib/session-cookie"
+import { agentRoster } from "@/lib/portal/capabilities"
+import { annualLoss } from "@/lib/mate/loss-math"
 
 /**
  * GET /api/portal?session=<id> — portal data for the post-onboarding client view.
@@ -43,6 +45,9 @@ interface EmptyPortal {
   buildRequests: []
   mate_name: string | null
   onboardingComplete: false
+  agents: []
+  baseline: null
+  businessName: null
 }
 
 function emptyPortal(mateName: string | null): EmptyPortal {
@@ -51,6 +56,9 @@ function emptyPortal(mateName: string | null): EmptyPortal {
     buildRequests: [],
     mate_name: mateName,
     onboardingComplete: false,
+    agents: [],
+    baseline: null,
+    businessName: null,
   }
 }
 
@@ -92,7 +100,7 @@ export async function GET(req: NextRequest) {
   //    is a soft miss, not an error.
   const { data: session, error: sessionErr } = await supabase
     .from("onboarding_sessions")
-    .select("id, contact_id, mate_name")
+    .select("id, contact_id, mate_name, collected")
     .eq("id", sessionId)
     .maybeSingle()
 
@@ -160,10 +168,35 @@ export async function GET(req: NextRequest) {
           })
       : []
 
+  // Derive baseline from collected onboarding numbers. Honest: null when inputs
+  // absent or zero. NEVER fabricated — only use the client's own numbers.
+  const collected =
+    session?.collected && typeof session.collected === "object" && !Array.isArray(session.collected)
+      ? (session.collected as Record<string, unknown>)
+      : {}
+  const lpw = Number(collected.leads_per_week)
+  const ajv = Number(collected.avg_job_value)
+  const loss = annualLoss(lpw, ajv) // null when inputs absent
+
+  const businessName =
+    (collected.company && typeof collected.company === "object"
+      ? (collected.company as { name?: string }).name
+      : null) ?? null
+
   return NextResponse.json({
     capabilities,
     buildRequests,
     mate_name: mateName,
     onboardingComplete: true,
+    agents: agentRoster(capabilities, buildRequests),
+    baseline:
+      loss === null
+        ? null
+        : {
+            annualLoss: loss,
+            leadsPerWeek: lpw,
+            avgJobValue: ajv,
+          },
+    businessName: typeof businessName === "string" && businessName.trim() !== "" ? businessName : null,
   })
 }

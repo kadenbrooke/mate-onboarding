@@ -1,17 +1,16 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { ChartLineUp } from "@phosphor-icons/react"
+import { House, Robot, ChatCircleDots } from "@phosphor-icons/react"
 import MateChat from "../onboard/mate-chat"
-import LivePanel from "./LivePanel"
-import UnderConstructionPanel from "./UnderConstructionPanel"
-import { splitCapabilities, type Cap, type Req } from "@/lib/portal/capabilities"
+import HomeTab, { type Baseline } from "./HomeTab"
+import AgentsTab from "./AgentsTab"
+import type { Cap, Req, AgentCard } from "@/lib/portal/capabilities"
 
-// Post-onboarding client portal. The SAME app becomes the client's ongoing
-// portal: Mate persists as the conversational point of contact, and their
-// capabilities split into two honest zones (Live vs Under Construction). Deep
-// point-of-contact features (live lead stats, monthly ROI) are Phase 2 — shown
-// here as a clearly-labeled "coming soon" placeholder with NO fabricated data.
+// Post-onboarding client Command Center. Three tabs: Home (baseline + honest
+// live-result placeholders), Agents (Auto Mate 5 status cards), Chat (Business
+// Mate). Tabs switch via a bottom nav. The load flow is the same as Phase 1
+// (session from ?session= param or localStorage, soft errors, notice states).
 //
 // White-label: no Auto Mate / Kaden branding. The whole surface recolors to the
 // client's brand via the --mate-* tokens (default dark shell as fallback).
@@ -20,11 +19,16 @@ import { splitCapabilities, type Cap, type Req } from "@/lib/portal/capabilities
 // onboarding on this device lands straight in their portal.
 const SESSION_STORAGE_KEY = "mate_onboarding_session_id"
 
+type Tab = "home" | "agents" | "chat"
+
 interface PortalData {
   capabilities: Cap[]
   buildRequests: Req[]
   mate_name: string | null
   onboardingComplete: boolean
+  agents: AgentCard[]
+  baseline: Baseline | null
+  businessName: string | null
 }
 
 const S = {
@@ -35,7 +39,7 @@ const S = {
     display: "flex",
     flexDirection: "column" as const,
     alignItems: "center",
-    padding: "clamp(20px, 6vw, 56px) 20px",
+    padding: "clamp(20px, 6vw, 56px) 20px 0",
     transition: "background 400ms ease",
   } as React.CSSProperties,
   inner: {
@@ -46,6 +50,7 @@ const S = {
     flexDirection: "column" as const,
     gap: 20,
     minHeight: 0,
+    paddingBottom: 16,
   } as React.CSSProperties,
   heading: {
     fontFamily: "var(--font-display)",
@@ -78,40 +83,6 @@ const S = {
     color: "#f5a97f",
     maxWidth: 480,
   } as React.CSSProperties,
-  comingSoon: {
-    background: "#161616",
-    border: "1px solid #2a2a2a",
-    borderRadius: 14,
-    padding: "18px",
-  } as React.CSSProperties,
-  comingSoonHead: {
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 8,
-  } as React.CSSProperties,
-  comingSoonTitle: {
-    fontFamily: "var(--font-display)",
-    fontSize: 16,
-    fontWeight: 700,
-    color: "var(--mate-accent, #ede6e6)",
-    margin: 0,
-  } as React.CSSProperties,
-  comingSoonBadge: {
-    fontSize: 11,
-    fontWeight: 600,
-    color: "#888888",
-    border: "1px solid #333333",
-    borderRadius: 999,
-    padding: "2px 8px",
-    letterSpacing: "0.02em",
-  } as React.CSSProperties,
-  comingSoonBody: {
-    fontSize: 13,
-    color: "#888888",
-    lineHeight: 1.5,
-    margin: 0,
-  } as React.CSSProperties,
   chatWrap: {
     display: "flex",
     flexDirection: "column" as const,
@@ -128,6 +99,7 @@ export default function PortalPage() {
   // No session id at all -> we can't identify the client. Distinct from a valid
   // session whose onboarding simply is not finished.
   const [noSession, setNoSession] = useState(false)
+  const [tab, setTab] = useState<Tab>("home")
   const loaded = useRef(false)
 
   useEffect(() => {
@@ -174,9 +146,6 @@ export default function PortalPage() {
     load()
   }, [])
 
-  const capabilities = data?.capabilities ?? []
-  const buildRequests = data?.buildRequests ?? []
-  const { live, underConstruction } = splitCapabilities(capabilities, buildRequests)
   const mateName = data?.mate_name ?? null
   const onboardingComplete = data?.onboardingComplete ?? false
 
@@ -191,7 +160,7 @@ export default function PortalPage() {
 
         {ready && !error && noSession && (
           <div>
-            <h1 style={S.heading}>Your portal</h1>
+            <h1 style={S.heading}>Command Center</h1>
             <p style={S.sub}>
               Open your portal from the link we sent you so we can load your
               account.
@@ -202,46 +171,67 @@ export default function PortalPage() {
         {ready && !error && !noSession && (
           <>
             <div>
-              <h1 style={S.heading}>Your portal</h1>
-              <p style={S.sub}>
-                Here is what is working now and what is on the way.
-              </p>
+              <h1 style={S.heading}>{data?.businessName ?? "Command Center"}</h1>
+              <p style={S.sub}>Command Center</p>
             </div>
 
             {!onboardingComplete && (
               <p style={S.notice}>
                 Your setup is not finished yet. Once onboarding is complete, your
-                live features and everything in the works will appear here.
+                Command Center fills in here.
               </p>
             )}
 
-            <LivePanel items={live} />
-            <UnderConstructionPanel items={underConstruction} />
-
-            {/* Phase-2 point-of-contact features. Honest placeholder only — NEVER
-                fabricated numbers or fake charts. */}
-            <div style={S.comingSoon}>
-              <div style={S.comingSoonHead}>
-                <ChartLineUp
-                  size={20}
-                  weight="regular"
-                  color="var(--mate-primary, #e14d1a)"
-                />
-                <h2 style={S.comingSoonTitle}>Your results</h2>
-                <span style={S.comingSoonBadge}>COMING SOON</span>
-              </div>
-              <p style={S.comingSoonBody}>
-                Your results dashboard activates once your system is live and
-                collecting data. You will see your leads and your return here as
-                soon as the numbers are real.
-              </p>
+            <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+              {tab === "home" && <HomeTab baseline={data?.baseline ?? null} />}
+              {tab === "agents" && <AgentsTab agents={data?.agents ?? []} />}
+              {tab === "chat" && sessionId && (
+                <div style={S.chatWrap}>
+                  <MateChat sessionId={sessionId} mateName={mateName} />
+                </div>
+              )}
             </div>
 
-            {sessionId && (
-              <div style={S.chatWrap}>
-                <MateChat sessionId={sessionId} mateName={mateName} />
-              </div>
-            )}
+            <nav
+              style={{
+                display: "flex",
+                justifyContent: "space-around",
+                borderTop: "1px solid #333333",
+                paddingTop: 10,
+                flexShrink: 0,
+              }}
+            >
+              {(
+                [
+                  ["home", "Home", House],
+                  ["agents", "Agents", Robot],
+                  ["chat", "Chat", ChatCircleDots],
+                ] as const
+              ).map(([key, label, Icon]) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setTab(key)}
+                  aria-label={label}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: 3,
+                    fontSize: 11.5,
+                    fontWeight: tab === key ? 700 : 400,
+                    color: tab === key ? "var(--mate-primary, #e14d1a)" : "#888888",
+                    padding: "4px 14px",
+                  }}
+                >
+                  <Icon size={22} weight={tab === key ? "fill" : "regular"} />
+                  {label}
+                </button>
+              ))}
+            </nav>
           </>
         )}
       </div>
