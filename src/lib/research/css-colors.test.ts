@@ -189,4 +189,13 @@ describe("extractColorCandidates", () => {
   it("returns empty primaries for a colorless page (never throws)", () => {
     expect(extractColorCandidates("").primaries).toEqual([])
   })
+  it("keeps the light default even when three dark page bgs fill the slots", () => {
+    const css = `
+      .a { background: #101418 } .b { background-color: #16161a } .c { background: #202020 }
+      .d { color: #e14d1a } .e { color: #e14d1a } .f { color: #e14d1a }
+    `
+    const c = extractColorCandidates(css)
+    expect(c.backgrounds).toContain("#ffffff")
+    expect(c.backgrounds.some((b) => b === "#141414" || b === "#101418")).toBe(true)
+  })
 })

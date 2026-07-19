@@ -275,8 +275,12 @@ export function extractColorCandidates(css: string): ColorCandidates {
     if (backgrounds.length >= MAX_BG_CANDIDATES) break
   }
   // Guarantee a dark and a light option so the picker is never a dead end.
-  if (!backgrounds.includes(DARK_BG)) backgrounds.push(DARK_BG)
-  if (!backgrounds.includes(LIGHT_BG)) backgrounds.push(LIGHT_BG)
+  // Trim the page-sourced list first so both missing defaults fit within the cap.
+  const missingDefaults = [DARK_BG, LIGHT_BG].filter((d) => !backgrounds.includes(d))
+  if (missingDefaults.length > 0) {
+    backgrounds.splice(MAX_BG_CANDIDATES + 1 - missingDefaults.length)
+  }
+  for (const d of missingDefaults) backgrounds.push(d)
 
   return { primaries, backgrounds: backgrounds.slice(0, MAX_BG_CANDIDATES + 1) }
 }
