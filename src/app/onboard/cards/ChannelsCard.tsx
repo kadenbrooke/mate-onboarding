@@ -3,14 +3,23 @@
 import { useState } from "react"
 import { Broadcast, CheckCircle } from "@phosphor-icons/react"
 import { cardStyles, CardHead, saveCollected } from "./card-ui"
-import { lossMessage } from "@/lib/mate/loss-math"
+import { annualLoss } from "@/lib/mate/loss-math"
 
 /**
- * Lead-channels picker + the birth flow's value moment. The channel enum drives
- * what the First Responder watches; the two optional numbers power the
- * deterministic loss math (never LLM arithmetic) and seed the Command Center's
- * ROI baseline.
+ * Lead-channels picker. The channel enum drives what the First Responder
+ * watches; the two optional numbers power the deterministic loss math (never
+ * LLM arithmetic) and seed the Command Center's ROI baseline. The loss math
+ * itself is NOT shown in-card: it is handed up through onDone so the chat can
+ * deliver it as its own big "money left on the table" moment from the agent
+ * (founder directive 2026-07-19: a side note reads as skippable; a dedicated
+ * message reads as a big deal).
  */
+
+export interface LossData {
+  annualLoss: number
+  leadsPerWeek: number
+  avgJobValue: number
+}
 
 export const LEAD_CHANNELS: { key: string; label: string }[] = [
   { key: "missed_calls", label: "Missed phone calls" },
@@ -31,15 +40,15 @@ export default function ChannelsCard({
   done: boolean
   /** True while the parent chat is mid-stream; disables submit to prevent concurrent card submissions. */
   streaming?: boolean
-  onDone: () => void
+  /** lossData is non-null when both numbers were provided; the chat renders
+   *  the big money moment from it. */
+  onDone: (lossData: LossData | null) => void
 }) {
   const [selected, setSelected] = useState<string[]>([])
   const [leadsPerWeek, setLeadsPerWeek] = useState("")
   const [avgJobValue, setAvgJobValue] = useState("")
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  const loss = lossMessage(Number(leadsPerWeek), Number(avgJobValue))
 
   function toggle(key: string) {
     setSelected((prev) =>
@@ -58,7 +67,12 @@ export default function ChannelsCard({
       if (Number.isFinite(lpw) && lpw > 0) patch.leads_per_week = String(lpw)
       if (Number.isFinite(ajv) && ajv > 0) patch.avg_job_value = String(ajv)
       await saveCollected(sessionId, patch)
-      onDone()
+      const loss = annualLoss(lpw, ajv)
+      onDone(
+        loss === null
+          ? null
+          : { annualLoss: loss, leadsPerWeek: lpw, avgJobValue: ajv }
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not save. Try again.")
     } finally {
@@ -106,23 +120,6 @@ export default function ChannelsCard({
           <input style={cardStyles.input} value={avgJobValue} onChange={(e) => setAvgJobValue(e.target.value)} placeholder="4800" inputMode="numeric" />
         </div>
       </div>
-
-      {loss && (
-        <p
-          style={{
-            fontSize: 13.5,
-            lineHeight: 1.5,
-            color: "var(--mate-accent, #ede6e6)",
-            background: "color-mix(in srgb, var(--mate-primary, #e14d1a) 10%, transparent)",
-            border: "1px solid color-mix(in srgb, var(--mate-primary, #e14d1a) 35%, transparent)",
-            borderRadius: 10,
-            padding: "11px 13px",
-            margin: 0,
-          }}
-        >
-          {loss}
-        </p>
-      )}
 
       {error && <p style={cardStyles.error}>{error}</p>}
 

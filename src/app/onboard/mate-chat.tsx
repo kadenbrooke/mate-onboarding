@@ -20,6 +20,11 @@ interface ChatMessage {
   card?: CardKind
   /** Card already submitted (render collapsed confirmation, not the live card). */
   cardDone?: boolean
+  /** The "money left on the table" moment: rendered as a big, brand-glowing
+   *  bubble from the agent. Deterministic math, never model arithmetic.
+   *  Client-injected on channels-card submit; like the cards, it does not
+   *  re-render from the persisted transcript after a reload. */
+  lossData?: { annualLoss: number; leadsPerWeek: number; avgJobValue: number }
 }
 
 // Maps tool names from the AI SDK data stream to the card kind they trigger.
@@ -238,6 +243,82 @@ function greeting(mateName: string, businessName?: string, hasResearch?: boolean
     return `Hi, I'm ${mateName}, your new assistant${who}. You can rename me with the pencil up top. I already scanned your website and pulled the basics, so this will be quick. Ready to check what I found?`
   }
   return `Hi, I'm ${mateName}, your new assistant${who}. You can rename me with the pencil up top. I couldn't pull much from your website, so tell me a little about what your business does and we'll go from there.`
+}
+
+/**
+ * The "money left on the table" moment. Rendered as a message FROM the agent,
+ * styled to land as a headline: the annual number huge in the brand color,
+ * loss framing above, the "but we can help" turn below. Numbers come from the
+ * deterministic loss-math lib via the channels card, never the model.
+ */
+function LossBubble({
+  data,
+}: {
+  data: { annualLoss: number; leadsPerWeek: number; avgJobValue: number }
+}) {
+  return (
+    <div
+      style={{
+        alignSelf: "flex-start",
+        maxWidth: "92%",
+        background: "#1c1c1c",
+        border: "1px solid color-mix(in srgb, var(--mate-primary, #e14d1a) 55%, #333333)",
+        boxShadow: "0 0 24px color-mix(in srgb, var(--mate-primary, #e14d1a) 18%, transparent)",
+        borderRadius: "14px 14px 14px 4px",
+        padding: "16px 18px",
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          letterSpacing: "0.08em",
+          color: "#9a9a9a",
+        }}
+      >
+        MONEY LEFT ON THE TABLE
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: 34,
+          fontWeight: 800,
+          lineHeight: 1.1,
+          color: "var(--mate-primary, #e14d1a)",
+        }}
+      >
+        ${data.annualLoss.toLocaleString("en-US")}
+        <span style={{ fontSize: 16, fontWeight: 700, color: "#9a9a9a" }}> / year</span>
+      </span>
+      <p
+        style={{
+          fontSize: 13.5,
+          lineHeight: 1.5,
+          color: "var(--mate-accent, #ede6e6)",
+          margin: "4px 0 0",
+        }}
+      >
+        That is what walks away if even 1 in 10 of your {data.leadsPerWeek} weekly
+        leads hits voicemail and moves on, at $
+        {data.avgJobValue.toLocaleString("en-US")} a job.
+      </p>
+      <p
+        style={{
+          fontSize: 13.5,
+          lineHeight: 1.5,
+          color: "var(--mate-accent, #ede6e6)",
+          fontWeight: 600,
+          margin: 0,
+        }}
+      >
+        The good news? Recovering it is exactly what I am here for. I answer in
+        under 60 seconds, every time.
+      </p>
+    </div>
+  )
 }
 
 export default function MateChat({
@@ -602,9 +683,23 @@ export default function MateChat({
                 sessionId={sessionId}
                 done={!!m.cardDone}
                 streaming={busy}
-                onDone={() => handleCardDone("channels", "Lead channels are picked.")}
+                onDone={(lossData) => {
+                  // The money moment gets its own big bubble from the agent
+                  // BEFORE the flow continues, so it lands as a headline, not
+                  // a side note. Deterministic math from the card; the prompt
+                  // tells the model not to re-recite the numbers.
+                  if (lossData) {
+                    setMessages((prev) => [
+                      ...prev,
+                      { role: "mate", text: "", lossData },
+                    ])
+                  }
+                  handleCardDone("channels", "Lead channels are picked.")
+                }}
               />
             )
+          if (m.lossData)
+            return <LossBubble key={i} data={m.lossData} />
           return (
             <div key={i} style={m.role === "owner" ? S.bubbleOwner : S.bubbleMate}>
               {m.text}
