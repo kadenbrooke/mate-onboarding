@@ -10,7 +10,14 @@
 const DEFAULT_PORTKEY_BASE_URL = "https://portkey.auto-mate.business"
 
 // Cheap SMS-reply model (creator/model). google -> GEMINI_API_KEY as the BYOK key.
-const REPLY_MODEL = Deno.env.get("DEMO_REPLY_MODEL") ?? "google/gemini-3-flash-preview"
+// Must be NON-reasoning: gemini-3-flash-preview burns the whole low max_tokens
+// budget on reasoning tokens and returns EMPTY content, blanking the reply.
+// gemini-2.5-flash is cheap, non-reasoning, and returns clean output.
+const REPLY_MODEL = Deno.env.get("DEMO_REPLY_MODEL") ?? "google/gemini-2.5-flash"
+
+// max_tokens floor for a 1-2 sentence SMS reply. Belt-and-suspenders against a
+// model swap silently truncating to empty content.
+const MIN_REPLY_MAX_TOKENS = 256
 
 export interface Msg {
   role: "system" | "user" | "assistant"
@@ -53,7 +60,7 @@ export async function generateReply(system: string, msgs: Msg[]): Promise<string
         "x-portkey-provider": provider,
         "x-portkey-metadata": JSON.stringify({ app: "mate-onboarding", surface: "fr-demo" }),
       },
-      body: JSON.stringify({ model, messages, max_tokens: 300 }),
+      body: JSON.stringify({ model, messages, max_tokens: Math.max(300, MIN_REPLY_MAX_TOKENS) }),
       signal: AbortSignal.timeout(15000),
     })
     if (!res.ok) return ""

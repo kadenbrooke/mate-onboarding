@@ -14,6 +14,13 @@
 // scrape->profile extraction and 1-2 sentence SMS qualify replies are both small
 // tasks, so both task classes map to a cheap Gemini Flash tier.
 //
+// IMPORTANT: use a NON-reasoning model here. gemini-3-flash-preview is a reasoning
+// model — at the low max_tokens these small tasks use, it spends the whole output
+// budget on reasoning tokens and returns EMPTY content (finish_reason:"length",
+// completion_tokens:0). That silently broke extraction (every persona fell back to
+// "this business") and would blank the SMS replies. gemini-2.5-flash is a cheap
+// non-reasoning model on the same GEMINI_API_KEY and returns clean output.
+//
 // SPOF mitigation: LLM_PORTKEY_BYPASS=1 routes provider-native (skip the gateway),
 // mirroring amos-ui's bypass flag for a KVM2 outage.
 
@@ -26,13 +33,22 @@ type Provider = "google" | "openai" | "anthropic"
 // upstream. Kept intentionally tiny (two classes) — this app only needs cheap
 // extraction and cheap SMS replies.
 export const TASK_MODELS = {
-  // scrape -> company profile extraction (classify/extract): cheap.
-  extract: "google/gemini-3-flash-preview",
-  // First Responder SMS reply (light reasoning, 1-2 sentences): cheap.
-  reply: "google/gemini-3-flash-preview",
+  // scrape -> company profile extraction (classify/extract): cheap, non-reasoning.
+  extract: "google/gemini-2.5-flash",
+  // First Responder SMS reply (light reasoning, 1-2 sentences): cheap, non-reasoning.
+  reply: "google/gemini-2.5-flash",
 } as const
 
 export type TaskClass = keyof typeof TASK_MODELS
+
+// max_tokens floors per task class. Belt-and-suspenders: a model swap (or a
+// caller passing too small a budget) must never silently truncate to empty
+// content. Extraction returns a multi-field JSON object (needs room); an SMS
+// reply is 1-2 sentences. A caller's maxTokens is clamped UP to these floors.
+export const MIN_MAX_TOKENS: Record<TaskClass, number> = {
+  extract: 1024,
+  reply: 256,
+}
 
 export function modelForClass(cls: TaskClass): string {
   return TASK_MODELS[cls]
@@ -91,10 +107,15 @@ export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
     ? [{ role: "system", content: opts.system }, ...opts.messages]
     : opts.messages
 
+  // Clamp UP to the per-task floor so an under-budgeted call can't truncate to
+  // empty content (the exact failure a reasoning model produced here).
+  const floor = MIN_MAX_TOKENS[opts.taskClass]
+  const maxTokens = Math.max(opts.maxTokens ?? floor, floor)
+
   const body = JSON.stringify({
     model,
     messages,
-    max_tokens: opts.maxTokens ?? 300,
+    max_tokens: maxTokens,
   })
 
   const bypass = process.env.LLM_PORTKEY_BYPASS === "1"

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { modelForClass, TASK_MODELS, chatComplete } from "./portkey"
+import { modelForClass, TASK_MODELS, MIN_MAX_TOKENS, chatComplete } from "./portkey"
 
 describe("modelForClass / TASK_MODELS", () => {
   it("maps both task classes to a cheap model in creator/model form", () => {
@@ -9,6 +9,22 @@ describe("modelForClass / TASK_MODELS", () => {
   it("has an entry for every task class", () => {
     expect(TASK_MODELS.extract).toBeTruthy()
     expect(TASK_MODELS.reply).toBeTruthy()
+  })
+  // Regression: the demo broke because a REASONING model (gemini-3-flash-preview)
+  // burned the whole low max_tokens budget on reasoning and returned empty content.
+  // Both task classes must use a non-reasoning model — never the *-preview reasoning tier.
+  it("does NOT use the gemini reasoning-preview model for these cheap tasks", () => {
+    expect(TASK_MODELS.extract).not.toContain("gemini-3-flash-preview")
+    expect(TASK_MODELS.reply).not.toContain("gemini-3-flash-preview")
+  })
+})
+
+describe("MIN_MAX_TOKENS floors", () => {
+  it("gives extraction enough room for a multi-field JSON object", () => {
+    expect(MIN_MAX_TOKENS.extract).toBeGreaterThanOrEqual(1024)
+  })
+  it("gives an SMS reply a safe floor", () => {
+    expect(MIN_MAX_TOKENS.reply).toBeGreaterThanOrEqual(256)
   })
 })
 
@@ -52,6 +68,21 @@ describe("chatComplete over Portkey", () => {
     const payload = JSON.parse(String((init as RequestInit).body))
     expect(payload.model).not.toContain("/")
     expect(payload.messages[0]).toEqual({ role: "system", content: "you are a bot" })
+  })
+
+  it("clamps max_tokens UP to the per-class floor so a swap can't truncate to empty", async () => {
+    const spy = mockOk("ok")
+    // caller passes a too-small budget; must be clamped up to the extract floor (1024)
+    await chatComplete({ taskClass: "extract", maxTokens: 50, messages: [{ role: "user", content: "hi" }] })
+    const payload = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
+    expect(payload.max_tokens).toBe(MIN_MAX_TOKENS.extract)
+  })
+
+  it("keeps a caller's max_tokens when it already exceeds the floor", async () => {
+    const spy = mockOk("ok")
+    await chatComplete({ taskClass: "reply", maxTokens: 999, messages: [{ role: "user", content: "hi" }] })
+    const payload = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
+    expect(payload.max_tokens).toBe(999)
   })
 
   it("honors PORTKEY_BASE_URL override", async () => {
