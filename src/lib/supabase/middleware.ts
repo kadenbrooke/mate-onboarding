@@ -40,7 +40,13 @@ export async function updateSession(request: NextRequest) {
     path.startsWith("/auth") ||
     path.startsWith("/api/") ||
     path.startsWith("/onboard") ||
-    path.startsWith("/portal");
+    path.startsWith("/portal") ||
+    // /demo is the public Instant First Responder Demo lander (prospect-facing,
+    // no login). Session-scoped by an unguessable UUID + caller-ID join key.
+    // L1: exact-match "/demo" or a "/demo/" child only, so a look-alike prefix
+    // like "/demonstrate-admin" can't slip past the auth gate.
+    path === "/demo" ||
+    path.startsWith("/demo/");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();

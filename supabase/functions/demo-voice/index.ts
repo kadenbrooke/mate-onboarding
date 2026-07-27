@@ -1,0 +1,101 @@
+// Telnyx TeXML voice webhook for the Instant First Responder Demo.
+//
+// The ONE shared demo number (DEMO_TELNYX_NUMBER) points its TeXML voice webhook
+// here. Flow, ported from ben-barlow twilio-voice (which forwarded via <Dial>):
+//   1. verify the Telnyx signature (fail-closed when a public key is configured),
+//   2. normalize the caller ID -> E.164 join key,
+//   3. look up the newest READY demo_sessions row for that caller,
+//   4. return TeXML that speaks a ~3s "sorry we missed you" line then hangs up,
+//   5. fire the missed-call text-back (fr_config.greeting) via Telnyx Messaging
+//      immediately so the buzz lands about 5s after the call.
+//
+// Unknown caller (no ready session — caller ID withheld, or the prospect did not
+// run the form): speak the same line and hang up, but send no text (we have no
+// number/persona). The code-fallback path (demo-sms) covers withheld caller ID.
+import { adminClient, findReadyByPhone, markTexted, upsertConversation } from "../_shared/db.ts"
+import { missedCallTexml } from "../_shared/texml.ts"
+import { sendSms } from "../_shared/telnyx.ts"
+import { toE164 } from "../_shared/normalize.ts"
+import { verifyTelnyx } from "../_shared/verify.ts"
+
+const BUSINESS = "fr_demo"
+
+// Kept short so the spoken line lands in ~3 seconds before the hangup.
+const MISSED_LINE = "Sorry we missed you. We will text you right back."
+
+// M2: run the text-back send off the request's critical path so the TeXML response
+// is not gated on the Messaging API (a slow send risks a carrier call-leg timeout).
+// EdgeRuntime.waitUntil keeps the function alive until the promise settles without
+// blocking the returned Response. Falls back to a bare (non-awaited) call locally.
+function runAfterResponse(p: Promise<unknown>): void {
+  const er = (globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } })
+    .EdgeRuntime
+  if (er?.waitUntil) er.waitUntil(p)
+  // else: promise runs detached; local Deno.serve keeps the process alive for tests.
+}
+
+/** Fire the missed-call text-back + seed the SMS thread. Runs post-response (M2). */
+async function fireTextBack(
+  supabase: ReturnType<typeof adminClient>,
+  caller: string,
+  greeting: string,
+  sessionId: string
+): Promise<void> {
+  const sent = await sendSms(caller, greeting)
+  if (sent.ok) {
+    // Seed the SMS conversation with the greeting as the assistant's first turn so
+    // a reply continues the same thread (demo-sms loads this history).
+    await upsertConversation(
+      supabase,
+      caller,
+      BUSINESS,
+      [{ role: "assistant", content: greeting }],
+      0
+    )
+    await markTexted(supabase, sessionId)
+  }
+}
+
+export async function handleVoice(req: Request): Promise<Response> {
+  const rawBody = await req.text()
+  const okSig = await verifyTelnyx(
+    rawBody,
+    req.headers.get("telnyx-signature-ed25519"),
+    req.headers.get("telnyx-timestamp")
+  )
+  if (!okSig) {
+    return new Response("invalid signature", { status: 401 })
+  }
+
+  // TeXML posts form-encoded params (Twilio-compatible: From, To, CallSid).
+  const form = new URLSearchParams(rawBody)
+  const caller = toE164(form.get("From") ?? "")
+
+  const texml = missedCallTexml(MISSED_LINE)
+  const respond = () =>
+    new Response(texml, { headers: { "Content-Type": "text/xml" } })
+
+  // No usable caller ID -> speak + hangup, nothing to text (code-fallback handles
+  // withheld caller ID via the SMS webhook).
+  if (!caller) return respond()
+
+  const supabase = adminClient()
+  const session = await findReadyByPhone(supabase, caller)
+  if (!session || !session.fr_config) {
+    // Unknown caller: no persona built for this number. Speak + hangup only.
+    return respond()
+  }
+
+  const greeting =
+    session.fr_config.greeting ??
+    "Sorry we missed you. What can we help you with?"
+
+  // M2: fire the text-back AFTER the TeXML response, off the critical path, so the
+  // "sorry we missed you" audio is never gated on the Messaging API. The call is
+  // still ringing/speaking, so the buzz still lands within a few seconds.
+  runAfterResponse(fireTextBack(supabase, caller, greeting, session.id))
+
+  return respond()
+}
+
+Deno.serve(handleVoice)
