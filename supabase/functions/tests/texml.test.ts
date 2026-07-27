@@ -1,5 +1,11 @@
 import { assertStringIncludes, assertEquals } from "jsr:@std/assert@1"
-import { missedCallTexml, hangupTexml, messageTexml, emptyTexml } from "../_shared/texml.ts"
+import {
+  missedCallTexml,
+  hangupTexml,
+  messageTexml,
+  emptyTexml,
+  DEMO_VOICE,
+} from "../_shared/texml.ts"
 
 Deno.test("missedCallTexml: speaks a line then hangs up", () => {
   const xml = missedCallTexml("Sorry we missed you.")
@@ -7,6 +13,14 @@ Deno.test("missedCallTexml: speaks a line then hangs up", () => {
   assertStringIncludes(xml, "<Say")
   assertStringIncludes(xml, "Sorry we missed you.")
   assertStringIncludes(xml, "<Hangup/>")
+})
+
+Deno.test("missedCallTexml: defaults to the Matthew neural voice (male)", () => {
+  // Telnyx TeXML renders AWS Polly Matthew neural via `Polly.Matthew-Neural`
+  // (Twilio-compatible Polly.<VoiceId>-Neural form). Without DEMO_VOICE set, this
+  // is the default a real call hears.
+  assertEquals(DEMO_VOICE, "Polly.Matthew-Neural")
+  assertStringIncludes(missedCallTexml("hi"), '<Say voice="Polly.Matthew-Neural">')
 })
 
 Deno.test("missedCallTexml: escapes XML-special characters in the message", () => {

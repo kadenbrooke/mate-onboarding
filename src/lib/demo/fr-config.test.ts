@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { buildFrConfig, type FrConfig } from "./fr-config"
+import { buildFrConfig, buildVoiceLine, type FrConfig } from "./fr-config"
 import type { CompanyData } from "@/lib/research/website"
 
 describe("buildFrConfig", () => {
@@ -10,12 +10,13 @@ describe("buildFrConfig", () => {
     service_area: "Provo, Orem",
   }
 
-  it("returns a config with system_prompt, greeting, business_name, and voice", () => {
+  it("returns a config with system_prompt, greeting, business_name, voice, and voice_line", () => {
     const cfg = buildFrConfig(acme)
     expect(cfg.system_prompt).toBeTruthy()
     expect(cfg.greeting).toBeTruthy()
     expect(cfg.business_name).toBe("Acme Plumbing")
     expect(cfg.voice).toBeTruthy()
+    expect(cfg.voice_line).toBeTruthy()
   })
 
   it("embeds the real business name and services in the system prompt", () => {
@@ -102,6 +103,52 @@ describe("buildFrConfig", () => {
       const cfg = buildFrConfig(acme)
       expect(cfg.greeting).toContain("Acme Plumbing")
       expect(cfg.greeting).not.toContain("<<<")
+    })
+  })
+
+  // --- Spoken voice line (TeXML <Say>). Deterministic template, not an LLM call. ---
+  describe("voice_line (spoken missed-call line)", () => {
+    it("injects the sanitized business name into the personalized template", () => {
+      const cfg = buildFrConfig(acme)
+      expect(cfg.voice_line).toBe(
+        "Hey, thanks for calling Acme Plumbing! Sorry we missed you. Shoot us a text so we can get you taken care of."
+      )
+    })
+
+    it("uses the generic fallback line when there is no real business name", () => {
+      const cfg = buildFrConfig({})
+      expect(cfg.voice_line).toBe(
+        "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
+      )
+      // Must NOT leak the "this business" display placeholder into spoken audio.
+      expect(cfg.voice_line).not.toContain("this business")
+    })
+
+    it("spells `&` as ` and ` so TTS reads it correctly (J&C -> J and C)", () => {
+      // buildVoiceLine operates on the display name directly.
+      expect(buildVoiceLine("J&C Asphalt")).toBe(
+        "Hey, thanks for calling J and C Asphalt! Sorry we missed you. Shoot us a text so we can get you taken care of."
+      )
+      // And end-to-end through the scraper shape (name gets sanitized first).
+      const cfg = buildFrConfig({ name: "J&C Asphalt Paving", services: ["paving"] })
+      expect(cfg.voice_line).toContain("J and C Asphalt Paving")
+      expect(cfg.voice_line).not.toContain("&")
+    })
+
+    it("collapses double spaces from the & substitution", () => {
+      // "A & B" -> "A  and  B" collapses to "A and B".
+      expect(buildVoiceLine("A & B")).toContain("calling A and B!")
+    })
+
+    it("falls back to generic for a whitespace-only name (no awkward `calling  !`)", () => {
+      expect(buildVoiceLine("   ")).toBe(
+        "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
+      )
+    })
+
+    it("never contains an em dash", () => {
+      expect(buildFrConfig(acme).voice_line).not.toContain("—")
+      expect(buildVoiceLine("Acme")).not.toContain("—")
     })
   })
 })

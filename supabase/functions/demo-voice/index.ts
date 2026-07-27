@@ -25,8 +25,11 @@ const BUSINESS = "fr_demo"
 // Ed25519 signature kept as a fallback. See _shared/webhook-auth.ts.
 const VOICE_TOKEN_ENV = "DEMO_VOICE_TOKEN"
 
-// Kept short so the spoken line lands in ~3 seconds before the hangup.
-const MISSED_LINE = "Sorry we missed you. We will text you right back."
+// Generic spoken line for UNKNOWN callers (no ready session -> no business name).
+// Kept short (~3s) so it lands before the hangup. Ready sessions instead speak
+// their per-business fr_config.voice_line (built deterministically in fr-config.ts).
+const GENERIC_MISSED_LINE =
+  "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
 
 // M2: run the text-back send off the request's critical path so the TeXML response
 // is not gated on the Messaging API (a slow send risks a carrier call-leg timeout).
@@ -72,31 +75,37 @@ export async function handleVoice(req: Request): Promise<Response> {
   const form = new URLSearchParams(rawBody)
   const caller = toE164(form.get("From") ?? "")
 
-  const texml = missedCallTexml(MISSED_LINE)
-  const respond = () =>
-    new Response(texml, { headers: { "Content-Type": "text/xml" } })
+  // Speak a spoken line then hang up. Voice = Matthew (DEMO_VOICE, texml.ts default).
+  const respond = (line: string) =>
+    new Response(missedCallTexml(line), {
+      headers: { "Content-Type": "text/xml" },
+    })
 
-  // No usable caller ID -> speak + hangup, nothing to text (code-fallback handles
-  // withheld caller ID via the SMS webhook).
-  if (!caller) return respond()
+  // No usable caller ID -> generic line + hangup, nothing to text (code-fallback
+  // handles withheld caller ID via the SMS webhook).
+  if (!caller) return respond(GENERIC_MISSED_LINE)
 
   const supabase = adminClient()
   const session = await findReadyByPhone(supabase, caller)
   if (!session || !session.fr_config) {
-    // Unknown caller: no persona built for this number. Speak + hangup only.
-    return respond()
+    // Unknown caller: no persona built for this number. Generic line + hangup.
+    return respond(GENERIC_MISSED_LINE)
   }
+
+  // Ready session: speak the per-business personalized spoken line. Fall back to
+  // the generic line if an older persisted session predates voice_line.
+  const spokenLine = session.fr_config.voice_line ?? GENERIC_MISSED_LINE
 
   const greeting =
     session.fr_config.greeting ??
     "Sorry we missed you. What can we help you with?"
 
   // M2: fire the text-back AFTER the TeXML response, off the critical path, so the
-  // "sorry we missed you" audio is never gated on the Messaging API. The call is
-  // still ringing/speaking, so the buzz still lands within a few seconds.
+  // spoken audio is never gated on the Messaging API. The call is still
+  // ringing/speaking, so the buzz still lands within a few seconds.
   runAfterResponse(fireTextBack(supabase, caller, greeting, session.id))
 
-  return respond()
+  return respond(spokenLine)
 }
 
 Deno.serve(handleVoice)

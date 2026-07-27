@@ -16,6 +16,9 @@ export interface FrConfig {
   greeting?: string
   business_name?: string
   voice?: string
+  // The personalized line SPOKEN on the missed call (built by fr-config.ts).
+  // Optional so older persisted sessions (pre-voice_line) still load.
+  voice_line?: string
 }
 
 export interface DemoSession {

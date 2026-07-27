@@ -26,9 +26,31 @@ export interface FrConfig {
   greeting: string
   business_name: string
   voice: string
+  // The exact line SPOKEN on the missed call (TeXML <Say>), personalized to the
+  // business. Deterministic template (never an LLM call) so a spoken, on-message
+  // line stays fixed. Read by demo-voice/index.ts for ready sessions.
+  voice_line: string
 }
 
 const DEFAULT_VOICE = "friendly and professional"
+
+// The spoken missed-call line. Kept to one short sentence (~3s) so it lands before
+// the hangup. Personalized with the business name when we have a real one; a clean
+// generic line otherwise (thin/SPA site with no extractable name).
+const VOICE_LINE_FALLBACK =
+  "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
+
+/**
+ * Build the spoken voice line from a display business name. `&` is spelled out as
+ * " and " so TTS reads "J&C" as "J and C" rather than mangling the ampersand.
+ * Multiple spaces from the substitution are collapsed. Empty/whitespace-only name
+ * -> the generic fallback line (no awkward "calling  !").
+ */
+export function buildVoiceLine(displayName: string): string {
+  const spoken = displayName.replace(/&/g, " and ").replace(/\s+/g, " ").trim()
+  if (spoken === "") return VOICE_LINE_FALLBACK
+  return `Hey, thanks for calling ${spoken}! Sorry we missed you. Shoot us a text so we can get you taken care of.`
+}
 
 // The guardrail prepended to the persona prompt. Names the untrusted-data fence so
 // the model treats scraped name/services as DATA, never as instructions.
@@ -81,5 +103,9 @@ export function buildFrConfig(company: CompanyData | null | undefined): FrConfig
     greeting: sandboxGreeting(greetingCollected),
     business_name: displayName,
     voice: DEFAULT_VOICE,
+    // Spoken line uses the SAME sanitized/clamped name (cleanName). Empty ->
+    // buildVoiceLine returns the generic fallback (not the "this business" display
+    // placeholder, which would read awkwardly aloud).
+    voice_line: buildVoiceLine(cleanName),
   }
 }

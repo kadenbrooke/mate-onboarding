@@ -8,6 +8,14 @@
 
 const HEAD = '<?xml version="1.0" encoding="UTF-8"?>'
 
+// The default TeXML <Say> voice for the demo. Telnyx TeXML is Twilio-compatible,
+// so a neural Amazon Polly voice is prescribed as `Polly.<VoiceId>-Neural`
+// (verified against Telnyx TeXML <Say> docs — this is the value that renders in
+// Matthew's neural voice on a real call; the plain REST TTS id `AWS.Polly.
+// Matthew-Neural` is a different surface). Overridable via DEMO_VOICE so it's a
+// one-env-var change later without touching code.
+export const DEMO_VOICE = Deno.env.get("DEMO_VOICE") || "Polly.Matthew-Neural"
+
 /** Escape XML-special characters in spoken text. */
 function esc(s: string): string {
   return s
@@ -19,12 +27,12 @@ function esc(s: string): string {
 
 /**
  * The missed-call flow: a short spoken line then hang up. The message is kept to
- * one short sentence so it lands in about 3 seconds. Voice defaults to a neutral
- * Telnyx TeXML voice.
+ * one short sentence so it lands in about 3 seconds. Voice defaults to DEMO_VOICE
+ * (AWS Polly Matthew, neural — a warm male voice the founder will hear on a call).
  */
 export function missedCallTexml(
   message = "Sorry we missed you. We will text you right back.",
-  voice = "Polly.Joanna"
+  voice = DEMO_VOICE
 ): string {
   return `${HEAD}<Response><Say voice="${esc(voice)}">${esc(message)}</Say><Hangup/></Response>`
 }
