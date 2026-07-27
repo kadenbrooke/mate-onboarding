@@ -16,9 +16,14 @@ import { adminClient, findReadyByPhone, markTexted, upsertConversation } from ".
 import { missedCallTexml } from "../_shared/texml.ts"
 import { sendSms } from "../_shared/telnyx.ts"
 import { toE164 } from "../_shared/normalize.ts"
-import { verifyTelnyx } from "../_shared/verify.ts"
+import { authenticateWebhook } from "../_shared/webhook-auth.ts"
 
 const BUSINESS = "fr_demo"
+
+// TeXML voice posts don't reliably carry Telnyx's Ed25519 headers, so the voice
+// webhook authenticates on a shared URL token (?k=DEMO_VOICE_TOKEN) first, with the
+// Ed25519 signature kept as a fallback. See _shared/webhook-auth.ts.
+const VOICE_TOKEN_ENV = "DEMO_VOICE_TOKEN"
 
 // Kept short so the spoken line lands in ~3 seconds before the hangup.
 const MISSED_LINE = "Sorry we missed you. We will text you right back."
@@ -58,13 +63,9 @@ async function fireTextBack(
 
 export async function handleVoice(req: Request): Promise<Response> {
   const rawBody = await req.text()
-  const okSig = await verifyTelnyx(
-    rawBody,
-    req.headers.get("telnyx-signature-ed25519"),
-    req.headers.get("telnyx-timestamp")
-  )
-  if (!okSig) {
-    return new Response("invalid signature", { status: 401 })
+  const authed = await authenticateWebhook(req, rawBody, VOICE_TOKEN_ENV)
+  if (!authed) {
+    return new Response("unauthorized", { status: 401 })
   }
 
   // TeXML posts form-encoded params (Twilio-compatible: From, To, CallSid).

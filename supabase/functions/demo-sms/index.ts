@@ -29,11 +29,16 @@ import {
 } from "../_shared/db.ts"
 import { sendSms } from "../_shared/telnyx.ts"
 import { toE164, isPhoneCode } from "../_shared/normalize.ts"
-import { verifyTelnyx } from "../_shared/verify.ts"
+import { authenticateWebhook } from "../_shared/webhook-auth.ts"
 import { generateReply, type Msg } from "../_shared/portkey.ts"
 import { bumpCounter } from "../_shared/counter.ts"
 
 const BUSINESS = "fr_demo"
+// Messaging API v2 signs webhooks with Ed25519 reliably, so signature is the
+// primary auth here. A shared URL token (?k=DEMO_SMS_TOKEN) is accepted as a
+// belt-and-suspenders fallback so an inbound reply never 401s if a signature is
+// ever absent. See _shared/webhook-auth.ts.
+const SMS_TOKEN_ENV = "DEMO_SMS_TOKEN"
 const HISTORY_TURNS = 10
 const FALLBACK_REPLY = "Thanks! One of our team will follow up shortly."
 const DEFAULT_GREETING = "Sorry we missed you. What can we help you with?"
@@ -97,12 +102,8 @@ async function sendGuarded(
 
 export async function handler(req: Request): Promise<Response> {
   const rawBody = await req.text()
-  const okSig = await verifyTelnyx(
-    rawBody,
-    req.headers.get("telnyx-signature-ed25519"),
-    req.headers.get("telnyx-timestamp")
-  )
-  if (!okSig) return new Response("invalid signature", { status: 401 })
+  const authed = await authenticateWebhook(req, rawBody, SMS_TOKEN_ENV)
+  if (!authed) return new Response("unauthorized", { status: 401 })
 
   const { from: rawFrom, text: body } = parseInbound(
     rawBody,
