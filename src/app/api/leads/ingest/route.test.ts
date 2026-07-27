@@ -51,4 +51,19 @@ describe('POST /api/leads/ingest', () => {
     const rows = insertMock.mock.calls[0][0] as Record<string, unknown>[];
     expect(rows[0]).not.toHaveProperty('evil');
   });
+
+  it('rejects absent token header with 401', async () => {
+    const res = await POST(req({ session_id: 'a', leads: [] }) as never);
+    expect(res.status).toBe(401);
+  });
+
+  it('returns 500 with db error message on insert failure', async () => {
+    insertMock.mockResolvedValueOnce({ data: null, error: { message: 'db failure' } });
+    const res = await POST(req({
+      session_id: '11111111-1111-1111-1111-111111111111',
+      leads: [{ name: 'Test' }],
+    }, 'tok') as never);
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'db failure' });
+  });
 });

@@ -1,4 +1,5 @@
-import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
+import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 const LEAD_FIELDS = [
@@ -6,9 +7,16 @@ const LEAD_FIELDS = [
   'quote_cents', 'contacted', 'after_hours', 'first_reply_seconds', 'created_at',
 ] as const;
 
-export async function POST(request: Request) {
-  const token = request.headers.get('x-ingest-token');
-  if (!token || token !== process.env.LEADS_INGEST_TOKEN) {
+function tokenValid(token: string | null): boolean {
+  const expected = process.env.LEADS_INGEST_TOKEN ?? '';
+  if (!token || !expected) return false;
+  const a = Buffer.from(token);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export async function POST(request: NextRequest) {
+  if (!tokenValid(request.headers.get('x-ingest-token'))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
