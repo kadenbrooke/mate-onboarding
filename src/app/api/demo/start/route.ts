@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { extractBrandFromHtml, resolveBrandColors } from "@/lib/research/website"
 import { fetchSiteGuarded } from "@/lib/demo/fetch-site-guarded"
-import { extractCompanyDataViaPortkey } from "@/lib/demo/extract"
+import { extractCompanyProfile, isUsableName } from "@/lib/demo/extract"
 import { buildFrConfig } from "@/lib/demo/fr-config"
 import { toE164, genPhoneCode } from "@/lib/demo/phone"
 import { checkGuard, MAX_DEMOS_PER_PHONE_PER_DAY, MAX_DEMOS_PER_DAY } from "@/lib/demo/guard"
@@ -147,11 +147,41 @@ export async function POST(req: Request) {
   // fetchSiteGuarded adds the SSRF guard + body cap for this PUBLIC route (H3b);
   // a blocked/internal target yields html:null and we fall through to thin-site
   // persona defaults rather than proxying into internal infrastructure.
+  //
+  // RELIABILITY (Layer 1, upgrade B): scrape+extract is retried ONCE if the first
+  // attempt yields no usable business name. extractCompanyProfile already tries
+  // deterministic head metadata (JSON-LD/OG/meta) before the LLM; the retry re-
+  // fetches with a realistic browser UA (in case the first fetch was bot-walled or
+  // served a thin shell) after a small backoff. Only if the retry ALSO comes back
+  // without a real name do we fall through to the generic "this business" persona.
+  // The retry is capped at one to protect the request latency budget.
+  const RETRY_BACKOFF_MS = 600
   try {
-    const { html, finalUrl } = await fetchSiteGuarded(url)
+    let { html, finalUrl } = await fetchSiteGuarded(url)
+    let company = await extractCompanyProfile(html)
+
+    if (!isUsableName(company.name)) {
+      await new Promise((r) => setTimeout(r, RETRY_BACKOFF_MS))
+      const retry = await fetchSiteGuarded(url, { browserUa: true })
+      const retryCompany = await extractCompanyProfile(retry.html)
+      // Keep the retry's HTML/brand only if it actually got us further (a name, or
+      // HTML where the first attempt had none) so a worse retry can't regress us.
+      if (isUsableName(retryCompany.name) || (!html && retry.html)) {
+        html = retry.html
+        finalUrl = retry.finalUrl
+        company = retryCompany
+      }
+    }
+
+    if (!isUsableName(company.name)) {
+      // Residual failure: measurable so we can size the case for Layer-2 headless.
+      console.warn(
+        `[demo/start] generic-persona fallback: no usable business name for ${finalUrl} (session ${sessionId})`
+      )
+    }
+
     const baseBrand = extractBrandFromHtml(html ?? "", finalUrl)
     const brand = await resolveBrandColors(baseBrand, html ?? "", finalUrl)
-    const company = await extractCompanyDataViaPortkey(html)
     const frConfig = buildFrConfig(company)
 
     const { error: upErr } = await supabase

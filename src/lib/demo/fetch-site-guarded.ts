@@ -18,6 +18,14 @@ import { checkUrlForSsrf, isPrivateIp } from "./ssrf"
 const MAX_HTML_BYTES = 2_000_000
 const FETCH_TIMEOUT_MS = 8000
 
+// Default UA (bot-honest). The retry path passes a realistic browser UA instead,
+// because some sites bot-wall or serve a thin/empty shell to obvious crawlers; a
+// browser UA can get us the real SSR HTML on the second attempt.
+const DEFAULT_UA = "Mozilla/5.0 (compatible; MateOnboarding/1.0)"
+const BROWSER_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " +
+  "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
 export interface GuardedFetchResult {
   html: string | null
   finalUrl: string
@@ -25,12 +33,25 @@ export interface GuardedFetchResult {
   reason?: string
 }
 
+export interface FetchSiteGuardedOpts {
+  /**
+   * Use a realistic browser User-Agent instead of the bot-honest default. The
+   * reliability retry path sets this: a first fetch that came back thin/empty may
+   * have been bot-walled, and a browser UA can coax the real SSR HTML out.
+   */
+  browserUa?: boolean
+}
+
 /**
  * Fetch a user-supplied site URL with an SSRF guard + body cap. On any block or
  * failure returns { html: null } (with blocked/reason set when it was a security
  * rejection) so the caller falls through to thin-site persona defaults.
  */
-export async function fetchSiteGuarded(url: string): Promise<GuardedFetchResult> {
+export async function fetchSiteGuarded(
+  url: string,
+  opts: FetchSiteGuardedOpts = {}
+): Promise<GuardedFetchResult> {
+  const userAgent = opts.browserUa ? BROWSER_UA : DEFAULT_UA
   // normalizeUrl blindly prefixes https:// to anything lacking an http(s) scheme,
   // which would turn "file:///etc/passwd" into "https://file:///..." and sneak a
   // disallowed scheme past the check. So reject an EXPLICIT non-http(s) scheme on
@@ -76,7 +97,7 @@ export async function fetchSiteGuarded(url: string): Promise<GuardedFetchResult>
 
   try {
     const res = await fetch(finalUrl, {
-      headers: { "user-agent": "Mozilla/5.0 (compatible; MateOnboarding/1.0)" },
+      headers: { "user-agent": userAgent },
       redirect: "manual", // don't follow redirects into internal ranges
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     })

@@ -99,4 +99,27 @@ describe("fetchSiteGuarded (H3b SSRF + body cap)", () => {
     expect(r.blocked).toBeUndefined()
     expect(r.html).toBeNull()
   })
+
+  it("uses the bot-honest UA by default and a browser UA on the retry", async () => {
+    lookupMock.mockResolvedValue([{ address: "93.184.216.34", family: 4 }])
+    const fetchSpy = vi
+      .fn()
+      .mockResolvedValue(new Response("<html>ok", { status: 200 }))
+    globalThis.fetch = fetchSpy as unknown as typeof fetch
+
+    await fetchSiteGuarded("https://public-site.com/")
+    const defaultUa = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Record<
+      string,
+      string
+    >
+    expect(defaultUa["user-agent"]).toContain("MateOnboarding")
+
+    await fetchSiteGuarded("https://public-site.com/", { browserUa: true })
+    const browserUa = (fetchSpy.mock.calls[1][1] as RequestInit).headers as Record<
+      string,
+      string
+    >
+    expect(browserUa["user-agent"]).toContain("Chrome")
+    expect(browserUa["user-agent"]).not.toContain("MateOnboarding")
+  })
 })
