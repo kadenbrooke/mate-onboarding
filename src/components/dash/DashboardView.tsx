@@ -16,6 +16,7 @@ import { TwinRings } from './pipeline/TwinRings';
 import { SpeedZone } from './speed/SpeedZone';
 import { JourneyRiver } from './journey/JourneyRiver';
 import { Ticker } from './Ticker';
+import { BookedCalendar } from './calendar/BookedCalendar';
 import type { DashData } from './types';
 
 export function DashboardView({ session, leads, data }: {
@@ -24,8 +25,10 @@ export function DashboardView({ session, leads, data }: {
   const [view, setView] = useState<MobileView>('home');
   const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: actionsThisWeek(data.events), minutesPerAction: 5 }); // PLAN3: retainer from session
 
+  // Calendar zone
+  const calendarZone = <BookedCalendar appointments={data.appointments} />;
+
   // Stub zones for features arriving in Plan 2
-  const calendarStub = <Card label="CALENDAR"><Dim note="booked appointments arrive in the next build" /></Card>;
   const followUpStub = <Card label="FOLLOW-UP"><Dim note="turns on with the Reactivator" /></Card>;
   const reputationStub = <Card label="REPUTATION"><Dim note="turns on with review collection" /></Card>;
   const crewStub = <Card label="YOUR CREW"><Dim /></Card>;
@@ -56,7 +59,7 @@ export function DashboardView({ session, leads, data }: {
       <HeroStrip {...hero} />
       <Ticker events={data.events} />
       <HotLeads leads={leads} sessionId={session.id} />
-      {calendarStub}
+      {calendarZone}
       {pulseStub}
     </>
   );
@@ -121,7 +124,7 @@ export function DashboardView({ session, leads, data }: {
         <Ticker events={data.events} />
         <JourneyRiver leads={leads} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {leadFlowZone}{calendarStub}
+          {leadFlowZone}{calendarZone}
           {pipelineZone}{followUpStub}
           {speedZone}{reputationStub}
         </div>
