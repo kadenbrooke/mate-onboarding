@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { NextRequest } from 'next/server';
 
 const insertMock = vi.fn().mockResolvedValue({ data: [{ id: 'x' }], error: null });
 vi.mock('@/lib/supabase/service', () => ({
@@ -9,13 +10,13 @@ vi.mock('@/lib/supabase/service', () => ({
 
 import { POST } from './route';
 
-function req(body: unknown, token?: string) {
+function req(body: unknown, token?: string): NextRequest {
   return new Request('http://x/api/leads/ingest', {
     method: 'POST',
     headers: token ? { 'x-ingest-token': token, 'content-type': 'application/json' }
                    : { 'content-type': 'application/json' },
     body: JSON.stringify(body),
-  });
+  }) as unknown as NextRequest;
 }
 
 describe('POST /api/leads/ingest', () => {
@@ -53,7 +54,7 @@ describe('POST /api/leads/ingest', () => {
   });
 
   it('rejects absent token header with 401', async () => {
-    const res = await POST(req({ session_id: 'a', leads: [] }) as never);
+    const res = await POST(req({ session_id: 'a', leads: [] }));
     expect(res.status).toBe(401);
   });
 
@@ -62,7 +63,7 @@ describe('POST /api/leads/ingest', () => {
     const res = await POST(req({
       session_id: '11111111-1111-1111-1111-111111111111',
       leads: [{ name: 'Test' }],
-    }, 'tok') as never);
+    }, 'tok'));
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: 'db failure' });
   });

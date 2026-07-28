@@ -9,6 +9,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
+    // jsdom layers on top of Node globals; node-only tests (Buffer etc.) keep working
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
