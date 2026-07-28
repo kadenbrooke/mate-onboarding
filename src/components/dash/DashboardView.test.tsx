@@ -21,7 +21,7 @@ describe('DashboardView', () => {
   it('renders stub zone labels + real widget labels', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
     // Stub zones still present (CALENDAR replaced by real BookedCalendar)
-    for (const label of ['FOLLOW-UP', 'REPUTATION', 'YOUR CREW', 'SYSTEM PULSE']) {
+    for (const label of ['FOLLOW-UP ENGINE', 'REPUTATION', 'YOUR CREW', 'SYSTEM PULSE']) {
       expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
     }
     // Calendar zone now real
