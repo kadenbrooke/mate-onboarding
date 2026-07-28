@@ -156,7 +156,7 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
         style={{ display: 'block', overflow: 'visible' }}
         aria-hidden="true"
       >
-        {/* Source band ribbons to quoted node — each gets a proportional dest slice */}
+        {/* Source band ribbons to quoted node - each gets a proportional dest slice */}
         {bands.map((band) => {
           const dstH = (band.count / totalCount) * quotedBandH;
           const dstTop = midCurY;

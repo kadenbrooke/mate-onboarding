@@ -43,7 +43,7 @@ export function RescueRing({ rescued, missedTotal }: { rescued: number; missedTo
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={18}
-            fontWeight={300}
+            fontWeight={NUM_DISPLAY.fontWeight as number}
             fontFamily={NUM_DISPLAY.fontFamily as string}
             fill={brandVar}
           >

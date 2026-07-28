@@ -18,25 +18,54 @@ const emptyDash: DashData = {
 };
 
 describe('DashboardView', () => {
-  it('renders stub zone labels + real widget labels', () => {
+  it('desktop renders all final composition zones', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
-    // Stub zones still present (CALENDAR and REPUTATION replaced by real components)
-    for (const label of ['FOLLOW-UP ENGINE', 'THE REPUTATION MACHINE', 'YOUR CREW', 'SYSTEM PULSE']) {
-      expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
+
+    // All desktop widget card labels present (desktop + mobile containers both in DOM)
+    const desktopLabels = [
+      'HOT RIGHT NOW',
+      'THE PIPELINE',
+      'FOLLOW-UP ENGINE',
+      'SPEED TO LEAD',
+      'THE REPUTATION MACHINE',
+      'YOUR CREW',
+      'SYSTEM PULSE',
+      'LEAD JOURNEY',
+      'LEADS',
+    ];
+    for (const label of desktopLabels) {
+      expect(screen.getAllByText(label).length, `label "${label}" not found`).toBeGreaterThanOrEqual(1);
     }
-    // Calendar zone now real
+
+    // BOOKED APPOINTMENTS (regex covers any variant)
     expect(screen.getAllByText(/BOOKED APPOINTMENTS/).length).toBeGreaterThanOrEqual(1);
-    // Speed zone now real
-    expect(screen.getAllByText('SPEED TO LEAD').length).toBeGreaterThanOrEqual(1);
-    // Real widgets present even with no leads
-    expect(screen.getAllByText('HOT RIGHT NOW').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('THE PIPELINE').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('mobile nav switches views', () => {
+  it('mobile crew tab contains SETUP stub', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    // Navigate to crew tab where SETUP stub lives
+    fireEvent.click(screen.getByRole('button', { name: /crew/i }));
+    expect(screen.getByTestId('view-crew')).toBeInTheDocument();
+    expect(screen.getAllByText('SETUP').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('mobile nav tabs switch views', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+
+    // Default home tab
+    expect(screen.getByTestId('view-home')).toBeInTheDocument();
+
+    // Switch to money tab
     fireEvent.click(screen.getByRole('button', { name: /money/i }));
     expect(screen.getByTestId('view-money')).toBeInTheDocument();
+
+    // Switch to leads tab
+    fireEvent.click(screen.getByRole('button', { name: /leads/i }));
+    expect(screen.getByTestId('view-leads')).toBeInTheDocument();
+
+    // Switch to crew tab
+    fireEvent.click(screen.getByRole('button', { name: /crew/i }));
+    expect(screen.getByTestId('view-crew')).toBeInTheDocument();
   });
 
   it('renders real lead flow + pipeline widgets when leads exist', () => {
@@ -50,7 +79,7 @@ describe('DashboardView', () => {
     expect(screen.getAllByText('THE PIPELINE').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('money tab renders pipeline inside the mobile container', () => {
+  it('money tab renders reputation and follow-up inside mobile container', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
     fireEvent.click(screen.getByRole('button', { name: /money/i }));
     const mobile = screen.getByTestId('view-money');

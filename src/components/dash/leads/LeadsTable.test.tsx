@@ -22,7 +22,7 @@ describe('LeadsTable', () => {
     render(<LeadsTable leads={[lead({})]} sessionId="s1" spotlightId={null} />);
     fireEvent.click(screen.getByRole('button', { name: /won/i }));
     expect(fetch).toHaveBeenCalledWith('/api/leads/l1/status', expect.objectContaining({ method: 'PATCH' }));
-    // Optimistic update is synchronous — row should already show 'won' before the fetch resolves
+    // Optimistic update is synchronous - row should already show 'won' before the fetch resolves
     expect(screen.getByTestId('lead-row-l1')).toHaveAttribute('data-status', 'won');
     // Now resolve to finish clean
     resolveFetch({ ok: true, json: async () => ({ ok: true }) } as unknown as Response);

@@ -10,7 +10,7 @@ export function ReputationZone({
   reviews,
 }: {
   reputation: Reputation | null;
-  reviews: Review[] | null | undefined;
+  reviews: Review[];
 }) {
   if (reputation == null) {
     return (
@@ -67,7 +67,7 @@ export function ReputationZone({
           border: '1px solid #2a2a2a', borderRadius: 12, padding: 14,
           background: 'linear-gradient(180deg,#1c1c1c,#141414)',
         }}>
-          <StarBars reviews={safeReviews} avg_rating={reputation.avg_rating} />
+          <StarBars reviews={safeReviews} avgRating={reputation.avg_rating} />
         </div>
 
         {/* Referral ring sub-card (green-tinted like StreakCard) */}

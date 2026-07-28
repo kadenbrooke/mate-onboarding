@@ -74,7 +74,7 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
         <div style={{ fontSize: 12, fontFamily: FONT_BODY, opacity: 0.7, marginTop: 2, lineHeight: 1.5 }}>
           You beat the average company by{' '}
           <b style={{ color: FREE_GREEN }}>{multiple}x</b>
-          {' '}{FIRST_RESPONDER_STAT}% of jobs go to the first responder.
+          {'. '}{FIRST_RESPONDER_STAT}% of jobs go to the first responder.
         </div>
       </div>
     </Card>

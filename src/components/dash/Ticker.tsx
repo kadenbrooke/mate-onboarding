@@ -1,6 +1,6 @@
 'use client';
 import type { ClientEvent } from '@/lib/metrics/events';
-import { FONT_BODY } from '@/lib/theme';
+import { FONT_BODY, BG_CARD } from '@/lib/theme';
 
 const AGENT_COLOR: Record<ClientEvent['agent'], string> = {
   first_responder: 'var(--brand-primary, #e14d1a)',
@@ -14,7 +14,7 @@ export function Ticker({ events }: { events: ClientEvent[] }) {
   const items = events.slice(0, 12);
   return (
     <div style={{
-      overflow: 'hidden', background: '#171717', borderRadius: 8,
+      overflow: 'hidden', background: BG_CARD, borderRadius: 8,
       padding: '6px 0', position: 'relative',
     }}>
       <style>{`

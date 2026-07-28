@@ -24,10 +24,10 @@ function starGlow(star: number): string | undefined {
 
 export function StarBars({
   reviews,
-  avg_rating,
+  avgRating,
 }: {
   reviews: Review[];
-  avg_rating: number | null;
+  avgRating: number | null;
 }) {
   // Count reviews per star rating
   const counts: Record<number, number> = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
@@ -46,7 +46,7 @@ export function StarBars({
         </span>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
           <span style={{ fontSize: 20, ...NUM_DISPLAY }}>
-            {avg_rating != null ? avg_rating.toFixed(1) : '--'}
+            {avgRating != null ? avgRating.toFixed(1) : '--'}
           </span>
           <span style={{ fontSize: 10, opacity: 0.5, fontFamily: FONT_BODY }}>
             ({total})

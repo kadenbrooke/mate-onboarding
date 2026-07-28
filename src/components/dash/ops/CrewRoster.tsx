@@ -1,4 +1,4 @@
-// CrewRoster — YOUR CREW card.
+// CrewRoster - YOUR CREW card.
 // Each row shows a 34px chip + label + status pill.
 // Chips are initials placeholders; 8-bit glowing character sprites are a future
 // pass pending founder decision (Plan 3).
@@ -68,7 +68,7 @@ function StatusPill({ live }: { live: boolean }) {
           padding: '2px 6px',
         }}
       >
-        LIVE
+        ● LIVE
       </span>
     );
   }

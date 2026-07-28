@@ -10,7 +10,7 @@ describe('CrewRoster', () => {
       { key: 'gbp_reviews', label: 'Reputation Builder', status: 'under_construction' },
     ]} />);
     expect(screen.getByText('First Responder')).toBeInTheDocument();
-    expect(screen.getByText('LIVE')).toBeInTheDocument();
+    expect(screen.getByText('● LIVE')).toBeInTheDocument();
     expect(screen.getByText('LOCKED')).toBeInTheDocument();
   });
   it('renders default roster when no capabilities', () => {

@@ -1,10 +1,10 @@
 'use client';
-// SystemPulse — SYSTEM PULSE card with live EKG animation.
+// SystemPulse - SYSTEM PULSE card with live EKG animation.
 // State is derived from open incidents (resolved_at === null).
 // Critical trumps warning; no open incidents => green.
 //
 // White-label note: copy never mentions "Auto Mate" by name.
-// Notification pipe is Plan 3 — the "support team was notified" line is
+// Notification pipe is Plan 3 - the "support team was notified" line is
 // optimistic, grounded in the incident row's existence (it was written by the
 // heartbeat automation that also fires the real alert).
 
@@ -61,11 +61,11 @@ function formatElapsed(ms: number): string {
 }
 
 function Stopwatch({ startedAt }: { startedAt: string }) {
-  const [elapsed, setElapsed] = useState(() => Date.now() - new Date(startedAt).getTime());
+  const [elapsed, setElapsed] = useState(() => Math.max(0, Date.now() - new Date(startedAt).getTime()));
 
   useEffect(() => {
     const id = setInterval(() => {
-      setElapsed(Date.now() - new Date(startedAt).getTime());
+      setElapsed(Math.max(0, Date.now() - new Date(startedAt).getTime()));
     }, 1000);
     return () => clearInterval(id);
   }, [startedAt]);

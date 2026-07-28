@@ -4,7 +4,7 @@ export type CascadeStage = { label: string; count: number; highlight?: 'green' |
 
 // Command-center cascade: full-width top row, each stage narrower + indented,
 // terminal stage glows. Reused by Follow-up and Reputation zones.
-// Widths are narrative tiers (100% → 40% linear), not count-proportional — counts carry the data.
+// Widths are narrative tiers (100% → 40% linear), not count-proportional - counts carry the data.
 export function CascadeFunnel({ stages }: { stages: CascadeStage[] }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
