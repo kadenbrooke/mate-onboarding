@@ -19,6 +19,8 @@ import { Ticker } from './Ticker';
 import { BookedCalendar } from './calendar/BookedCalendar';
 import { FollowUpZone } from './followup/FollowUpZone';
 import { ReputationZone } from './reputation/ReputationZone';
+import { CrewRoster } from './ops/CrewRoster';
+import { SystemPulse } from './ops/SystemPulse';
 import type { DashData } from './types';
 
 export function DashboardView({ session, leads, data }: {
@@ -36,9 +38,7 @@ export function DashboardView({ session, leads, data }: {
   // Reputation zone
   const reputationZone = <ReputationZone reputation={data.reputation} reviews={data.reviews} />;
 
-  // Stub zones for features arriving in Plan 2
-  const crewStub = <Card label="YOUR CREW"><Dim /></Card>;
-  const pulseStub = <Card label="SYSTEM PULSE"><Dim /></Card>;
+  // Stub zone for features arriving in a future plan
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
 
   // Speed zone
@@ -66,7 +66,7 @@ export function DashboardView({ session, leads, data }: {
       <Ticker events={data.events} />
       <HotLeads leads={leads} sessionId={session.id} />
       {calendarZone}
-      {pulseStub}
+      <SystemPulse incidents={data.incidents} />
     </>
   );
 
@@ -98,7 +98,7 @@ export function DashboardView({ session, leads, data }: {
 
   const mobileCrew = (
     <>
-      {crewStub}
+      <CrewRoster capabilities={data.capabilities} />
       <a
         href={`/portal?session=${session.id}`}
         style={{ fontSize: 13, color: 'var(--brand-primary, #e14d1a)', textDecoration: 'none', display: 'block', marginTop: 4 }}
@@ -106,7 +106,7 @@ export function DashboardView({ session, leads, data }: {
         Chat with Mate
       </a>
       {setupStub}
-      {pulseStub}
+      <SystemPulse incidents={data.incidents} />
     </>
   );
 
@@ -135,7 +135,8 @@ export function DashboardView({ session, leads, data }: {
           {speedZone}{reputationZone}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
-          {crewStub}{pulseStub}
+          <CrewRoster capabilities={data.capabilities} />
+          <SystemPulse incidents={data.incidents} />
         </div>
       </div>
 
