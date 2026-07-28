@@ -2,7 +2,7 @@ import type { Lead } from '@/lib/metrics/leads';
 import { journeyRiver } from '@/lib/metrics/journey';
 import { moneyShort } from '@/lib/metrics/format';
 import { Card } from '../Card';
-import { FREE_GREEN, FONT_BODY } from '@/lib/theme';
+import { brandVar, FREE_GREEN, FONT_BODY } from '@/lib/theme';
 
 // Source label humanization (mirrors SourceDonut SOURCE_LABELS)
 const SOURCE_LABELS: Record<string, string> = {
@@ -14,8 +14,8 @@ const SOURCE_LABELS: Record<string, string> = {
   unknown: 'Other',
 };
 
-// Free sources use FREE_GREEN family; non-free use gray ramp
-const FREE_COLOR = '#2e8b57';
+// Darker shade of FREE_GREEN for wide fills (bands and ribbons)
+const FREE_BAND_GREEN = '#2e8b57';
 const GRAY_RAMP = ['#555', '#777', '#999', '#444', '#333'];
 
 export function JourneyRiver({ leads }: { leads: Lead[] }) {
@@ -49,16 +49,28 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
   const RIGHT_X = 560;
   const TOP_OFFSET = 15; // vertical centering within 150px viewBox
 
-  // Take up to 5 sources
-  const topSources = river.sources.slice(0, 5);
-  const totalCount = topSources.reduce((a, s) => a + s.count, 0);
-  const n = topSources.length;
+  // Take top 4 sources; aggregate the rest into "Other N"
+  const sorted = river.sources; // already sorted by count desc from journeyRiver
+  const TOP_N = 4;
+  const topSources = sorted.slice(0, TOP_N);
+  const overflow = sorted.slice(TOP_N);
+
+  type RawSource = { source: string; count: number; free: boolean };
+  const allSources: RawSource[] = [...topSources];
+  if (overflow.length > 0) {
+    const otherCount = overflow.reduce((a, s) => a + s.count, 0);
+    allSources.push({ source: '__other__', count: otherCount, free: false });
+  }
+
+  // Normalize band heights against the FULL total (river.total)
+  const totalCount = river.total;
+  const n = allSources.length;
 
   // Compute band heights proportional to count, respecting min and total drawable
   const gapsTotal = (n - 1) * GAP;
   const availH = DRAWABLE_H - gapsTotal;
 
-  let rawHeights = topSources.map(s => Math.max(MIN_BAND, (s.count / Math.max(totalCount, 1)) * availH));
+  let rawHeights = allSources.map(s => Math.max(MIN_BAND, (s.count / Math.max(totalCount, 1)) * availH));
   // Scale so total doesn't exceed available
   const rawSum = rawHeights.reduce((a, b) => a + b, 0);
   if (rawSum > availH) {
@@ -83,11 +95,18 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
   const bands: Band[] = [];
   let curY = startY;
   let grayIdx = 0;
-  for (let i = 0; i < topSources.length; i++) {
-    const s = topSources[i];
+  for (let i = 0; i < allSources.length; i++) {
+    const s = allSources[i];
     const h = rawHeights[i];
-    const color = s.free ? FREE_COLOR : GRAY_RAMP[grayIdx++ % GRAY_RAMP.length];
-    const label = SOURCE_LABELS[s.source] ?? s.source;
+    let color: string;
+    if (s.source === '__other__') {
+      color = '#444';
+    } else {
+      color = s.free ? FREE_BAND_GREEN : GRAY_RAMP[grayIdx++ % GRAY_RAMP.length];
+    }
+    const label = s.source === '__other__'
+      ? `Other ${overflow.length}`
+      : (SOURCE_LABELS[s.source] ?? s.source);
     bands.push({ source: s.source, count: s.count, free: s.free, y: curY, h, color, label });
     curY += h + GAP;
   }
@@ -125,7 +144,9 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
     ].join(' ');
   }
 
-  const brandVar = 'var(--brand-primary, #e14d1a)';
+  // Destination cursor: each band gets a proportional slice of the quoted node height,
+  // stacked top to bottom in band order so ribbons fan out without overlapping.
+  let midCurY = midTopY;
 
   return (
     <Card label="LEAD JOURNEY">
@@ -135,15 +156,22 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
         style={{ display: 'block', overflow: 'visible' }}
         aria-hidden="true"
       >
-        {/* Source band ribbons to quoted node */}
-        {bands.map((band) => (
-          <path
-            key={`ribbon-${band.source}`}
-            d={ribbonPath(LEFT_X + 40, band.y, band.y + band.h, MID_X - 4, midTopY, midBotY)}
-            fill={band.color}
-            opacity={0.8}
-          />
-        ))}
+        {/* Source band ribbons to quoted node — each gets a proportional dest slice */}
+        {bands.map((band) => {
+          const dstH = (band.count / totalCount) * quotedBandH;
+          const dstTop = midCurY;
+          const dstBot = midCurY + dstH;
+          midCurY = dstBot;
+          return (
+            <path
+              key={`ribbon-${band.source}`}
+              data-ribbon="true"
+              d={ribbonPath(LEFT_X + 40, band.y, band.y + band.h, MID_X - 4, dstTop, dstBot)}
+              fill={band.color}
+              opacity={0.8}
+            />
+          );
+        })}
 
         {/* Quoted -> Won ribbon */}
         {river.won > 0 && (
@@ -183,7 +211,7 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
               dominantBaseline="middle"
               fontSize={9}
               fontFamily={FONT_BODY}
-              fill={band.free ? FREE_COLOR : '#aaa'}
+              fill={band.free ? FREE_BAND_GREEN : '#aaa'}
             >
               {band.label} {band.count}
             </text>

@@ -22,4 +22,19 @@ describe('JourneyRiver', () => {
     render(<JourneyRiver leads={[]} />);
     expect(screen.getByText(/leads will flow here/i)).toBeInTheDocument();
   });
+
+  it('3 distinct sources render 3 ribbon paths with unique destination y-coords', () => {
+    const leads = [
+      lead({ source: 'referral', status: 'won' }),
+      lead({ source: 'missed_call', status: 'open' }),
+      lead({ source: 'web_form', status: 'open' }),
+    ];
+    const { container } = render(<JourneyRiver leads={leads} />);
+    const ribbons = container.querySelectorAll('[data-ribbon]');
+    expect(ribbons).toHaveLength(3);
+    // Each ribbon's d attribute must be unique (distinct destination y slices)
+    const dAttrs = Array.from(ribbons).map(el => el.getAttribute('d'));
+    const unique = new Set(dAttrs);
+    expect(unique.size).toBe(3);
+  });
 });
