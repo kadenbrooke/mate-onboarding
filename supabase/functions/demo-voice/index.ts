@@ -4,8 +4,9 @@
 // The ONE shared demo number (DEMO_TELNYX_NUMBER) points its TeXML voice webhook
 // here. This single function handles TWO POSTs from Telnyx for one call:
 //
-//   1. THE CALL WEBHOOK (initial): speak the personalized line + a "text us or
-//      leave a message" invite, then <Record> the caller with transcription on.
+//   1. THE CALL WEBHOOK (initial): speak the personalized line (the "text us or
+//      leave a message" invite is now baked into that line, spoken once), then
+//      <Record> the caller with transcription on.
 //      NO TEXT IS SENT HERE (that changed in Flow A); the text-back now fires from
 //      whichever CALLBACK path resolves first (see the exactly-one-text guard).
 //        - transcribeCallback -> demo-transcribe (VM path: reference what they said)
@@ -24,8 +25,8 @@
 // double texts even if both callbacks race.
 //
 // Unknown caller (no ready session; caller ID withheld, or the prospect did not
-// run the form): speak the generic line + the SAME voicemail invite and record. The
-// no-VM/VM paths still resolve, but with no persona we fall back to a generic text.
+// run the form): speak the generic line (invite baked in) and record. The no-VM/VM
+// paths still resolve, but with no persona we fall back to a generic text.
 import {
   adminClient,
   findReadyByPhone,
@@ -54,9 +55,12 @@ const VOICE_TOKEN_ENV = "DEMO_VOICE_TOKEN"
 // emit into the TeXML). Kept separate so it can be rotated independently.
 const TRANSCRIBE_TOKEN_ENV = "DEMO_TRANSCRIBE_TOKEN"
 
-// Generic spoken line for UNKNOWN callers (no ready session -> no business name).
+// Generic SPOKEN line for UNKNOWN callers (no ready session -> no business name).
+// This is the COMPLETE spoken message: the voicemail invite is baked in (matching the
+// personalized voice_line in fr-config.ts), and VOICEMAIL_INVITE is now empty, so the
+// caller hears the "shoot us a text, or leave a message after the beep" invite once.
 const GENERIC_MISSED_LINE =
-  "Hey, thanks for calling! Sorry we missed you."
+  "Hey, thanks for calling! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
 
 const DEFAULT_GREETING = "Sorry we missed you. What can we help you with?"
 
@@ -160,8 +164,8 @@ export async function handleVoice(req: Request): Promise<Response> {
     return respond(GENERIC_MISSED_LINE)
   }
 
-  // Ready session: speak the per-business personalized spoken line (invite appended
-  // in the TeXML layer). Fall back to the generic line for older pre-voice_line rows.
+  // Ready session: speak the per-business personalized spoken line (invite baked into
+  // the line itself). Fall back to the generic line for older pre-voice_line rows.
   const spokenLine = session.fr_config.voice_line ?? GENERIC_MISSED_LINE
   return respond(spokenLine)
 }

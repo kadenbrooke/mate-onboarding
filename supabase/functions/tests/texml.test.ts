@@ -48,15 +48,23 @@ Deno.test("no em dash in default missed-call line", () => {
 
 // --- Voicemail-with-transcription flow (Flow A). ---
 
-Deno.test("voicemailTexml: Say (line + invite) then Record then Hangup", () => {
+Deno.test("voicemailTexml: Say (complete line, invite baked in) then Record then Hangup", () => {
+  // The invite is now baked INTO the spoken line (fr-config/demo-voice); VOICEMAIL_INVITE
+  // is empty, so nothing is appended and the line is spoken exactly once.
+  const line =
+    "Hey, thanks for calling Acme! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
   const xml = voicemailTexml(
-    "Hey, thanks for calling Acme! Sorry we missed you.",
+    line,
     "https://x.supabase.co/functions/v1/demo-transcribe?k=T",
     "https://x.supabase.co/functions/v1/demo-voice?k=V"
   )
-  // Say carries BOTH the personalized spoken line and the appended invite.
-  assertStringIncludes(xml, "Hey, thanks for calling Acme! Sorry we missed you.")
-  assertStringIncludes(xml, "leave a quick message after the beep")
+  // Say carries the complete spoken line verbatim, no appended clause.
+  assertStringIncludes(xml, line)
+  // The "after the beep" invite (baked into the line) matches the real <Record> beep.
+  assertStringIncludes(xml, "leave a message after the beep")
+  // No leftover edge-layer invite clause, and "text" is spoken exactly once (no double).
+  assertEquals(xml.includes("leave a quick message after the beep"), false)
+  assertEquals(xml.split("text").length - 1, 1)
   // Ordered: Say before Record before Hangup.
   const sayAt = xml.indexOf("<Say")
   const recAt = xml.indexOf("<Record")

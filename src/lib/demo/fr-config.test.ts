@@ -111,14 +111,14 @@ describe("buildFrConfig", () => {
     it("injects the sanitized business name into the personalized template", () => {
       const cfg = buildFrConfig(acme)
       expect(cfg.voice_line).toBe(
-        "Hey, thanks for calling Acme Plumbing! Sorry we missed you. Shoot us a text so we can get you taken care of."
+        "Hey, thanks for calling Acme Plumbing! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
       )
     })
 
     it("uses the generic fallback line when there is no real business name", () => {
       const cfg = buildFrConfig({})
       expect(cfg.voice_line).toBe(
-        "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
+        "Hey, thanks for calling! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
       )
       // Must NOT leak the "this business" display placeholder into spoken audio.
       expect(cfg.voice_line).not.toContain("this business")
@@ -127,7 +127,7 @@ describe("buildFrConfig", () => {
     it("spells `&` as ` and ` so TTS reads it correctly (J&C -> J and C)", () => {
       // buildVoiceLine operates on the display name directly.
       expect(buildVoiceLine("J&C Asphalt")).toBe(
-        "Hey, thanks for calling J and C Asphalt! Sorry we missed you. Shoot us a text so we can get you taken care of."
+        "Hey, thanks for calling J and C Asphalt! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
       )
       // And end-to-end through the scraper shape (name gets sanitized first).
       const cfg = buildFrConfig({ name: "J&C Asphalt Paving", services: ["paving"] })
@@ -142,7 +142,7 @@ describe("buildFrConfig", () => {
 
     it("falls back to generic for a whitespace-only name (no awkward `calling  !`)", () => {
       expect(buildVoiceLine("   ")).toBe(
-        "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
+        "Hey, thanks for calling! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
       )
     })
 

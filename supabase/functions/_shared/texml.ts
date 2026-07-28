@@ -37,11 +37,13 @@ export function missedCallTexml(
   return `${HEAD}<Response><Say voice="${esc(voice)}">${esc(message)}</Say><Hangup/></Response>`
 }
 
-// The invite appended (in the EDGE layer, not fr-config.ts) to the spoken line so
-// the caller is told they can text OR leave a message. Kept as one clause so a
-// persona's voice_line stays the persona's; this is the demo-wide voicemail affordance.
-export const VOICEMAIL_INVITE =
-  " You can shoot us a text, or leave a quick message after the beep and we'll text you right back."
+// The voicemail invite is now BAKED INTO the spoken voice_line itself (fr-config.ts
+// buildVoiceLine + demo-voice GENERIC_MISSED_LINE), so the caller hears the "shoot us
+// a text, or leave a message after the beep" invite exactly ONCE. This edge-layer
+// append is therefore neutralized to an empty string: keeping the constant (and its
+// concatenation site) avoids a wider refactor while guaranteeing nothing is spoken
+// twice. Do NOT put the invite back here — it belongs in the voice_line now.
+export const VOICEMAIL_INVITE = ""
 
 // Recording bounds. maxLength caps the message so a long ramble can't run up
 // transcription cost; the beep signals "start talking". Env-overridable later
@@ -49,8 +51,9 @@ export const VOICEMAIL_INVITE =
 export const VOICEMAIL_MAX_LENGTH_SECONDS = 30
 
 /**
- * The voicemail-with-transcription flow (Flow A). Speaks the personalized line +
- * the text-or-leave-a-message invite, then <Record>s the caller with transcription
+ * The voicemail-with-transcription flow (Flow A). Speaks the personalized line
+ * (which now already contains the text-or-leave-a-message invite; VOICEMAIL_INVITE
+ * is empty, so nothing is appended), then <Record>s the caller with transcription
  * on. Two callback URLs drive the "exactly one text" wiring downstream:
  *   - transcribeUrl  -> the transcribe callback (VM path: craft a message that
  *     references what they said). Telnyx-native attrs are `transcription` /

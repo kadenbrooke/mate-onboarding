@@ -34,11 +34,13 @@ export interface FrConfig {
 
 const DEFAULT_VOICE = "friendly and professional"
 
-// The spoken missed-call line. Kept to one short sentence (~3s) so it lands before
-// the hangup. Personalized with the business name when we have a real one; a clean
-// generic line otherwise (thin/SPA site with no extractable name).
+// The spoken missed-call line. This is now the COMPLETE spoken message: it bakes in
+// the voicemail invite ("or leave a message after the beep") so the caller hears one
+// clean line, spoken exactly once. The edge layer no longer appends a separate invite
+// clause (see texml.ts VOICEMAIL_INVITE, now empty). Personalized with the business
+// name when we have a real one; the generic line otherwise (thin/SPA site, no name).
 const VOICE_LINE_FALLBACK =
-  "Hey, thanks for calling! Sorry we missed you. Shoot us a text so we can get you taken care of."
+  "Hey, thanks for calling! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
 
 /**
  * Build the spoken voice line from a display business name. `&` is spelled out as
@@ -49,7 +51,7 @@ const VOICE_LINE_FALLBACK =
 export function buildVoiceLine(displayName: string): string {
   const spoken = displayName.replace(/&/g, " and ").replace(/\s+/g, " ").trim()
   if (spoken === "") return VOICE_LINE_FALLBACK
-  return `Hey, thanks for calling ${spoken}! Sorry we missed you. Shoot us a text so we can get you taken care of.`
+  return `Hey, thanks for calling ${spoken}! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you.`
 }
 
 // The guardrail prepended to the persona prompt. Names the untrusted-data fence so

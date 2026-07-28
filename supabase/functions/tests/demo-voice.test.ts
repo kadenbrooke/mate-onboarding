@@ -39,7 +39,14 @@ Deno.test("initial call (no caller ID): returns voicemail TeXML (Say+invite+Reco
   // Voicemail flow: Say (line + invite) + Record + Hangup. Crucially NO <Message>
   // verb: the text-back is NOT fired from the call webhook anymore (Flow A).
   assertStringIncludes(xml, "<Say")
-  assertStringIncludes(xml, "leave a quick message after the beep")
+  // Unknown-caller spoken line: complete message with the invite baked in, spoken once.
+  assertStringIncludes(
+    xml,
+    "Hey, thanks for calling! Sorry we missed you. Shoot us a text, or leave a message after the beep, and we'll get right back with you."
+  )
+  // No leftover edge-layer invite clause, and "text" spoken exactly once (no double).
+  assertEquals(xml.includes("leave a quick message after the beep"), false)
+  assertEquals(xml.split("text").length - 1, 1)
   assertStringIncludes(xml, "<Record")
   assertStringIncludes(xml, "<Hangup/>")
   assertEquals(xml.includes("<Message"), false)
