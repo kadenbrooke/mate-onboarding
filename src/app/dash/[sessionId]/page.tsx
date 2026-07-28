@@ -28,6 +28,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     reviewsResult,
     capabilitiesResult,
     incidentsResult,
+    weekActionCountResult,
   ] = await Promise.all([
     supabase
       .from('client_leads')
@@ -84,6 +85,11 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .is('resolved_at', null)
       .order('started_at', { ascending: false })
       .limit(5),
+    supabase
+      .from('client_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
   ]);
 
   // Map client_capabilities rows: capability_key -> key
@@ -103,6 +109,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     reviews: reviewsResult.data ?? [],
     capabilities,
     incidents: incidentsResult.data ?? [],
+    weekActionCount: weekActionCountResult.count ?? 0,
   };
 
   return (

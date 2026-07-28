@@ -64,4 +64,5 @@ export type DashData = {
   reviews: Review[];
   capabilities: DashCapability[];
   incidents: Incident[];
+  weekActionCount: number;
 };

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { SpeedZone } from './SpeedZone';
+import { RaceCard } from './RaceCard';
 import type { Lead } from '@/lib/metrics/leads';
 
 const lead = (over: Partial<Lead>): Lead => ({
@@ -23,5 +24,21 @@ describe('SpeedZone', () => {
   it('renders empty-state gracefully with zero leads', () => {
     render(<SpeedZone leads={[]} events={[]} />);
     expect(screen.getByText('SPEED TO LEAD')).toBeInTheDocument();
+  });
+});
+
+describe('RaceCard', () => {
+  it('shows warming-up copy when avgReplySeconds === 0', () => {
+    render(<RaceCard avgReplySeconds={0} />);
+    expect(screen.getByText('waiting for your first lead')).toBeInTheDocument();
+    expect(screen.getByText(/78% of jobs go to the first responder/)).toBeInTheDocument();
+    expect(screen.queryByText(/beat the average company/i)).not.toBeInTheDocument();
+  });
+
+  it('shows time and beat-average copy when avgReplySeconds > 0', () => {
+    render(<RaceCard avgReplySeconds={45} />);
+    expect(screen.getByText('45 sec')).toBeInTheDocument();
+    expect(screen.getByText(/beat the average company/i)).toBeInTheDocument();
+    expect(screen.queryByText('waiting for your first lead')).not.toBeInTheDocument();
   });
 });

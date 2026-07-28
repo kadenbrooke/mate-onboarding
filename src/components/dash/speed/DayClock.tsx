@@ -1,3 +1,5 @@
+'use client';
+import { useEffect, useState } from 'react';
 import { Card } from '../Card';
 import { FREE_GREEN, brandVar, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 
@@ -6,6 +8,10 @@ function isNightHour(h: number): boolean {
 }
 
 export function DayClock({ hourCounts, afterHoursCount }: { hourCounts: number[]; afterHoursCount: number }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return <div style={{ height: 190 }} />;
+
   const r = 70;
   const cx = 75;
   const cy = 75;

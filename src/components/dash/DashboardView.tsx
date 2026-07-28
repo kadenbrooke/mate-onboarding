@@ -2,7 +2,6 @@
 import { useState } from 'react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats } from '@/lib/metrics/hero';
-import { actionsThisWeek } from '@/lib/metrics/events';
 import { Card } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MobileNav, type MobileView } from './MobileNav';
@@ -27,7 +26,7 @@ export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
-  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: actionsThisWeek(data.events), minutesPerAction: 5 }); // PLAN3: retainer from session
+  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: data.weekActionCount, minutesPerAction: 5 }); // PLAN3: retainer from session
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;

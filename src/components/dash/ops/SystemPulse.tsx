@@ -8,7 +8,7 @@
 // optimistic, grounded in the incident row's existence (it was written by the
 // heartbeat automation that also fires the real alert).
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Card } from '../Card';
 import { FONT_BODY, NUM_TABLE } from '@/lib/theme';
 import type { Incident } from '../types';
@@ -77,9 +77,10 @@ function Stopwatch({ startedAt }: { startedAt: string }) {
   );
 }
 
-function EkgSvg({ state }: { state: StateKey }) {
+function EkgSvg({ state, baseId }: { state: StateKey; baseId: string }) {
   const s = STATES[state];
-  const animId = `ekg-sweep-${state}`;
+  const animId = `${baseId}-ekg-sweep-${state}`;
+  const glowId = `${baseId}-glow-${state}`;
 
   return (
     <>
@@ -104,7 +105,7 @@ function EkgSvg({ state }: { state: StateKey }) {
         style={{ display: 'block', marginTop: 12, overflow: 'visible' }}
       >
         <defs>
-          <filter id={`glow-${state}`} x="-20%" y="-80%" width="140%" height="260%">
+          <filter id={glowId} x="-20%" y="-80%" width="140%" height="260%">
             <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={s.color} floodOpacity="0.7" />
           </filter>
         </defs>
@@ -117,7 +118,7 @@ function EkgSvg({ state }: { state: StateKey }) {
           strokeLinecap="round"
           strokeLinejoin="round"
           strokeDasharray="300 300"
-          filter={`url(#glow-${state})`}
+          filter={`url(#${glowId})`}
           style={{
             animation: `${animId} ${s.dur} linear infinite`,
           }}
@@ -128,8 +129,15 @@ function EkgSvg({ state }: { state: StateKey }) {
 }
 
 export function SystemPulse({ incidents }: { incidents: Incident[] }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  const rawId = useId();
+  const baseId = rawId.replace(/:/g, '');
   const stateKey = deriveState(incidents);
   const s = STATES[stateKey];
+
+  if (!mounted) return <div style={{ height: 120 }} />;
 
   const openCritical = incidents.find(
     (i) => i.severity === 'critical' && i.resolved_at === null,
@@ -203,7 +211,7 @@ export function SystemPulse({ incidents }: { incidents: Incident[] }) {
 
   return (
     <Card label="SYSTEM PULSE" right={badge}>
-      <EkgSvg state={stateKey} />
+      <EkgSvg state={stateKey} baseId={baseId} />
       {body}
     </Card>
   );

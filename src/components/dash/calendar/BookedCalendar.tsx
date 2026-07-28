@@ -1,3 +1,5 @@
+'use client';
+import { useEffect, useState } from 'react';
 import { monthGrid } from '@/lib/metrics/calendar';
 import { moneyShort } from '@/lib/metrics/format';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
@@ -8,6 +10,10 @@ import type { Appointment } from '@/lib/metrics/calendar';
 const DAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
 export function BookedCalendar({ appointments }: { appointments: Appointment[] }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+  if (!mounted) return <div style={{ height: 320 }} />;
+
   const grid = monthGrid(appointments);
   const isEmpty = grid.totalCount === 0;
 

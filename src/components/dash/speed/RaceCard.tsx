@@ -5,6 +5,7 @@ const INDUSTRY_AVG_MINUTES = 47;
 const FIRST_RESPONDER_STAT = 78;
 
 export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
+  const warming = avgReplySeconds === 0;
   const agentFillPct = Math.max(2, Math.min(100, (avgReplySeconds / (INDUSTRY_AVG_MINUTES * 60)) * 100));
   const multiple = Math.max(1, Math.round((INDUSTRY_AVG_MINUTES * 60) / Math.max(avgReplySeconds, 1)));
   const agentLabel = `${avgReplySeconds} sec`;
@@ -18,20 +19,26 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
           <div style={{ fontSize: 9, letterSpacing: 1, opacity: 0.55, fontFamily: FONT_BODY, marginBottom: 4 }}>
             YOUR AGENT NOW
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ flex: 1, background: '#1d1d1d', borderRadius: 6, height: 12, overflow: 'hidden' }}>
-              <div style={{
-                width: `${agentFillPct}%`,
-                height: '100%',
-                background: `linear-gradient(90deg, #8a2f0f, ${brandVar})`,
-                borderRadius: 6,
-                boxShadow: `0 0 8px ${brandVar}`,
-              }} />
+          {warming ? (
+            <div style={{ fontSize: 11, opacity: 0.6, fontFamily: FONT_BODY }}>
+              waiting for your first lead
             </div>
-            <span style={{ ...NUM_DISPLAY, fontSize: 13, color: brandVar, minWidth: 42, textAlign: 'right' }}>
-              {agentLabel}
-            </span>
-          </div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ flex: 1, background: '#1d1d1d', borderRadius: 6, height: 12, overflow: 'hidden' }}>
+                <div style={{
+                  width: `${agentFillPct}%`,
+                  height: '100%',
+                  background: `linear-gradient(90deg, #8a2f0f, ${brandVar})`,
+                  borderRadius: 6,
+                  boxShadow: `0 0 8px ${brandVar}`,
+                }} />
+              </div>
+              <span style={{ ...NUM_DISPLAY, fontSize: 13, color: brandVar, minWidth: 42, textAlign: 'right' }}>
+                {agentLabel}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Lane 2: You before - always shown with placeholder until Setup provides a value */}
@@ -72,9 +79,15 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
 
         {/* Footer */}
         <div style={{ fontSize: 12, fontFamily: FONT_BODY, opacity: 0.7, marginTop: 2, lineHeight: 1.5 }}>
-          You beat the average company by{' '}
-          <b style={{ color: FREE_GREEN }}>{multiple}x</b>
-          {'. '}{FIRST_RESPONDER_STAT}% of jobs go to the first responder.
+          {warming ? (
+            <>{FIRST_RESPONDER_STAT}% of jobs go to the first responder.</>
+          ) : (
+            <>
+              You beat the average company by{' '}
+              <b style={{ color: FREE_GREEN }}>{multiple}x</b>
+              {'. '}{FIRST_RESPONDER_STAT}% of jobs go to the first responder.
+            </>
+          )}
         </div>
       </div>
     </Card>
