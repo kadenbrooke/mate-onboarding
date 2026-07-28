@@ -194,3 +194,22 @@ Deno.test("parseCallbackFields: garbage body -> all null, never throws", () => {
   assertEquals(f.transcriptionText, null)
   assertEquals(f.recordingDurationSeconds, null)
 })
+
+Deno.test("parseCallbackFields: a bare `Duration` (non-recording callback) does NOT map to recordingDurationSeconds", () => {
+  // Some other Telnyx callback to this URL might carry a generic `Duration`. It must
+  // NOT be treated as a recording-ended event (demo-voice routes on
+  // recordingDurationSeconds !== null). Only recording-specific keys count now.
+  const body = "CallSid=call-other&From=%2B18015551234&Duration=42"
+  const f = parseCallbackFields(body, "application/x-www-form-urlencoded")
+  assertEquals(f.recordingDurationSeconds, null)
+  assertEquals(f.callId, "call-other")
+})
+
+Deno.test("parseCallbackFields: RecordingDuration / recording_duration / recordingDuration still parse", () => {
+  const a = parseCallbackFields("RecordingDuration=7", "application/x-www-form-urlencoded")
+  assertEquals(a.recordingDurationSeconds, 7)
+  const b = parseCallbackFields("recording_duration=3", "application/x-www-form-urlencoded")
+  assertEquals(b.recordingDurationSeconds, 3)
+  const c = parseCallbackFields("recordingDuration=0", "application/x-www-form-urlencoded")
+  assertEquals(c.recordingDurationSeconds, 0)
+})

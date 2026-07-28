@@ -103,6 +103,31 @@ FIRST path to claim wins and sends; every later path for that call gets `false` 
 no-ops. So a call yields exactly one outbound text no matter which path (or both, in
 a race) fires. Fails CLOSED (no send) on a missing CallSid or a DB error.
 
+**FAILED / EMPTY TRANSCRIPTION IS NEVER SILENCE.** For a real message (duration above
+the no-message threshold) the no-VM action path early-returns, so `demo-transcribe`
+is the ONLY path that fires. If the transcript comes back `failed` OR empty-after-
+sanitize, `demo-transcribe` still `claimTextForCall(CallSid)` and sends the GENERIC
+personalized greeting (`fr_config.greeting`, or a hard default for unknown callers)
+instead of returning without sending. So a prospect who left a voicemail always gets
+at least the generic callback; a USABLE transcript still gets the message-REFERENCING
+text. The claim keeps exactly-one-text intact (if the no-VM path somehow also fires,
+the claim dedupes). *Residual gap (honest):* a real message whose transcribe callback
+never ARRIVES at all (a lost webhook) can't be closed without a timer and is out of
+scope; the common `failed`/`empty` cases are covered.
+
+**`<=2s` real message routes to the generic text (accepted tradeoff).** A genuine but
+very short message (a single word, "call me back") sits at/below
+`NO_MESSAGE_MAX_DURATION_SECONDS` (2s) and is routed to the generic no-VM text rather
+than a referencing one. We prefer that fidelity loss over misclassifying beep-then-
+hangup jitter as a real message; the 2s threshold stays. Noted in `voicemail.ts`.
+
+**Model-spend is bounded too, not just SMS.** In `demo-transcribe` the model call
+(`craftVmReply`) is now gated by a global per-day counter (`vm_model_global`, cap
+`DEMO_VM_MODEL_MAX_PER_DAY`, default 500) bumped BEFORE the model call, so forged
+CallSids (post token-leak) can't rack up model spend before the SMS breaker is
+consulted. Token auth stays the primary gate; this is defense-in-depth. At cap, the
+model is skipped and the generic greeting is sent (still one text, still no silence).
+
 **Transcription engine (v1 vs future).** v1 uses Telnyx's built-in
 `<Record transcribe="true">` + `transcribeCallback` (zero extra infra). The TeXML
 emits BOTH the Telnyx-native `transcription`/`transcriptionCallback` and the
@@ -122,6 +147,9 @@ supabase functions deploy demo-voice demo-transcribe --no-verify-jwt \
 supabase secrets set DEMO_TRANSCRIBE_TOKEN=<token> DEMO_TEXTBACK_DELAY_SECONDS=30 \
   --project-ref jeqnvdlfybpmbovywknz
 ```
+`DEMO_VM_MODEL_MAX_PER_DAY` (default 500) caps the VM-reply model call in
+`demo-transcribe`; override only if the demo needs a tighter/looser per-day model
+budget. It is independent of `DEMO_SMS_MAX_PER_DAY` (the SMS breaker).
 The transcribe callback URL is constructed IN the TeXML `demo-voice` emits (from
 `SUPABASE_URL` or `DEMO_FUNCTIONS_BASE` + `DEMO_TRANSCRIBE_TOKEN`). No Telnyx
 dashboard change is needed to wire it.

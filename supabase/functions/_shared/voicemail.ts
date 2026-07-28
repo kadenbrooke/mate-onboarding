@@ -48,9 +48,25 @@ export async function sendGuarded(
 // Scope for the per-call one-text guard (key = CallSid, cap = 1).
 export const TEXT_SENT_SCOPE = "text_sent"
 
+// Global per-day model-spend breaker for the VM-reply model call in demo-transcribe.
+// Bumped BEFORE craftVmReply so forged CallSids (post token-leak) can't rack up model
+// calls before the downstream SMS breaker is consulted. Separate scope from the SMS
+// breaker so the two caps are independent (a call that crafts a reply consumes one of
+// each). Fails CLOSED (no model call) at cap.
+export const MODEL_SPEND_SCOPE = "vm_model_global"
+export function modelSpendCap(): number {
+  const n = Number(Deno.env.get("DEMO_VM_MODEL_MAX_PER_DAY"))
+  return Number.isFinite(n) && n > 0 ? n : 500
+}
+
 // A recording this short (seconds) is treated as "no message left" (caller hung up
-// at/just after the beep). Below this -> the no-VM generic-text path; at/above ->
+// at/just after the beep). Below/at this -> the no-VM generic-text path; above ->
 // a real voicemail we transcribe + reference. 2s absorbs beep-then-hangup jitter.
+// ACCEPTED TRADEOFF (leave as-is): a genuine <=2s message ("call me back", a single
+// word) routes to the GENERIC text instead of a referencing one. We prefer that
+// fidelity loss over misclassifying beep-jitter as a real message; the 2s threshold
+// stays. (Separately, a real >2s message whose transcript comes back failed/empty
+// still gets a generic callback -- see demo-transcribe -- so it is never silence.)
 export const NO_MESSAGE_MAX_DURATION_SECONDS = 2
 
 export interface CallbackFields {
@@ -102,7 +118,12 @@ export function parseCallbackFields(rawBody: string, contentType: string): Callb
     return null
   }
 
-  const durRaw = pick("RecordingDuration", "recording_duration", "recordingDuration", "Duration")
+  // Recording-SPECIFIC keys only. demo-voice routes on `recordingDurationSeconds
+  // !== null` to detect the Record `action` (recording-ended) callback, so a bare
+  // `Duration` from SOME OTHER Telnyx callback to this URL must NOT be misread as a
+  // recording-ended event. Restricting to RecordingDuration/recording_duration/
+  // recordingDuration removes that latent coupling (safe today, defensive tomorrow).
+  const durRaw = pick("RecordingDuration", "recording_duration", "recordingDuration")
   const dur = durRaw === null ? null : Number(durRaw)
 
   return {
