@@ -12,7 +12,7 @@ export function MobileNav({ view, onChange }: { view: MobileView; onChange: (v: 
       background: '#161616', borderTop: '1px solid #262626', zIndex: 50,
     }}>
       {tabs.map(t => (
-        <button key={t.key} onClick={() => onChange(t.key)} aria-label={t.label}
+        <button key={t.key} type="button" onClick={() => onChange(t.key)}
           style={{
             flex: 1, padding: '12px 0', background: 'none', border: 'none',
             color: view === t.key ? 'var(--brand-primary, #e14d1a)' : '#888',

@@ -16,6 +16,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     .from('client_leads')
     .select('*')
     .eq('session_id', sessionId)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: false })
+    .limit(500);
   return <DashboardView session={session} leads={(leads ?? []) as Lead[]} />;
 }
