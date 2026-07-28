@@ -4,7 +4,7 @@ import { LeadsTable } from './LeadsTable';
 import type { Lead } from '@/lib/metrics/leads';
 
 const lead = (over: Partial<Lead>): Lead => ({
-  id: 'l1', name: 'Mike R.', city: 'Orem', service: 'Driveway', source: 'referral',
+  id: 'l1', name: 'Mike R.', city: 'Orem', service: 'Driveway', phone: null, source: 'referral',
   referrer_name: null, score: 92, status: 'open', quote_cents: 1840000, contacted: false,
   after_hours: false, first_reply_seconds: 20, created_at: new Date().toISOString(), ...over,
 });

@@ -1,5 +1,5 @@
 'use client';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useId } from 'react';
 import { Card } from '../Card';
 import { weekBars, monthBuckets, yearBuckets } from '@/lib/metrics/leads';
 import { brandVar } from '@/lib/theme';
@@ -8,6 +8,8 @@ import type { Lead } from '@/lib/metrics/leads';
 type Range = 'WEEK' | 'MONTH' | 'YEAR';
 
 function Sparkline({ counts }: { counts: number[] }) {
+  const rawId = useId();
+  const glowId = rawId.replace(/:/g, '');
   const max = Math.max(...counts, 1);
   const W = 220;
   const H = 52;
@@ -25,7 +27,7 @@ function Sparkline({ counts }: { counts: number[] }) {
       style={{ display: 'block', marginTop: 12 }}
     >
       <defs>
-        <filter id="glow">
+        <filter id={glowId}>
           <feGaussianBlur stdDeviation="2" result="blur" />
           <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
         </filter>
@@ -37,7 +39,7 @@ function Sparkline({ counts }: { counts: number[] }) {
         strokeWidth={2.5}
         strokeLinejoin="round"
         strokeLinecap="round"
-        filter="url(#glow)"
+        filter={`url(#${glowId})`}
       />
     </svg>
   );

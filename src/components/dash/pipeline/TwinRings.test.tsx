@@ -4,7 +4,7 @@ import { TwinRings } from './TwinRings';
 import type { Lead } from '@/lib/metrics/leads';
 
 const lead = (over: Partial<Lead>): Lead => ({
-  id: Math.random().toString(), name: 'A', city: null, service: null, source: 'texted_in',
+  id: Math.random().toString(), name: 'A', city: null, service: null, phone: null, source: 'texted_in',
   referrer_name: null, score: null, status: 'open', quote_cents: 100000, contacted: true,
   after_hours: false, first_reply_seconds: null, created_at: new Date().toISOString(), ...over,
 });

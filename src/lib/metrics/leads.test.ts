@@ -7,7 +7,7 @@ import {
 
 const d = (daysAgo: number) => new Date(Date.now() - daysAgo * 86400_000).toISOString();
 const lead = (over: Partial<Lead> = {}): Lead => ({
-  id: 'x', name: 'A', city: 'Orem', service: 'Driveway', source: 'texted_in',
+  id: 'x', name: 'A', city: 'Orem', service: 'Driveway', phone: null, source: 'texted_in',
   referrer_name: null, score: 70, status: 'open', quote_cents: 300000,
   contacted: false, after_hours: false, first_reply_seconds: 20, created_at: d(0), ...over,
 });

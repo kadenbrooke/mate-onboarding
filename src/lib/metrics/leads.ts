@@ -1,5 +1,6 @@
 export type Lead = {
   id: string; name: string | null; city: string | null; service: string | null;
+  phone: string | null;
   source: 'missed_call' | 'texted_in' | 'web_form' | 'referral' | 'revived' | 'unknown';
   referrer_name: string | null; score: number | null;
   status: 'open' | 'won' | 'lost'; quote_cents: number | null;

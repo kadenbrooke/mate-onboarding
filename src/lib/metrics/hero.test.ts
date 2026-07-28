@@ -3,7 +3,7 @@ import { heroStats } from './hero';
 import type { Lead } from './leads';
 
 const lead = (over: Partial<Lead>): Lead => ({
-  id: 'x', name: 'A', city: null, service: null, source: 'texted_in', referrer_name: null,
+  id: 'x', name: 'A', city: null, service: null, phone: null, source: 'texted_in', referrer_name: null,
   score: null, status: 'open', quote_cents: null, contacted: false, after_hours: false,
   first_reply_seconds: 20, created_at: new Date().toISOString(), ...over,
 });

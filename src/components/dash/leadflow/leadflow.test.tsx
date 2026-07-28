@@ -8,7 +8,7 @@ import type { Lead } from '@/lib/metrics/leads';
 
 const lead = (over: Partial<Lead>): Lead => ({
   id: Math.random().toString(), name: 'Mike R.', city: 'Orem', service: 'Driveway',
-  source: 'referral', referrer_name: null, score: 92, status: 'open', quote_cents: 100000,
+  phone: null, source: 'referral', referrer_name: null, score: 92, status: 'open', quote_cents: 100000,
   contacted: false, after_hours: false, first_reply_seconds: 20,
   created_at: new Date().toISOString(), ...over,
 });
