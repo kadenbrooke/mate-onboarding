@@ -4,6 +4,8 @@ import {
   hangupTexml,
   messageTexml,
   emptyTexml,
+  voicemailTexml,
+  VOICEMAIL_INVITE,
   DEMO_VOICE,
 } from "../_shared/texml.ts"
 
@@ -42,4 +44,58 @@ Deno.test("emptyTexml: valid empty response", () => {
 
 Deno.test("no em dash in default missed-call line", () => {
   assertEquals(missedCallTexml().includes("—"), false)
+})
+
+// --- Voicemail-with-transcription flow (Flow A). ---
+
+Deno.test("voicemailTexml: Say (line + invite) then Record then Hangup", () => {
+  const xml = voicemailTexml(
+    "Hey, thanks for calling Acme! Sorry we missed you.",
+    "https://x.supabase.co/functions/v1/demo-transcribe?k=T",
+    "https://x.supabase.co/functions/v1/demo-voice?k=V"
+  )
+  // Say carries BOTH the personalized spoken line and the appended invite.
+  assertStringIncludes(xml, "Hey, thanks for calling Acme! Sorry we missed you.")
+  assertStringIncludes(xml, "leave a quick message after the beep")
+  // Ordered: Say before Record before Hangup.
+  const sayAt = xml.indexOf("<Say")
+  const recAt = xml.indexOf("<Record")
+  const hangAt = xml.indexOf("<Hangup")
+  assertEquals(sayAt < recAt && recAt < hangAt, true)
+})
+
+Deno.test("voicemailTexml: Record enables transcription + beep + maxLength", () => {
+  const xml = voicemailTexml("hi", "https://f/demo-transcribe?k=T", "https://f/demo-voice?k=V")
+  assertStringIncludes(xml, 'playBeep="true"')
+  assertStringIncludes(xml, 'maxLength="30"')
+  // Both attribute spellings present (Telnyx-native + Twilio-compat) so a naming
+  // mismatch can't silently drop transcription on the live call path.
+  assertStringIncludes(xml, 'transcribe="true"')
+  assertStringIncludes(xml, 'transcription="true"')
+})
+
+Deno.test("voicemailTexml: emits the transcribe callback URL with its token (XML-escaped)", () => {
+  const xml = voicemailTexml(
+    "hi",
+    "https://f/demo-transcribe?k=tok123&x=1",
+    "https://f/demo-voice?k=vtok"
+  )
+  // The `&` in the query string must be XML-escaped inside the attribute value.
+  assertStringIncludes(xml, "demo-transcribe?k=tok123&amp;x=1")
+  assertStringIncludes(xml, 'action="https://f/demo-voice?k=vtok"')
+})
+
+Deno.test("voicemailTexml: uses the Matthew neural voice by default", () => {
+  assertStringIncludes(
+    voicemailTexml("hi", "https://f/t?k=1", "https://f/a?k=2"),
+    '<Say voice="Polly.Matthew-Neural">'
+  )
+})
+
+Deno.test("voicemailTexml: invite constant has no em dash", () => {
+  assertEquals(VOICEMAIL_INVITE.includes("—"), false)
+  assertEquals(
+    voicemailTexml("hi", "https://f/t?k=1", "https://f/a?k=2").includes("—"),
+    false
+  )
 })

@@ -21,8 +21,19 @@ export interface SendSmsResult {
  * Send an SMS via the Telnyx Messaging API. Returns a result object rather than
  * throwing so the webhook can log and continue. Skips (ok:false, skipped:true)
  * when the API key or from-number is missing.
+ *
+ * `sendAtIso` (optional): an ISO 8601 UTC timestamp. When set, Telnyx SCHEDULES
+ * the message for that time (`send_at`) instead of sending immediately, so we get
+ * the "feels like a real callback" buffer WITHOUT keeping a function alive. Telnyx
+ * honours send_at to about one-minute accuracy (per Telnyx scheduled-messaging
+ * docs), so a ~30s buffer lands within the same or next minute, good enough for
+ * the demo's "not an instant bot" feel. A past/near-now send_at just sends now.
  */
-export async function sendSms(to: string, text: string): Promise<SendSmsResult> {
+export async function sendSms(
+  to: string,
+  text: string,
+  sendAtIso?: string
+): Promise<SendSmsResult> {
   const apiKey = Deno.env.get("TELNYX_API_KEY")
   const from = Deno.env.get("DEMO_TELNYX_NUMBER")
   const profileId = Deno.env.get("TELNYX_MESSAGING_PROFILE_ID")
@@ -34,6 +45,8 @@ export async function sendSms(to: string, text: string): Promise<SendSmsResult> 
   // A messaging_profile_id is optional when `from` is a number on the account,
   // but including it (when set) makes routing explicit for 10DLC/long-code.
   if (profileId) payload.messaging_profile_id = profileId
+  // Scheduled send: only attach when a valid future-ish ISO string was passed.
+  if (sendAtIso) payload.send_at = sendAtIso
 
   try {
     const res = await fetch("https://api.telnyx.com/v2/messages", {
@@ -53,4 +66,17 @@ export async function sendSms(to: string, text: string): Promise<SendSmsResult> 
   } catch (e) {
     return { ok: false, error: String((e as Error)?.message ?? e) }
   }
+}
+
+/**
+ * Compute the ISO 8601 UTC `send_at` for a text-back buffer: now + delaySeconds.
+ * Reads DEMO_TEXTBACK_DELAY_SECONDS (default 30). A non-positive / non-finite /
+ * unset value yields undefined (send immediately, no scheduling). Pure + testable;
+ * `now` is injectable so tests don't depend on wall-clock.
+ */
+export function textbackSendAt(now: Date = new Date()): string | undefined {
+  const raw = Deno.env.get("DEMO_TEXTBACK_DELAY_SECONDS")
+  const secs = raw === undefined || raw === "" ? 30 : Number(raw)
+  if (!Number.isFinite(secs) || secs <= 0) return undefined
+  return new Date(now.getTime() + secs * 1000).toISOString()
 }

@@ -37,6 +37,51 @@ export function missedCallTexml(
   return `${HEAD}<Response><Say voice="${esc(voice)}">${esc(message)}</Say><Hangup/></Response>`
 }
 
+// The invite appended (in the EDGE layer, not fr-config.ts) to the spoken line so
+// the caller is told they can text OR leave a message. Kept as one clause so a
+// persona's voice_line stays the persona's; this is the demo-wide voicemail affordance.
+export const VOICEMAIL_INVITE =
+  " You can shoot us a text, or leave a quick message after the beep and we'll text you right back."
+
+// Recording bounds. maxLength caps the message so a long ramble can't run up
+// transcription cost; the beep signals "start talking". Env-overridable later
+// without a code change if we want longer messages.
+export const VOICEMAIL_MAX_LENGTH_SECONDS = 30
+
+/**
+ * The voicemail-with-transcription flow (Flow A). Speaks the personalized line +
+ * the text-or-leave-a-message invite, then <Record>s the caller with transcription
+ * on. Two callback URLs drive the "exactly one text" wiring downstream:
+ *   - transcribeUrl  -> the transcribe callback (VM path: craft a message that
+ *     references what they said). Telnyx-native attrs are `transcription` /
+ *     `transcriptionCallback`; we ALSO emit the Twilio-compat `transcribe` /
+ *     `transcribeCallback` aliases (harmless if ignored) so a naming mismatch
+ *     can't silently drop transcription on the live call path.
+ *   - actionUrl      -> fired when the <Record> ends (no-VM path: RecordingDuration
+ *     ~0 => caller hung up without a message => send the generic text after the buffer).
+ * Ends with <Hangup/> so the caller is not left on a dead line.
+ *
+ * NOTE both callback URLs already carry their `?k=` auth token (constructed by the
+ * caller from SUPABASE_URL / DEMO_FUNCTIONS_BASE); they are emitted verbatim into
+ * the XML attribute (XML-escaped), so `&` in the query string becomes `&amp;`.
+ */
+export function voicemailTexml(
+  spokenLine: string,
+  transcribeUrl: string,
+  actionUrl: string,
+  voice = DEMO_VOICE,
+  maxLength = VOICEMAIL_MAX_LENGTH_SECONDS
+): string {
+  const say = `<Say voice="${esc(voice)}">${esc(spokenLine + VOICEMAIL_INVITE)}</Say>`
+  // playBeep on, transcription on, both callback-attr spellings, action fires at end.
+  const record =
+    `<Record maxLength="${maxLength}" playBeep="true"` +
+    ` transcribe="true" transcribeCallback="${esc(transcribeUrl)}"` +
+    ` transcription="true" transcriptionCallback="${esc(transcribeUrl)}"` +
+    ` action="${esc(actionUrl)}"/>`
+  return `${HEAD}<Response>${say}${record}<Hangup/></Response>`
+}
+
 /** A bare hangup, used when we do not want to speak (e.g. unknown caller). */
 export function hangupTexml(): string {
   return `${HEAD}<Response><Hangup/></Response>`

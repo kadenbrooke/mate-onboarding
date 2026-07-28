@@ -50,9 +50,9 @@ Own Vercel project (client-facing; not amos). Set the same env vars there.
 
 ## Demo go-live (Instant First Responder Demo)
 
-The demo spans the Next app (`/api/demo/start`, public + unauthed) and two Supabase
-Edge Functions (`demo-voice`, `demo-sms`). Do NOT flip it live until every item
-below is done. Env vars are in `.env.example` under the demo section.
+The demo spans the Next app (`/api/demo/start`, public + unauthed) and three Supabase
+Edge Functions (`demo-voice`, `demo-sms`, `demo-transcribe`). Do NOT flip it live
+until every item below is done. Env vars are in `.env.example` under the demo section.
 
 ### Required before public traffic
 1. **`TELNYX_PUBLIC_KEY` MUST be set on the edge runtime.** Signature verification
@@ -62,13 +62,69 @@ below is done. Env vars are in `.env.example` under the demo section.
    local dev-skip (no key => accept) applies ONLY when not in a deployed context.
 2. **Telnyx Messaging env:** `TELNYX_API_KEY`, `DEMO_TELNYX_NUMBER` (the one shared
    demo number), optional `TELNYX_MESSAGING_PROFILE_ID`. Unset => sends no-op.
-3. **Model key:** `GEMINI_API_KEY` (default model `google/gemini-3-flash-preview`),
-   `PORTKEY_BASE_URL`.
-4. **Migrations applied:** `0002_demo_sessions.sql` and
+3. **Model key:** `GEMINI_API_KEY` (default model `google/gemini-2.5-flash`),
+   `PORTKEY_BASE_URL`. Also `DEMO_REPLY_MAX_TOKENS` (default 800): the budget must
+   cover Gemini's HIDDEN reasoning tokens PLUS the visible SMS. A tight budget (e.g.
+   300) gets fully consumed by reasoning and the reply truncates mid-sentence
+   (`finish_reason:"length"`). The client also requests `reasoning_effort:"none"`.
+4. **Voicemail flow tokens (Flow A):** `DEMO_TRANSCRIBE_TOKEN` (auth for the
+   transcribe callback; fails CLOSED when unset in prod) and `DEMO_TEXTBACK_DELAY_
+   SECONDS` (default 30, the no-VM text-back buffer). See "Voicemail + text-back
+   buffer" below. `DEMO_FUNCTIONS_BASE` optional (defaults to the edge base).
+5. **Migrations applied:** `0002_demo_sessions.sql` and
    `0003_demo_sms_conversations.sql` (creates `demo_sms_conversations` with the
-   composite PK `(from_number, business)` — the upsert conflict target — plus the
+   composite PK `(from_number, business)`, the upsert conflict target, plus the
    atomic `demo_counters` table + `demo_counter_bump()` RPC, and extends the pg_cron
-   TTL sweep to hard-delete inbound texts after 7 days).
+   TTL sweep to hard-delete inbound texts after 7 days). NOTE: the voicemail work
+   adds NO migration; the exactly-one-text guard reuses `demo_counter_bump()` with
+   scope `text_sent`, key = CallSid, cap = 1.
+
+### Voicemail + text-back buffer (Flow A)
+The caller flow, since Flow A:
+1. Caller calls the demo number. `demo-voice` returns TeXML that speaks the
+   personalized line + a "text us or leave a message" invite, then `<Record>`s the
+   caller with transcription on. **No text is sent from the call webhook** (that
+   moved out; see the guard below).
+2. **VM path (caller leaves a message):** Telnyx transcribes and POSTs the transcript
+   to `demo-transcribe`, which crafts a warm SMS that REFERENCES what they said (the
+   transcript is sanitized + fenced as untrusted data, then handed to the persona
+   model), sends it, and seeds `demo_sms_conversations` with the voicemail turn + the
+   sent text so the ongoing SMS agent has context.
+3. **No-VM path (hang up at the beep):** `demo-voice`'s `<Record>` `action` callback
+   fires with `RecordingDuration` ~0. It sends the generic personalized greeting,
+   SCHEDULED via Telnyx `send_at` to land ~`DEMO_TEXTBACK_DELAY_SECONDS` after the
+   call (feels like a real callback, not an instant bot). No function stays alive to
+   wait; Telnyx does the delaying. `send_at` is honoured to ~1-minute accuracy, so a
+   30s buffer lands within the same or next minute.
+
+**EXACTLY ONE TEXT PER CALL.** Both callback paths call `claimTextForCall(CallSid)`
+before sending. That is an atomic `demo_counter_bump('text_sent', CallSid, 1)`: the
+FIRST path to claim wins and sends; every later path for that call gets `false` and
+no-ops. So a call yields exactly one outbound text no matter which path (or both, in
+a race) fires. Fails CLOSED (no send) on a missing CallSid or a DB error.
+
+**Transcription engine (v1 vs future).** v1 uses Telnyx's built-in
+`<Record transcribe="true">` + `transcribeCallback` (zero extra infra). The TeXML
+emits BOTH the Telnyx-native `transcription`/`transcriptionCallback` and the
+Twilio-compat `transcribe`/`transcribeCallback` attribute pairs, so a naming
+mismatch can't silently drop transcription on the live call path.
+*Future upgrade (NOT built):* swap to Whisper-on-KVM2 for higher-accuracy, cheaper,
+one-vendor transcription. The `<Record>` already produces a `RecordingUrl`; a future
+`demo-transcribe` variant would fetch that audio and POST it to the KVM2 Whisper
+endpoint (`reference_whisper_kvm2`) instead of relying on Telnyx's transcript, then
+craft the SMS from Whisper's text. Everything downstream (craft + one-text guard +
+seed) stays the same; only the transcript source changes.
+
+### Deploy (edge functions)
+```bash
+supabase functions deploy demo-voice demo-transcribe --no-verify-jwt \
+  --project-ref jeqnvdlfybpmbovywknz
+supabase secrets set DEMO_TRANSCRIBE_TOKEN=<token> DEMO_TEXTBACK_DELAY_SECONDS=30 \
+  --project-ref jeqnvdlfybpmbovywknz
+```
+The transcribe callback URL is constructed IN the TeXML `demo-voice` emits (from
+`SUPABASE_URL` or `DEMO_FUNCTIONS_BASE` + `DEMO_TRANSCRIBE_TOKEN`). No Telnyx
+dashboard change is needed to wire it.
 
 ### Cost / abuse controls (all env-overridable)
 - **Start route (`/api/demo/start`):** per-phone/day + global daily breaker. The
