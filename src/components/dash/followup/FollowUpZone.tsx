@@ -12,13 +12,17 @@ const REPLIED_PURPLE = '#7d5bbe';
 export function FollowUpZone({
   reactivation,
   wins,
+  showLabel = true,
 }: {
   reactivation: Reactivation | null;
   wins: ReactivationWin[];
+  showLabel?: boolean;
 }) {
+  // Desktop suppresses the card label: the surrounding SectionCard carries it.
+  const label = showLabel ? 'FOLLOW-UP ENGINE' : undefined;
   if (reactivation == null) {
     return (
-      <Card label="FOLLOW-UP ENGINE">
+      <Card label={label}>
         <div style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
           turns on with the Reactivator
         </div>
@@ -38,7 +42,7 @@ export function FollowUpZone({
   const BAR_MIN_H = 6;
 
   return (
-    <Card label="FOLLOW-UP ENGINE">
+    <Card label={label}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
         {/* Cascade funnel */}
         <CascadeFunnel stages={[

@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react';
 import { createServiceClient } from '@/lib/supabase/service';
-import { brandToCssVars, FONT_BODY, BG_PAGE, BORDER_SOFT, TEXT_DARK } from '@/lib/theme';
+import { brandToCssVars, BG_PAGE, TEXT_DARK } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
+import { TopBar } from '@/components/dash/chrome/TopBar';
+import { IconRail } from '@/components/dash/chrome/IconRail';
 
 interface DashLayoutProps {
   children: ReactNode;
@@ -11,18 +13,26 @@ interface DashLayoutProps {
 export default async function DashLayout({ children, params }: DashLayoutProps) {
   const { sessionId } = await params;
 
-  // Fetch session brand + client identity. Fail-open: missing data falls
-  // back to Auto Mate default colors, and no logo is shown in the topbar.
+  // Fetch session brand + client identity + open incident count. Fail-open:
+  // missing data falls back to Auto Mate defaults (black logo, zero badge).
   let brand: Brand | null = null;
   let businessName: string | null = null;
   let logoUrl: string | null = null;
+  let openIncidents = 0;
   try {
     const supabase = createServiceClient();
-    const { data: session } = await supabase
-      .from('onboarding_sessions')
-      .select('brand, collected')
-      .eq('id', sessionId)
-      .maybeSingle();
+    const [{ data: session }, incidentsResult] = await Promise.all([
+      supabase
+        .from('onboarding_sessions')
+        .select('brand, collected')
+        .eq('id', sessionId)
+        .maybeSingle(),
+      supabase
+        .from('client_incidents')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', sessionId)
+        .is('resolved_at', null),
+    ]);
     if (session?.brand && typeof session.brand === 'object') {
       brand = session.brand as Brand;
       logoUrl = brand.logo_url ?? null;
@@ -34,6 +44,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         businessName = (company as { name?: string }).name ?? null;
       }
     }
+    openIncidents = incidentsResult.count ?? 0;
   } catch {
     // Non-fatal: layout still renders with defaults.
   }
@@ -61,42 +72,23 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         ...cssVars,
       }}
     >
-      {/* Client identity topbar */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '12px 16px',
-          borderBottom: `1px solid ${BORDER_SOFT}`,
-          maxWidth: 1100,
-          margin: '0 auto',
-        }}
-      >
-        {logoUrl && (
-          <img
-            src={logoUrl}
-            alt={businessName ?? 'Client logo'}
-            height={30}
-            style={{ width: 'auto', maxWidth: 160, objectFit: 'contain', display: 'block' }}
-          />
-        )}
-        {businessName && (
-          <span
-            style={{
-              fontSize: 15,
-              fontFamily: FONT_BODY,
-              fontWeight: 600,
-              color: TEXT_DARK,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            {businessName}
-          </span>
-        )}
-      </header>
+      <style>{`
+        /* Icon rail is desktop chrome; below 641px the bottom MobileNav owns nav. */
+        @media (max-width: 640px) { .dash-rail { display: none !important; } }
+        /* Mid widths: shift content right so the fixed rail never overlaps it.
+           !important because the base padding is set inline. */
+        @media (min-width: 641px) and (max-width: 1260px) { .dash-shell { padding-left: 70px !important; } }
+      `}</style>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 16px 90px' }}>
+      <TopBar
+        sessionId={sessionId}
+        businessName={businessName}
+        logoUrl={logoUrl}
+        openIncidents={openIncidents}
+      />
+      <IconRail />
+
+      <div className="dash-shell" style={{ maxWidth: 1100, margin: '0 auto', padding: '4px 16px 90px' }}>
         {children}
       </div>
     </div>

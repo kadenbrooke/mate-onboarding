@@ -16,13 +16,15 @@ type LinkExtra = { color: string; ribbon: boolean };
 const W = 640;
 const H = 170;
 
-export function JourneyRiver({ leads }: { leads: Lead[] }) {
+export function JourneyRiver({ leads, showLabel = true }: { leads: Lead[]; showLabel?: boolean }) {
   const river = journeyRiver(leads);
+  // Desktop suppresses the card label: the surrounding SectionCard carries it.
+  const label = showLabel ? 'LEAD JOURNEY' : undefined;
 
   // Empty state
   if (river.total === 0) {
     return (
-      <Card label="LEAD JOURNEY">
+      <Card label={label}>
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           height: 150, fontSize: 12, color: TEXT_MUTED, fontFamily: FONT_BODY,
@@ -67,7 +69,7 @@ export function JourneyRiver({ leads }: { leads: Lead[] }) {
   const linkPath = sankeyLinkHorizontal();
 
   return (
-    <Card label="LEAD JOURNEY">
+    <Card label={label}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
         width="100%"

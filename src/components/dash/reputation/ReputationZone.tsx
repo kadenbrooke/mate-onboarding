@@ -8,13 +8,17 @@ import type { Reputation, Review } from '@/components/dash/types';
 export function ReputationZone({
   reputation,
   reviews,
+  showLabel = true,
 }: {
   reputation: Reputation | null;
   reviews: Review[];
+  showLabel?: boolean;
 }) {
+  // Desktop suppresses the card label: the surrounding SectionCard carries it.
+  const label = showLabel ? 'THE REPUTATION MACHINE' : undefined;
   if (reputation == null) {
     return (
-      <Card label="THE REPUTATION MACHINE">
+      <Card label={label}>
         <div style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
           turns on with review collection
         </div>
@@ -25,7 +29,7 @@ export function ReputationZone({
   const safeReviews = reviews ?? [];
 
   return (
-    <Card label="THE REPUTATION MACHINE">
+    <Card label={label}>
       {/* Twin cascades: 2-col grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
         {/* Left: REVIEWS cascade */}

@@ -22,24 +22,39 @@ describe('DashboardView', () => {
   it('desktop renders all final composition zones', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
 
-    // All desktop widget card labels present (desktop + mobile containers both in DOM)
-    const desktopLabels = [
-      'HOT RIGHT NOW',
-      'THE PIPELINE',
-      'FOLLOW-UP ENGINE',
-      'SPEED TO LEAD',
-      'THE REPUTATION MACHINE',
-      'YOUR CREW',
-      'SYSTEM PULSE',
-      'LEAD JOURNEY',
-      'LEADS',
+    // Every grey SectionCard carries an eyebrow label (round-2 redesign)
+    const sectionLabels = [
+      'Calendar',
+      'Lead flow',
+      'Lead journey',
+      'Pipeline',
+      'Follow-up engine',
+      'Speed to lead',
+      'Reputation',
+      'Operations',
     ];
-    for (const label of desktopLabels) {
-      expect(screen.getAllByText(label).length, `label "${label}" not found`).toBeGreaterThanOrEqual(1);
+    for (const label of sectionLabels) {
+      expect(screen.getAllByText(label).length, `section label "${label}" not found`).toBeGreaterThanOrEqual(1);
     }
 
-    // BOOKED APPOINTMENTS (regex covers any variant)
-    expect(screen.getAllByText(/BOOKED APPOINTMENTS/).length).toBeGreaterThanOrEqual(1);
+    // White card labels that stay distinct from their section label
+    const cardLabels = ['HOT RIGHT NOW', 'YOUR CREW', 'SYSTEM PULSE', 'LEADS'];
+    for (const label of cardLabels) {
+      expect(screen.getAllByText(label).length, `card label "${label}" not found`).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('desktop section cards expose the icon-rail scroll anchors', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    for (const id of ['zone-leadflow', 'zone-speed', 'zone-followup', 'zone-reputation', 'zone-calendar']) {
+      expect(document.getElementById(id), `anchor #${id} missing`).not.toBeNull();
+    }
+  });
+
+  it('renders the Mercury-style recovered chart as the dark hero card', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    expect(screen.getAllByTestId('recovered-chart').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByTestId('recovered-delta').length).toBeGreaterThanOrEqual(1);
   });
 
   it('mobile crew tab contains SETUP stub', () => {
@@ -77,7 +92,7 @@ describe('DashboardView', () => {
     }] as never[];
     render(<DashboardView session={session} leads={leads} data={emptyDash} />);
     expect(screen.getAllByText('HOT RIGHT NOW').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText('THE PIPELINE').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('Pipeline').length).toBeGreaterThanOrEqual(1);
   });
 
   it('money tab renders reputation and follow-up inside mobile container', () => {

@@ -59,7 +59,13 @@ function ApptPopover({ appt }: { appt: Appointment }) {
   );
 }
 
-export function BookedCalendar({ appointments }: { appointments: Appointment[] }) {
+export function BookedCalendar({ appointments, showLabel = true, wide = false }: {
+  appointments: Appointment[];
+  /** Desktop suppresses the card label: the surrounding SectionCard carries it. */
+  showLabel?: boolean;
+  /** Full-width slot: fixed-height day rows instead of square cells. */
+  wide?: boolean;
+}) {
   const [mounted, setMounted] = useState(false);
   // Sticky popover key ("day-index"): set on tap/click, cleared on tap-away
   // or Escape. Hover shows the same popover transiently.
@@ -85,20 +91,25 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
     };
   }, [stickyKey]);
 
-  if (!mounted) return <div style={{ height: 320 }} />;
+  if (!mounted) return <div style={{ height: wide ? 260 : 320 }} />;
 
   const grid = monthGrid(appointments);
   const isEmpty = grid.totalCount === 0;
   const activeKey = stickyKey ?? hoverKey;
 
+  // When the SectionCard carries the zone label, the right slot keeps the
+  // month context that would otherwise be lost with the card label.
   const rightSlot = (
     <span style={{ fontSize: 11, fontWeight: 700, color: brandVar }}>
-      {grid.totalCount} booked
+      {showLabel ? `${grid.totalCount} booked` : `${grid.monthLabel} · ${grid.totalCount} booked`}
     </span>
   );
 
+  // Wide slots drop the square aspect so a full month stays a short strip.
+  const cellShape: React.CSSProperties = wide ? { height: 44 } : { aspectRatio: '1 / 1' };
+
   return (
-    <Card label={`${grid.monthLabel} BOOKED APPOINTMENTS`} right={rightSlot}>
+    <Card label={showLabel ? `${grid.monthLabel} BOOKED APPOINTMENTS` : undefined} right={rightSlot}>
       {/* Mo-Su header row */}
       <div style={{
         display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginTop: 10, marginBottom: 4,
@@ -117,7 +128,7 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
             if (!cell) {
               return <div key={`empty-${idx}`} style={{
                 background: 'transparent', border: `1px solid ${BORDER_SOFT}`,
-                borderRadius: 8, aspectRatio: '1 / 1',
+                borderRadius: 8, ...cellShape,
               }} />;
             }
             const isToday = cell.isToday;
@@ -133,7 +144,7 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
                   background: BG_SECTION,
                   border: isToday ? `1px solid ${brandVar}` : `1px solid ${BORDER_SOFT}`,
                   borderRadius: 8,
-                  aspectRatio: '1 / 1',
+                  ...cellShape,
                   padding: '3px 4px',
                   opacity: isFuture ? 0.6 : 1,
                   display: 'flex',

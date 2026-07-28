@@ -20,13 +20,13 @@ const SEG_LABEL: Record<Seg, string> = {
   open: 'ON THE TABLE',
 };
 
-export function TwinRings({ leads }: { leads: Lead[] }) {
+export function TwinRings({ leads, showLabel = true }: { leads: Lead[]; showLabel?: boolean }) {
   const t = pipelineTotals(leads);
   const quotedTotal = t.wonCents + t.lostCents + t.openCents;
   const avgJob = t.counts.won ? Math.round(t.wonCents / t.counts.won) : 0;
 
   return (
-    <Card label="THE PIPELINE">
+    <Card label={showLabel ? 'THE PIPELINE' : undefined}>
       <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 8 }}>
         <Ring
           idPrefix="rev"

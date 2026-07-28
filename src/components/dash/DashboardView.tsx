@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
+import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/recovered';
 import { Card, SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MobileNav, type MobileView } from './MobileNav';
@@ -31,6 +32,8 @@ export function DashboardView({ session, leads, data }: {
   const [view, setView] = useState<MobileView>('home');
   const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: data.weekActionCount, minutesPerAction: 5 }); // PLAN3: retainer from session
   const series = heroSeries(leads, data.events, { minutesPerAction: 5 });
+  // Daily cumulative series + WoW dollar delta for the Mercury-style dark card
+  const recovered = { points: recoveredDailySeries(leads), deltaCents: recoveredWowDeltaCents(leads) };
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;
@@ -60,12 +63,10 @@ export function DashboardView({ session, leads, data }: {
       </div>
     </div>
   );
-  const pipelineZone = <TwinRings leads={leads} />;
-
   // Mobile view stacks
   const mobileHome = (
     <>
-      <HeroStrip {...hero} series={series} />
+      <HeroStrip {...hero} series={series} recovered={recovered} />
       <Ticker events={data.events} />
       <HotLeads leads={leads} sessionId={session.id} />
       {calendarZone}
@@ -126,20 +127,30 @@ export function DashboardView({ session, leads, data }: {
         @media (min-width: 641px) { .dash-mobile, .dash-nav { display: none !important; } }
       `}</style>
 
-      {/* Desktop layout */}
-      <div className="dash-desktop" style={{ display: 'grid', gap: 12 }}>
-        <HeroStrip {...hero} series={series} />
+      {/* Desktop layout. Every SectionCard carries an eyebrow label; ids are
+          the icon-rail scroll anchors. Calendar (full width) and the journey
+          Sankey (grid cell) swapped slots in the round-2 founder pass. */}
+      <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
+        <HeroStrip {...hero} series={series} recovered={recovered} />
         <Ticker events={data.events} />
-        <SectionCard>
-          <JourneyRiver leads={leads} />
+        <SectionCard id="zone-calendar" title="Calendar">
+          <BookedCalendar appointments={data.appointments} showLabel={false} wide />
         </SectionCard>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
-          <SectionCard>{calendarZone}</SectionCard>
-          <SectionCard>{pipelineZone}</SectionCard>
-          <SectionCard>{followUpZone}</SectionCard>
-          <SectionCard title="Speed">{speedZone}</SectionCard>
-          <SectionCard>{reputationZone}</SectionCard>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <SectionCard id="zone-leadflow" title="Lead flow">{leadFlowZone}</SectionCard>
+          <SectionCard title="Lead journey">
+            <JourneyRiver leads={leads} showLabel={false} />
+          </SectionCard>
+          <SectionCard title="Pipeline">
+            <TwinRings leads={leads} showLabel={false} />
+          </SectionCard>
+          <SectionCard id="zone-followup" title="Follow-up engine">
+            <FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} />
+          </SectionCard>
+          <SectionCard id="zone-speed" title="Speed to lead">{speedZone}</SectionCard>
+          <SectionCard id="zone-reputation" title="Reputation">
+            <ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} />
+          </SectionCard>
         </div>
         <SectionCard title="Operations">
           <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
