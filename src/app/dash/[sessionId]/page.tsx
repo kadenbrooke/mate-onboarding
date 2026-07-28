@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Lead } from '@/lib/metrics/leads';
 import type { DashCapability } from '@/components/dash/types';
 import { DashboardView } from '@/components/dash/DashboardView';
+import type { DashData } from '@/components/dash/types';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
@@ -93,7 +94,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     status: String(row.status),
   }));
 
-  const data = {
+  const data: DashData = {
     events: eventsResult.data ?? [],
     appointments: appointmentsResult.data ?? [],
     reactivation: reactivationResult.data ?? null,

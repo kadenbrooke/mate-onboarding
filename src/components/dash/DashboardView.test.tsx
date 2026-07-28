@@ -21,9 +21,11 @@ describe('DashboardView', () => {
   it('renders stub zone labels + real widget labels', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
     // Stub zones still present
-    for (const label of ['CALENDAR', 'FOLLOW-UP', 'SPEED', 'REPUTATION', 'YOUR CREW', 'SYSTEM PULSE']) {
+    for (const label of ['CALENDAR', 'FOLLOW-UP', 'REPUTATION', 'YOUR CREW', 'SYSTEM PULSE']) {
       expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
     }
+    // Speed zone now real
+    expect(screen.getAllByText('SPEED TO LEAD').length).toBeGreaterThanOrEqual(1);
     // Real widgets present even with no leads
     expect(screen.getAllByText('HOT RIGHT NOW').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('THE PIPELINE').length).toBeGreaterThanOrEqual(1);

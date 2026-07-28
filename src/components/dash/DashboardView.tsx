@@ -12,6 +12,7 @@ import { QualityGauge } from './leadflow/QualityGauge';
 import { ValueWheel } from './leadflow/ValueWheel';
 import { AreaRacetrack } from './leadflow/AreaRacetrack';
 import { TwinRings } from './pipeline/TwinRings';
+import { SpeedZone } from './speed/SpeedZone';
 import type { DashData } from './types';
 
 export function DashboardView({ session, leads, data }: {
@@ -23,11 +24,13 @@ export function DashboardView({ session, leads, data }: {
   // Stub zones for features arriving in Plan 2
   const calendarStub = <Card label="CALENDAR"><Dim note="booked appointments arrive in the next build" /></Card>;
   const followUpStub = <Card label="FOLLOW-UP"><Dim note="turns on with the Reactivator" /></Card>;
-  const speedStub = <Card label="SPEED"><Dim /></Card>;
   const reputationStub = <Card label="REPUTATION"><Dim note="turns on with review collection" /></Card>;
   const crewStub = <Card label="YOUR CREW"><Dim /></Card>;
   const pulseStub = <Card label="SYSTEM PULSE"><Dim /></Card>;
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
+
+  // Speed zone
+  const speedZone = <SpeedZone leads={leads} events={data.events} />;
 
   // Real widget zones
   const leadFlowZone = (
@@ -67,7 +70,7 @@ export function DashboardView({ session, leads, data }: {
       <QualityGauge leads={leads} />
       <ValueWheel leads={leads} />
       <AreaRacetrack leads={leads} />
-      {speedStub}
+      {speedZone}
     </>
   );
 
@@ -113,7 +116,7 @@ export function DashboardView({ session, leads, data }: {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {leadFlowZone}{calendarStub}
           {pipelineZone}{followUpStub}
-          {speedStub}{reputationStub}
+          {speedZone}{reputationStub}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
           {crewStub}{pulseStub}
