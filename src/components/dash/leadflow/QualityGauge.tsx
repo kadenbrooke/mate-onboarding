@@ -13,7 +13,7 @@ export function QualityGauge({ leads }: { leads: Lead[] }) {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: 12 }}>
         {/* Semicircle wrapper: overflow hidden so only top half is visible */}
         <div style={{ width: 150, height: 80, overflow: 'hidden', position: 'relative' }}>
-          {/* Outer conic-gradient circle — 270deg start, brand sweep, then #2a2a2a, then transparent for bottom half */}
+          {/* Outer conic-gradient circle - 270deg start, brand sweep, then #2a2a2a, then transparent for bottom half */}
           <div
             style={{
               width: 150,

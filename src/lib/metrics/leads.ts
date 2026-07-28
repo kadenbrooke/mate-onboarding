@@ -84,6 +84,28 @@ export function areaRanking(leads: Lead[]) {
     .sort((a, b) => b.count - a.count);
 }
 
+export function monthBuckets(leads: Lead[], now = new Date()): number[] {
+  const buckets = Array(30).fill(0);
+  for (const l of leads) {
+    const d = new Date(l.created_at);
+    const diffMs = now.getTime() - d.getTime();
+    const diffDays = Math.floor(diffMs / 86400000);
+    if (diffDays >= 0 && diffDays < 30) buckets[29 - diffDays]++;
+  }
+  return buckets;
+}
+
+export function yearBuckets(leads: Lead[], now = new Date()): number[] {
+  const buckets = Array(52).fill(0);
+  for (const l of leads) {
+    const d = new Date(l.created_at);
+    const diffMs = now.getTime() - d.getTime();
+    const diffWeeks = Math.floor(diffMs / (7 * 86400000));
+    if (diffWeeks >= 0 && diffWeeks < 52) buckets[51 - diffWeeks]++;
+  }
+  return buckets;
+}
+
 export function scoreStats(leads: Lead[]) {
   const scored = leads.filter(l => l.score != null);
   // avg spans ALL scored leads (portfolio quality); hot is the action queue (open + uncontacted).

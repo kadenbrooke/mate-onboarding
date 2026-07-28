@@ -1,35 +1,11 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { Card } from '../Card';
-import { weekBars } from '@/lib/metrics/leads';
+import { weekBars, monthBuckets, yearBuckets } from '@/lib/metrics/leads';
 import { brandVar } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 type Range = 'WEEK' | 'MONTH' | 'YEAR';
-
-function bucketMonth(leads: Lead[]): number[] {
-  const now = new Date();
-  const buckets = Array(30).fill(0);
-  for (const l of leads) {
-    const d = new Date(l.created_at);
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffDays >= 0 && diffDays < 30) buckets[29 - diffDays]++;
-  }
-  return buckets;
-}
-
-function bucketYear(leads: Lead[]): number[] {
-  const now = new Date();
-  const buckets = Array(52).fill(0);
-  for (const l of leads) {
-    const d = new Date(l.created_at);
-    const diffMs = now.getTime() - d.getTime();
-    const diffWeeks = Math.floor(diffMs / (7 * 86400000));
-    if (diffWeeks >= 0 && diffWeeks < 52) buckets[51 - diffWeeks]++;
-  }
-  return buckets;
-}
 
 function Sparkline({ counts }: { counts: number[] }) {
   const max = Math.max(...counts, 1);
@@ -107,8 +83,8 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
 
   const chartBody = (() => {
     if (!mounted) {
-      // Fixed-height placeholder: SSR never disagrees with client
-      return <div style={{ height: 64 }} />;
+      // Fixed-height placeholder: SSR never disagrees with client (68 = 56px bars + 12px marginTop)
+      return <div style={{ height: 68 }} />;
     }
     if (range === 'WEEK') {
       const bars = weekBars(leads);
@@ -138,8 +114,8 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
         </div>
       );
     }
-    if (range === 'MONTH') return <Sparkline counts={bucketMonth(leads)} />;
-    return <Sparkline counts={bucketYear(leads)} />;
+    if (range === 'MONTH') return <Sparkline counts={monthBuckets(leads)} />;
+    return <Sparkline counts={yearBuckets(leads)} />;
   })();
 
   return (

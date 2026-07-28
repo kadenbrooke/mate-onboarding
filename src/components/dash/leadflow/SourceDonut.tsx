@@ -22,8 +22,6 @@ const SOURCE_LABELS: Record<string, string> = {
   unknown: 'Other',
 };
 
-const FREE_SOURCES = new Set(['referral', 'revived']);
-
 export function SourceDonut({ leads }: { leads: Lead[] }) {
   const { segments, freeCount } = sourceBreakdown(leads);
   const radius = 40;
@@ -81,7 +79,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {segments.map(s => {
             const color = SOURCE_COLORS[s.source] ?? '#444';
-            const isFree = FREE_SOURCES.has(s.source);
+            const isFree = s.free;
             return (
               <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9 }}>
                 <div
@@ -97,7 +95,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
                 <span style={{ opacity: 0.75 }}>
                   {SOURCE_LABELS[s.source] ?? s.source}
                   {' '}
-                  <span style={{ opacity: 0.65 }}>({s.count})</span>
+                  <span style={{ opacity: 0.65 }}>{s.count}</span>
                 </span>
               </div>
             );

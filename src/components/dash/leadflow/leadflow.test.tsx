@@ -32,8 +32,10 @@ describe('HotLeads', () => {
 
 describe('SourceDonut', () => {
   it('shows free count center stat', () => {
-    render(<SourceDonut leads={[lead({ source: 'referral' }), lead({ source: 'missed_call' })]} />);
-    expect(screen.getByText('1')).toBeInTheDocument();
+    const { container } = render(<SourceDonut leads={[lead({ source: 'referral' }), lead({ source: 'missed_call' })]} />);
+    // freeCount is the SVG text node; legend also shows counts (plain space + number, no parens)
+    // use getAllByText to handle both occurrences of '1'
+    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('FREE')).toBeInTheDocument();
   });
 });

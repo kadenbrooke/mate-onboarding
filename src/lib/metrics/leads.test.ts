@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   weekBars, sourceBreakdown, pipelineTotals, valueWheel, areaRanking, scoreStats,
+  monthBuckets, yearBuckets,
   type Lead,
 } from './leads';
 
@@ -64,6 +65,28 @@ describe('areaRanking', () => {
   it('ranks cities by count desc', () => {
     const out = areaRanking([lead({ city: 'Provo' }), lead({ city: 'Orem' }), lead({ city: 'Orem' })]);
     expect(out[0]).toMatchObject({ city: 'Orem', count: 2 });
+  });
+});
+
+describe('monthBuckets', () => {
+  it('returns 30 buckets and counts a today-lead in the last bucket', () => {
+    const now = new Date();
+    const todayLead = lead({ created_at: now.toISOString() });
+    const buckets = monthBuckets([todayLead, lead({ created_at: d(60) })], now);
+    expect(buckets).toHaveLength(30);
+    expect(buckets[29]).toBe(1); // today's lead lands in the last (most recent) bucket
+    expect(buckets.reduce((a, b) => a + b, 0)).toBe(1); // 60-day-old lead excluded
+  });
+});
+
+describe('yearBuckets', () => {
+  it('returns 52 buckets and excludes a 400-day-old lead', () => {
+    const now = new Date();
+    const oldLead = lead({ created_at: d(400) });
+    const recentLead = lead({ created_at: now.toISOString() });
+    const buckets = yearBuckets([recentLead, oldLead], now);
+    expect(buckets).toHaveLength(52);
+    expect(buckets.reduce((a, b) => a + b, 0)).toBe(1); // 400-day-old lead excluded (>52 weeks)
   });
 });
 
