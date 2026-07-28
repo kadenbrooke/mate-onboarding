@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats } from '@/lib/metrics/hero';
+import { actionsThisWeek } from '@/lib/metrics/events';
 import { Card } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MobileNav, type MobileView } from './MobileNav';
@@ -14,13 +15,14 @@ import { AreaRacetrack } from './leadflow/AreaRacetrack';
 import { TwinRings } from './pipeline/TwinRings';
 import { SpeedZone } from './speed/SpeedZone';
 import { JourneyRiver } from './journey/JourneyRiver';
+import { Ticker } from './Ticker';
 import type { DashData } from './types';
 
 export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
-  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: leads.length * 6, minutesPerAction: 5 }); // PLAN2: real action count from events table; PLAN3: retainer from session
+  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: actionsThisWeek(data.events), minutesPerAction: 5 }); // PLAN3: retainer from session
 
   // Stub zones for features arriving in Plan 2
   const calendarStub = <Card label="CALENDAR"><Dim note="booked appointments arrive in the next build" /></Card>;
@@ -52,6 +54,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileHome = (
     <>
       <HeroStrip {...hero} />
+      <Ticker events={data.events} />
       <HotLeads leads={leads} sessionId={session.id} />
       {calendarStub}
       {pulseStub}
@@ -115,6 +118,7 @@ export function DashboardView({ session, leads, data }: {
       {/* Desktop layout */}
       <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <HeroStrip {...hero} />
+        <Ticker events={data.events} />
         <JourneyRiver leads={leads} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {leadFlowZone}{calendarStub}
