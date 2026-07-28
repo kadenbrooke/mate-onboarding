@@ -16,7 +16,7 @@ const lead = (over: Partial<Lead>): Lead => ({
 describe('SpeedZone', () => {
   it('renders race, streak, clock, rescue with computed stats', () => {
     render(<SpeedZone leads={[lead({}), lead({ after_hours: false })]} events={[]} />);
-    expect(screen.getByText('SPEED TO LEAD')).toBeInTheDocument();
+    expect(screen.getByText('REPLY TIME')).toBeInTheDocument();
     expect(screen.getByText(/28\s?sec/i)).toBeInTheDocument();
     expect(screen.getByText('THE STREAK')).toBeInTheDocument();
     expect(screen.getByText('WHEN LEADS ARRIVE')).toBeInTheDocument();
@@ -25,7 +25,7 @@ describe('SpeedZone', () => {
 
   it('renders empty-state gracefully with zero leads', () => {
     render(<SpeedZone leads={[]} events={[]} />);
-    expect(screen.getByText('SPEED TO LEAD')).toBeInTheDocument();
+    expect(screen.getByText('REPLY TIME')).toBeInTheDocument();
   });
 });
 

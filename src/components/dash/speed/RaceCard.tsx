@@ -51,7 +51,7 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
   const multiple = Math.max(1, Math.round(industrySeconds / Math.max(avgReplySeconds, 1)));
 
   return (
-    <Card label="SPEED TO LEAD">
+    <Card label="REPLY TIME">
       {/* Big reply-time stat */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
         {warming ? (

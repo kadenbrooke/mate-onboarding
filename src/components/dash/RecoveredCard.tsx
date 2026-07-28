@@ -120,7 +120,7 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
         onPointerMove={onMove}
         onPointerDown={onMove}
         onPointerLeave={() => setHoverIdx(null)}
-        style={{ position: 'relative', marginTop: 'auto', paddingTop: 10, height: 96, touchAction: 'pan-y' }}
+        style={{ position: 'relative', marginTop: 'auto', height: 96, touchAction: 'pan-y' }}
       >
         <svg
           viewBox={`0 0 ${VW} ${VH}`}
