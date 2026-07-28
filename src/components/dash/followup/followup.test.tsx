@@ -34,4 +34,9 @@ describe('FollowUpZone', () => {
     render(<FollowUpZone reactivation={null} wins={[]} />);
     expect(screen.getByText(/turns on with the Reactivator/i)).toBeInTheDocument();
   });
+  it('renders empty wins placeholder when reactivation present and wins empty', () => {
+    render(<FollowUpZone reactivation={reactivation} wins={[]} />);
+    expect(screen.getByText('RECENT WINS')).toBeInTheDocument();
+    expect(screen.getByText('No wins yet, the machine is working')).toBeInTheDocument();
+  });
 });

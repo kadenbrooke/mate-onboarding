@@ -4,12 +4,12 @@ export type CascadeStage = { label: string; count: number; highlight?: 'green' |
 
 // Command-center cascade: full-width top row, each stage narrower + indented,
 // terminal stage glows. Reused by Follow-up and Reputation zones.
+// Widths are narrative tiers (100% → 40% linear), not count-proportional — counts carry the data.
 export function CascadeFunnel({ stages }: { stages: CascadeStage[] }) {
-  const max = Math.max(1, ...stages.map(s => s.count));
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
       {stages.map((s, i) => {
-        const width = Math.max(34, (s.count / max) * 100);
+        const width = stages.length === 1 ? 100 : 100 - (i * (60 / (stages.length - 1)));
         const indent = (100 - width) / 2;
         const bg = s.highlight === 'green'
           ? `linear-gradient(90deg, #2e8b57, ${FREE_GREEN})`

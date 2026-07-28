@@ -87,11 +87,13 @@ export function FollowUpZone({
         </div>
 
         {/* Recent wins */}
-        {wins.length > 0 && (
-          <div>
-            <div style={{ fontSize: 10, letterSpacing: 1.5, opacity: 0.55, marginBottom: 6 }}>
-              RECENT WINS
-            </div>
+        <div>
+          <div style={{ fontSize: 10, letterSpacing: 1.5, opacity: 0.55, marginBottom: 6 }}>
+            RECENT WINS
+          </div>
+          {wins.length === 0 ? (
+            <div style={{ fontSize: 11, opacity: 0.45 }}>No wins yet, the machine is working</div>
+          ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {wins.map(w => (
                 <div key={w.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
@@ -121,8 +123,8 @@ export function FollowUpZone({
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </Card>
   );
