@@ -11,8 +11,8 @@ const ev = (message: string): ClientEvent => ({
 describe('Ticker', () => {
   it('renders event messages', () => {
     render(<Ticker events={[ev('Mike texted back in 5s'), ev('New review from Dana')]} />);
-    // doubled list for seamless loop -- use getAllByText
-    expect(screen.getAllByText(/Mike texted back in 5s/).length).toBeGreaterThanOrEqual(1);
+    // doubled list for seamless loop: each message renders exactly twice
+    expect(screen.getAllByText(/Mike texted back in 5s/)).toHaveLength(2);
   });
 
   it('renders nothing when no events', () => {
