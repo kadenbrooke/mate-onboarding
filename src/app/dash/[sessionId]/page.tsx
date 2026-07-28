@@ -1,7 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { notFound } from 'next/navigation';
 import type { Lead } from '@/lib/metrics/leads';
-import type { Capability } from '@/components/dash/types';
+import type { DashCapability } from '@/components/dash/types';
 import { DashboardView } from '@/components/dash/DashboardView';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
@@ -87,7 +87,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
 
   // Map client_capabilities rows: capability_key -> key
   const rawCaps = capabilitiesResult.data ?? [];
-  const capabilities: Capability[] = rawCaps.map((row) => ({
+  const capabilities: DashCapability[] = rawCaps.map((row) => ({
     key: String(row.capability_key),
     label: String(row.label),
     status: String(row.status),

@@ -41,7 +41,7 @@ export type Review = {
   created_at: string;
 };
 
-export type Capability = {
+export type DashCapability = {
   key: string;
   label: string;
   status: string;
@@ -62,6 +62,6 @@ export type DashData = {
   wins: ReactivationWin[];
   reputation: Reputation | null;
   reviews: Review[];
-  capabilities: Capability[];
+  capabilities: DashCapability[];
   incidents: Incident[];
 };
