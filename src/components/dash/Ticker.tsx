@@ -1,12 +1,12 @@
 'use client';
 import type { ClientEvent } from '@/lib/metrics/events';
-import { FONT_BODY, BG_CARD } from '@/lib/theme';
+import { FONT_BODY, BG_CARD, CARD_SHADOW } from '@/lib/theme';
 
 const AGENT_COLOR: Record<ClientEvent['agent'], string> = {
   first_responder: 'var(--brand-primary, #e14d1a)',
-  reactivator: '#b586e8',
-  cultivator: '#3aa76d',
-  reputation: '#e1a54d',
+  reactivator: '#7d5bbe',
+  cultivator: '#2e8f5a',
+  reputation: '#c08a0a',
 };
 
 export function Ticker({ events }: { events: ClientEvent[] }) {
@@ -14,8 +14,8 @@ export function Ticker({ events }: { events: ClientEvent[] }) {
   const items = events.slice(0, 12);
   return (
     <div style={{
-      overflow: 'hidden', background: BG_CARD, borderRadius: 8,
-      padding: '6px 0', position: 'relative',
+      overflow: 'hidden', background: BG_CARD, borderRadius: 99,
+      boxShadow: CARD_SHADOW, padding: '7px 0', position: 'relative',
     }}>
       <style>{`
         @keyframes ticker-scroll { from { transform: translateX(0); } to { transform: translateX(-50%); } }

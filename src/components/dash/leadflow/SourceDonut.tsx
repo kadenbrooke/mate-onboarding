@@ -1,26 +1,9 @@
 import { Card } from '../Card';
 import { sourceBreakdown } from '@/lib/metrics/leads';
 import { ringSegments } from '@/lib/metrics/ring';
-import { FREE_GREEN, FONT_NUM, FONT_BODY } from '@/lib/theme';
+import { SOURCE_COLORS, SOURCE_LABELS } from '@/lib/metrics/colors';
+import { FREE_GREEN, TEXT_MUTED, NUM_TABLE, FONT_NUM, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
-
-const SOURCE_COLORS: Record<string, string> = {
-  missed_call: '#555',
-  texted_in: '#777',
-  web_form: '#999',
-  referral: '#2e8b57',
-  revived: FREE_GREEN,
-  unknown: '#444',
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  missed_call: 'Missed call',
-  texted_in: 'Texted in',
-  web_form: 'Web form',
-  referral: 'Referral',
-  revived: 'Revived',
-  unknown: 'Other',
-};
 
 export function SourceDonut({ leads }: { leads: Lead[] }) {
   const { segments, freeCount } = sourceBreakdown(leads);
@@ -35,7 +18,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
         <svg width={100} height={100} viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
           <g transform="translate(50,50) rotate(-90)">
             {segs.map(seg => {
-              const color = SOURCE_COLORS[seg.key] ?? '#444';
+              const color = SOURCE_COLORS[seg.key] ?? SOURCE_COLORS.unknown;
               return (
                 <circle
                   key={seg.key}
@@ -77,27 +60,25 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
           </text>
         </svg>
 
-        {/* Legend */}
+        {/* Legend: swatches match segment hues exactly */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {segments.map(s => {
-            const color = SOURCE_COLORS[s.source] ?? '#444';
-            const isFree = s.free;
+            const color = SOURCE_COLORS[s.source] ?? SOURCE_COLORS.unknown;
             return (
               <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9 }}>
                 <div
                   style={{
                     width: 9,
                     height: 9,
-                    borderRadius: 2,
+                    borderRadius: 3,
                     background: color,
-                    boxShadow: isFree ? `0 0 6px ${color}` : 'none',
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ opacity: 0.75, fontFamily: FONT_BODY }}>
+                <span style={{ color: TEXT_MUTED, fontFamily: FONT_BODY }}>
                   {SOURCE_LABELS[s.source] ?? s.source}
                   {' '}
-                  <span style={{ opacity: 0.65 }}>{s.count}</span>
+                  <span style={{ ...NUM_TABLE }}>{s.count}</span>
                 </span>
               </div>
             );

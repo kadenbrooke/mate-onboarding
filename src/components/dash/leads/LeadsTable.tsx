@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import type { Lead } from '@/lib/metrics/leads';
-import { FREE_GREEN, LOST_BROWN, NUM_TABLE, FONT_BODY } from '@/lib/theme';
+import { FREE_GREEN, LOST_BROWN, BORDER_SOFT, NUM_TABLE, FONT_BODY } from '@/lib/theme';
 
 const dollars = (cents: number | null) => cents == null ? '' : `$${Math.round(cents / 100).toLocaleString()}`;
 
@@ -38,7 +38,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
             data-spotlight={l.id === spotlightId ? 'true' : 'false'}
             ref={l.id === spotlightId ? spotRef : undefined}
             style={{
-              borderTop: '1px solid #222',
+              borderTop: `1px solid ${BORDER_SOFT}`,
               background: l.id === spotlightId ? 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, transparent)' : undefined,
             }}>
             {/* Score: tnum Geist 400 -- column of aligned numerics */}
@@ -50,9 +50,9 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               {l.status === 'open' ? (
                 <span style={{ display: 'flex', gap: 4 }}>
                   <button type="button" onClick={() => mark(l.id, 'won')} aria-label={`won ${l.name}`}
-                    style={{ background: FREE_GREEN, border: 'none', borderRadius: 6, color: '#fff', fontSize: 10, padding: '3px 8px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>WON</button>
+                    style={{ background: FREE_GREEN, border: 'none', borderRadius: 99, color: '#fff', fontSize: 10, padding: '3px 9px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>WON</button>
                   <button type="button" onClick={() => mark(l.id, 'lost')} aria-label={`lost ${l.name}`}
-                    style={{ background: LOST_BROWN, border: 'none', borderRadius: 6, color: '#fff', fontSize: 10, padding: '3px 8px', fontFamily: FONT_BODY, cursor: 'pointer' }}>LOST</button>
+                    style={{ background: LOST_BROWN, border: 'none', borderRadius: 99, color: '#fff', fontSize: 10, padding: '3px 9px', fontFamily: FONT_BODY, cursor: 'pointer' }}>LOST</button>
                 </span>
               ) : (
                 <b style={{ color: l.status === 'won' ? FREE_GREEN : LOST_BROWN }}>{l.status.toUpperCase()}</b>

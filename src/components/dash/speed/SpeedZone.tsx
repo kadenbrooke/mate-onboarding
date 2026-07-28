@@ -14,7 +14,7 @@ export function SpeedZone({ leads, events }: { leads: Lead[]; events: ClientEven
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
       <RaceCard avgReplySeconds={s.avgReplySeconds} />
       <StreakCard streakDays={s.streakDays} />
-      <DayClock hourCounts={s.hourCounts} afterHoursCount={s.afterHoursCount} />
+      <DayClock totalCount={leads.length} afterHoursCount={s.afterHoursCount} />
       <RescueRing rescued={s.rescued} missedTotal={s.missedTotal} />
     </div>
   );

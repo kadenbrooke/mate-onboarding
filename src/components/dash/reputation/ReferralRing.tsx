@@ -2,7 +2,10 @@
 import { useState } from 'react';
 import { ringSegments } from '@/lib/metrics/ring';
 import { moneyShort } from '@/lib/metrics/format';
-import { FREE_GREEN, LOST_BROWN, brandVar, NUM_DISPLAY, NUM_TABLE, FONT_BODY, FONT_HEAD, FONT_NUM } from '@/lib/theme';
+import {
+  FREE_GREEN, LOST_BROWN, brandVar, TRACK_BEIGE, TEXT_MUTED,
+  NUM_DISPLAY, FONT_BODY, FONT_HEAD, FONT_NUM,
+} from '@/lib/theme';
 import type { Reputation } from '@/components/dash/types';
 
 type RingKey = 'won' | 'lost' | 'open';
@@ -33,11 +36,11 @@ export function ReferralRing({ reputation }: { reputation: Reputation }) {
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-      {/* Donut ring */}
+      {/* Donut ring: keeps the standard center-swap interaction */}
       <div style={{ flexShrink: 0 }}>
         <svg viewBox="0 0 120 120" style={{ width: 110 }}>
           <g transform="translate(60,60) rotate(-90)">
-            <circle r={48} fill="none" stroke="#222" strokeWidth={11} />
+            <circle r={48} fill="none" stroke={TRACK_BEIGE} strokeWidth={11} />
             {segs.map((s) => (
               <circle
                 key={s.key}
@@ -48,12 +51,7 @@ export function ReferralRing({ reputation }: { reputation: Reputation }) {
                 strokeLinecap="round"
                 strokeDasharray={`${s.dash} ${C}`}
                 strokeDashoffset={s.offset}
-                style={{
-                  cursor: 'pointer',
-                  filter: active === s.key
-                    ? `drop-shadow(0 0 6px ${SEG_COLOR[s.key as RingKey]})`
-                    : undefined,
-                }}
+                style={{ cursor: 'pointer' }}
                 onClick={() => setActive(s.key as RingKey)}
                 onMouseEnter={() => setActive(s.key as RingKey)}
               />
@@ -70,31 +68,24 @@ export function ReferralRing({ reputation }: { reputation: Reputation }) {
           >
             {active === 'won' ? referrals_closed : active === 'lost' ? referrals_lost : open}
           </text>
-          <text x="60" y="67" textAnchor="middle" fill="#8a8a8a" fontSize="7" fontFamily={FONT_BODY}>
+          <text x="60" y="67" textAnchor="middle" fill={TEXT_MUTED} fontSize="7" fontFamily={FONT_BODY}>
             {active === 'won' ? 'WON' : active === 'lost' ? 'LOST' : 'OPEN'}
           </text>
         </svg>
       </div>
 
-      {/* Right side stats */}
+      {/* Right side: revenue number stays */}
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 10, letterSpacing: 1.5, color: FREE_GREEN, fontFamily: FONT_HEAD, marginBottom: 4 }}>
+        <div style={{ fontSize: 10, letterSpacing: 1.5, color: FREE_GREEN, fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 4 }}>
           REFERRAL WINS
         </div>
         <div style={{
           fontSize: 24,
           ...NUM_DISPLAY,
           color: FREE_GREEN,
-          textShadow: `0 0 12px ${FREE_GREEN}88`,
           lineHeight: 1.1,
         }}>
           {moneyShort(referral_revenue_cents)}
-        </div>
-        <div style={{ fontSize: 10, opacity: 0.7, fontFamily: FONT_BODY, marginTop: 4 }}>
-          captured · $0 to acquire
-        </div>
-        <div style={{ fontSize: 9, opacity: 0.6, fontFamily: FONT_BODY, marginTop: 6, ...NUM_TABLE }}>
-          {referrals_closed} won / {referrals_lost} lost / {open} open
         </div>
       </div>
     </div>

@@ -16,19 +16,19 @@ import type { Incident } from '../types';
 const STATES = {
   green: {
     badge: 'ALL SYSTEMS GO',
-    color: '#3aa76d',
+    color: '#2e8f5a',
     dur: '2.6s',
     path: 'M0,30 L60,30 L70,30 L76,18 L84,42 L90,30 L150,30 L160,30 L166,18 L174,42 L180,30 L240,30 L250,30 L256,18 L264,42 L270,30 L300,30',
   },
   warning: {
     badge: 'NEEDS ATTENTION',
-    color: '#e1a54d',
+    color: '#c08a0a',
     dur: '1.6s',
     path: 'M0,32 L40,32 L48,10 L58,50 L66,32 L104,32 L112,10 L122,50 L130,32 L168,32 L176,10 L186,50 L194,32 L232,32 L240,10 L250,50 L258,32 L300,32',
   },
   critical: {
     badge: 'CRITICAL',
-    color: '#ff5a5a',
+    color: '#c0392b',
     dur: '0.9s',
     path: 'M0,34 L24,34 L30,6 L38,54 L44,34 L68,34 L74,6 L82,54 L88,34 L112,34 L118,6 L126,54 L132,34 L156,34 L162,6 L170,54 L176,34 L200,34 L206,6 L214,54 L220,34 L244,34 L250,6 L258,54 L264,34 L300,34',
   },
@@ -106,7 +106,7 @@ function EkgSvg({ state, baseId }: { state: StateKey; baseId: string }) {
       >
         <defs>
           <filter id={glowId} x="-20%" y="-80%" width="140%" height="260%">
-            <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={s.color} floodOpacity="0.7" />
+            <feDropShadow dx="0" dy="0" stdDeviation="3" floodColor={s.color} floodOpacity="0.25" />
           </filter>
         </defs>
         <path
@@ -156,8 +156,8 @@ export function SystemPulse({ incidents }: { incidents: Incident[] }) {
         color: s.color,
         background: `${s.color}18`,
         border: `1px solid ${s.color}44`,
-        borderRadius: 4,
-        padding: '2px 7px',
+        borderRadius: 99,
+        padding: '2px 9px',
         animation:
           stateKey === 'critical'
             ? 'badge-blink 1.2s ease-in-out infinite'
@@ -186,7 +186,7 @@ export function SystemPulse({ incidents }: { incidents: Incident[] }) {
   } else if (stateKey === 'warning' && openWarning) {
     body = (
       <p style={{ fontSize: 13, fontFamily: FONT_BODY, margin: 0, marginTop: 8 }}>
-        <strong style={{ color: '#e1a54d' }}>{openWarning.message}</strong>{' '}
+        <strong style={{ color: '#c08a0a' }}>{openWarning.message}</strong>{' '}
         <span style={{ opacity: 0.6 }}>agent keeps working</span>
       </p>
     );
@@ -194,11 +194,11 @@ export function SystemPulse({ incidents }: { incidents: Incident[] }) {
     body = (
       <div style={{ marginTop: 8, display: 'grid', gap: 6 }}>
         <p style={{ margin: 0, fontSize: 13, fontFamily: FONT_BODY }}>
-          <strong style={{ color: '#ff5a5a' }}>{openCritical.message}</strong>
+          <strong style={{ color: '#c0392b' }}>{openCritical.message}</strong>
         </p>
         <p style={{ margin: 0, fontSize: 12, fontFamily: FONT_BODY, opacity: 0.85 }}>
           Your support team was notified{' '}
-          <span style={{ color: '#3aa76d' }}>
+          <span style={{ color: '#2e8f5a' }}>
             &#10003; sent {formatTime(openCritical.started_at)}
           </span>
         </p>

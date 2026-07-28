@@ -2,7 +2,13 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
 
 // Mock DNS + normalizeUrl so we can drive fetchSiteGuarded without real network/DNS.
 const lookupMock = vi.fn()
-vi.mock("node:dns/promises", () => ({ lookup: (...a: unknown[]) => lookupMock(...a) }))
+// Node builtins need a default export on the mock (vitest resolves the CJS
+// interop default), or collection fails before any test runs. vi.mock is
+// hoisted, so the shape must be built inside the factory (vi.hoisted-safe).
+vi.mock("node:dns/promises", () => {
+  const shape = { lookup: (...a: unknown[]) => lookupMock(...a) }
+  return { ...shape, default: shape }
+})
 vi.mock("@/lib/research/website", () => ({
   normalizeUrl: (u: string) => (/^https?:\/\//i.test(u) ? u : "https://" + u),
 }))

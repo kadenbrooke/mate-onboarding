@@ -1,21 +1,95 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { monthGrid } from '@/lib/metrics/calendar';
 import { moneyShort } from '@/lib/metrics/format';
-import { BRAND_RAMP } from '@/lib/metrics/colors';
-import { NUM_TABLE, brandVar, FONT_BODY } from '@/lib/theme';
+import {
+  brandVar, BG_SECTION, BORDER_SOFT, TEXT_MUTED, TEXT_FAINT, CARD_SHADOW,
+  NUM_TABLE, FONT_BODY,
+} from '@/lib/theme';
 import { Card } from '../Card';
 import type { Appointment } from '@/lib/metrics/calendar';
 
 const DAY_HEADERS = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'];
 
+function formatTime(iso: string): string {
+  const d = new Date(iso);
+  let h = d.getHours();
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const ampm = h >= 12 ? 'pm' : 'am';
+  h = h % 12 || 12;
+  return `${h}:${m}${ampm}`;
+}
+
+/** Popover with one appointment's details. Anchored above the dot's cell. */
+function ApptPopover({ appt }: { appt: Appointment }) {
+  return (
+    <div
+      role="dialog"
+      aria-label="Appointment details"
+      data-testid="appt-popover"
+      style={{
+        position: 'absolute',
+        bottom: 'calc(100% + 6px)',
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 20,
+        background: '#ffffff',
+        border: `1px solid ${BORDER_SOFT}`,
+        borderRadius: 10,
+        boxShadow: CARD_SHADOW,
+        padding: '8px 10px',
+        minWidth: 130,
+        fontFamily: FONT_BODY,
+        fontSize: 11,
+        textAlign: 'left',
+        pointerEvents: 'none',
+        whiteSpace: 'nowrap',
+      }}
+    >
+      <div style={{ fontWeight: 600 }}>{appt.customer_name ?? 'Appointment'}</div>
+      <div style={{ color: TEXT_MUTED, marginTop: 2 }}>
+        {[formatTime(appt.starts_at), appt.service].filter(Boolean).join(' · ')}
+      </div>
+      {appt.price_cents != null && (
+        <div style={{ ...NUM_TABLE, color: brandVar, marginTop: 2 }}>
+          {moneyShort(appt.price_cents)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function BookedCalendar({ appointments }: { appointments: Appointment[] }) {
   const [mounted, setMounted] = useState(false);
+  // Sticky popover key ("day-index"): set on tap/click, cleared on tap-away
+  // or Escape. Hover shows the same popover transiently.
+  const [stickyKey, setStickyKey] = useState<string | null>(null);
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    if (stickyKey == null) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setStickyKey(null);
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setStickyKey(null);
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [stickyKey]);
+
   if (!mounted) return <div style={{ height: 320 }} />;
 
   const grid = monthGrid(appointments);
   const isEmpty = grid.totalCount === 0;
+  const activeKey = stickyKey ?? hoverKey;
 
   const rightSlot = (
     <span style={{ fontSize: 11, fontWeight: 700, color: brandVar }}>
@@ -27,21 +101,24 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
     <Card label={`${grid.monthLabel} BOOKED APPOINTMENTS`} right={rightSlot}>
       {/* Mo-Su header row */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginTop: 10, marginBottom: 4,
+        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginTop: 10, marginBottom: 4,
       }}>
         {DAY_HEADERS.map(h => (
-          <div key={h} style={{ fontSize: 9, opacity: 0.4, textAlign: 'center', fontFamily: FONT_BODY }}>
+          <div key={h} style={{ fontSize: 9, color: TEXT_FAINT, textAlign: 'center', fontFamily: FONT_BODY }}>
             {h}
           </div>
         ))}
       </div>
 
       {/* Calendar grid */}
-      <div style={{ position: 'relative' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+      <div style={{ position: 'relative' }} ref={wrapRef}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
           {grid.weeks.flat().map((cell, idx) => {
             if (!cell) {
-              return <div key={`empty-${idx}`} style={{ background: '#141414', border: '1px solid #222', borderRadius: 4, minHeight: 36 }} />;
+              return <div key={`empty-${idx}`} style={{
+                background: 'transparent', border: `1px solid ${BORDER_SOFT}`,
+                borderRadius: 8, aspectRatio: '1 / 1',
+              }} />;
             }
             const isToday = cell.isToday;
             const now = new Date();
@@ -49,45 +126,62 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
             const isFuture = cellDate > now && !isToday;
             const appts = cell.appointments;
 
-            const titleLines = appts
-              .map(a => [a.customer_name, a.service].filter(Boolean).join(' - '))
-              .join('\n');
-
             return (
               <div
                 key={`day-${cell.day}`}
-                title={titleLines || undefined}
                 style={{
-                  background: '#141414',
-                  border: isToday ? `1px solid ${brandVar}` : '1px solid #222',
-                  borderRadius: 4,
-                  minHeight: 36,
+                  background: BG_SECTION,
+                  border: isToday ? `1px solid ${brandVar}` : `1px solid ${BORDER_SOFT}`,
+                  borderRadius: 8,
+                  aspectRatio: '1 / 1',
                   padding: '3px 4px',
-                  opacity: isFuture ? 0.5 : 1,
+                  opacity: isFuture ? 0.6 : 1,
                   display: 'flex',
                   flexDirection: 'column',
                   gap: 2,
+                  position: 'relative',
                 }}
               >
                 <span style={{
                   fontSize: 8,
-                  color: isToday ? brandVar : '#666',
+                  color: isToday ? brandVar : TEXT_MUTED,
+                  fontWeight: isToday ? 700 : 400,
                   lineHeight: 1,
                 }}>
                   {cell.day}
                 </span>
                 {appts.length > 0 && (
                   <div style={{ display: 'flex', gap: 2, flexWrap: 'wrap', marginTop: 2 }}>
-                    {appts.slice(0, 3).map((_, i) => (
-                      <div
-                        key={i}
-                        style={{
-                          width: 5, height: 5, borderRadius: '50%',
-                          background: BRAND_RAMP[i % 3],
-                          flexShrink: 0,
-                        }}
-                      />
-                    ))}
+                    {appts.slice(0, 3).map((a, i) => {
+                      const key = `${cell.day}-${i}`;
+                      const open = activeKey === key;
+                      return (
+                        <span key={key} style={{ position: 'relative', display: 'inline-flex' }}>
+                          <button
+                            type="button"
+                            aria-label={`Appointment: ${a.customer_name ?? 'unknown'} on day ${cell.day}`}
+                            aria-expanded={open}
+                            data-testid={`appt-dot-${key}`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setStickyKey(k => (k === key ? null : key));
+                            }}
+                            onMouseEnter={() => setHoverKey(key)}
+                            onMouseLeave={() => setHoverKey(k => (k === key ? null : k))}
+                            onFocus={() => setHoverKey(key)}
+                            onBlur={() => setHoverKey(k => (k === key ? null : k))}
+                            style={{
+                              width: 10, height: 10, borderRadius: '50%',
+                              background: brandVar,
+                              border: 'none', padding: 0, cursor: 'pointer',
+                              flexShrink: 0,
+                              outlineOffset: 2,
+                            }}
+                          />
+                          {open && <ApptPopover appt={a} />}
+                        </span>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -102,7 +196,7 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             pointerEvents: 'none',
           }}>
-            <span style={{ fontSize: 11, opacity: 0.5, textAlign: 'center', fontFamily: FONT_BODY }}>
+            <span style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', fontFamily: FONT_BODY }}>
               Appointments your agents book will land here
             </span>
           </div>
@@ -114,7 +208,7 @@ export function BookedCalendar({ appointments }: { appointments: Appointment[] }
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 8, fontSize: 10,
       }}>
-        <span style={{ opacity: 0.5, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ color: TEXT_MUTED, display: 'flex', alignItems: 'center', gap: 5, fontFamily: FONT_BODY }}>
           <span style={{
             display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
             background: brandVar,

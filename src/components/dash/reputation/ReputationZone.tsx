@@ -2,7 +2,7 @@ import { Card } from '@/components/dash/Card';
 import { CascadeFunnel } from '../followup/CascadeFunnel';
 import { StarBars } from './StarBars';
 import { ReferralRing } from './ReferralRing';
-import { FREE_GREEN, FONT_BODY, FONT_HEAD } from '@/lib/theme';
+import { FREE_GREEN, TEXT_MUTED, BG_SECTION, BORDER_SOFT, FONT_BODY, FONT_HEAD } from '@/lib/theme';
 import type { Reputation, Review } from '@/components/dash/types';
 
 export function ReputationZone({
@@ -15,7 +15,7 @@ export function ReputationZone({
   if (reputation == null) {
     return (
       <Card label="THE REPUTATION MACHINE">
-        <div style={{ opacity: 0.45, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
+        <div style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
           turns on with review collection
         </div>
       </Card>
@@ -31,8 +31,8 @@ export function ReputationZone({
         {/* Left: REVIEWS cascade */}
         <div>
           <div style={{
-            fontSize: 10, letterSpacing: 1.5, opacity: 0.55,
-            fontFamily: FONT_HEAD, marginBottom: 8,
+            fontSize: 10, letterSpacing: 1.5, color: TEXT_MUTED,
+            fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 8,
           }}>
             REVIEWS
           </div>
@@ -48,7 +48,7 @@ export function ReputationZone({
         <div>
           <div style={{
             fontSize: 10, letterSpacing: 1.5,
-            color: FREE_GREEN, fontFamily: FONT_HEAD, marginBottom: 8,
+            color: FREE_GREEN, fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 8,
           }}>
             REFERRALS
           </div>
@@ -60,20 +60,18 @@ export function ReputationZone({
         </div>
       </div>
 
-      {/* Bottom: StarBars + ReferralRing */}
+      {/* Bottom: StarBars + ReferralRing sub-panels */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
-        {/* Star bars sub-card */}
         <div style={{
-          border: '1px solid #2a2a2a', borderRadius: 12, padding: 14,
-          background: 'linear-gradient(180deg,#1c1c1c,#141414)',
+          border: `1px solid ${BORDER_SOFT}`, borderRadius: 12, padding: 14,
+          background: BG_SECTION,
         }}>
           <StarBars reviews={safeReviews} avgRating={reputation.avg_rating} />
         </div>
 
-        {/* Referral ring sub-card (green-tinted like StreakCard) */}
         <div style={{
-          border: '1px solid #3aa76d44', borderRadius: 12, padding: 14,
-          background: 'linear-gradient(180deg,#12211a,#141414)',
+          border: `1px solid color-mix(in srgb, ${FREE_GREEN} 25%, transparent)`, borderRadius: 12, padding: 14,
+          background: `color-mix(in srgb, ${FREE_GREEN} 6%, #ffffff)`,
         }}>
           <ReferralRing reputation={reputation} />
         </div>

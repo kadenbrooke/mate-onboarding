@@ -1,5 +1,5 @@
 import { Card } from '../Card';
-import { brandVar, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
+import { brandVar, TRACK_BEIGE, FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
 import { ringSegments } from '@/lib/metrics/ring';
 
 export function RescueRing({ rescued, missedTotal }: { rescued: number; missedTotal: number }) {
@@ -18,23 +18,19 @@ export function RescueRing({ rescued, missedTotal }: { rescued: number; missedTo
         {/* Donut */}
         <svg width={96} height={96} viewBox="0 0 96 96" style={{ flexShrink: 0 }}>
           <g transform="translate(48,48) rotate(-90)">
-            {segs.map(seg => {
-              const isRescued = seg.key === 'rescued';
-              return (
-                <circle
-                  key={seg.key}
-                  r={radius}
-                  cx={0}
-                  cy={0}
-                  fill="none"
-                  stroke={isRescued ? brandVar : '#2a2a2a'}
-                  strokeWidth={12}
-                  strokeDasharray={`${seg.dash} ${circ}`}
-                  strokeDashoffset={seg.offset}
-                  style={isRescued ? { filter: `drop-shadow(0 0 6px ${brandVar})` } : undefined}
-                />
-              );
-            })}
+            {segs.map(seg => (
+              <circle
+                key={seg.key}
+                r={radius}
+                cx={0}
+                cy={0}
+                fill="none"
+                stroke={seg.key === 'rescued' ? brandVar : TRACK_BEIGE}
+                strokeWidth={12}
+                strokeDasharray={`${seg.dash} ${circ}`}
+                strokeDashoffset={seg.offset}
+              />
+            ))}
           </g>
           {/* Center text */}
           <text
@@ -64,13 +60,8 @@ export function RescueRing({ rescued, missedTotal }: { rescued: number; missedTo
         </svg>
 
         {/* Right copy */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 12, lineHeight: 1.5 }}>
-            <span style={{ fontWeight: 600 }}>{rescued} of {missedTotal}</span> missed calls became text conversations
-          </div>
-          <div style={{ fontFamily: FONT_BODY, fontSize: 11, opacity: 0.5 }}>
-            gap = calls that never replied
-          </div>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 12, lineHeight: 1.5 }}>
+          <span style={{ fontWeight: 600 }}>{rescued} of {missedTotal}</span> missed calls became text conversations
         </div>
       </div>
     </Card>

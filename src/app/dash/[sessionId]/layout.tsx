@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createServiceClient } from '@/lib/supabase/service';
-import { brandToCssVars, FONT_BODY } from '@/lib/theme';
+import { brandToCssVars, FONT_BODY, BG_PAGE, BORDER_SOFT, TEXT_DARK } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
 
 interface DashLayoutProps {
@@ -52,9 +52,12 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
   return (
     <div
       style={{
+        // Dash light shell (2026-07 redesign): warm off-white canvas + dark
+        // text. Tenant brand vars still cascade for accent colors; the dark
+        // --mate-bg shell now belongs only to onboarding/portal/demo.
         minHeight: '100vh',
-        background: 'var(--mate-bg, #141414)',
-        color: 'var(--mate-accent, #ede6e6)',
+        background: BG_PAGE,
+        color: TEXT_DARK,
         ...cssVars,
       }}
     >
@@ -65,7 +68,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
           alignItems: 'center',
           gap: 10,
           padding: '12px 16px',
-          borderBottom: '1px solid #222',
+          borderBottom: `1px solid ${BORDER_SOFT}`,
           maxWidth: 1100,
           margin: '0 auto',
         }}
@@ -84,7 +87,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
               fontSize: 15,
               fontFamily: FONT_BODY,
               fontWeight: 600,
-              color: 'var(--mate-accent, #ede6e6)',
+              color: TEXT_DARK,
               letterSpacing: '-0.01em',
             }}
           >

@@ -7,7 +7,7 @@
 // render LOCKED. This matches how capability.ts defines "usable".
 
 import { Card } from '../Card';
-import { FONT_BODY, FREE_GREEN, brandVar } from '@/lib/theme';
+import { FONT_BODY, FREE_GREEN, brandVar, TRACK_BEIGE, TEXT_MUTED, TEXT_DARK, BORDER_SOFT } from '@/lib/theme';
 import type { DashCapability } from '../types';
 
 const UNLOCK_HINTS: Record<string, string> = {
@@ -27,7 +27,7 @@ function isLive(status: string): boolean {
 function CrewChip({ label, live }: { label: string; live: boolean }) {
   const bg = live
     ? `radial-gradient(circle at 40% 35%, ${brandVar}, #a0340f)`
-    : '#2a2a2a';
+    : TRACK_BEIGE;
   return (
     <div
       aria-hidden
@@ -43,7 +43,7 @@ function CrewChip({ label, live }: { label: string; live: boolean }) {
         fontSize: 11,
         fontWeight: 700,
         fontFamily: FONT_BODY,
-        color: live ? '#fff' : '#555',
+        color: live ? '#fff' : TEXT_MUTED,
         letterSpacing: 0.5,
       }}
     >
@@ -62,10 +62,10 @@ function StatusPill({ live }: { live: boolean }) {
           fontFamily: FONT_BODY,
           letterSpacing: 1,
           color: FREE_GREEN,
-          background: '#3aa76d18',
-          border: '1px solid #3aa76d44',
-          borderRadius: 4,
-          padding: '2px 6px',
+          background: `color-mix(in srgb, ${FREE_GREEN} 10%, transparent)`,
+          border: `1px solid color-mix(in srgb, ${FREE_GREEN} 30%, transparent)`,
+          borderRadius: 99,
+          padding: '2px 8px',
         }}
       >
         ● LIVE
@@ -79,11 +79,11 @@ function StatusPill({ live }: { live: boolean }) {
         fontWeight: 700,
         fontFamily: FONT_BODY,
         letterSpacing: 1,
-        color: '#555',
-        background: '#2a2a2a',
-        border: '1px solid #333',
-        borderRadius: 4,
-        padding: '2px 6px',
+        color: TEXT_MUTED,
+        background: TRACK_BEIGE,
+        border: `1px solid ${BORDER_SOFT}`,
+        borderRadius: 99,
+        padding: '2px 8px',
       }}
     >
       LOCKED
@@ -111,7 +111,7 @@ function CrewRow({ cap }: { cap: DashCapability }) {
             fontSize: 13,
             fontWeight: 700,
             fontFamily: FONT_BODY,
-            color: '#ede6e6',
+            color: TEXT_DARK,
             lineHeight: '1.2',
           }}
         >

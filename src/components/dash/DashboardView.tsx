@@ -1,16 +1,15 @@
 'use client';
 import { useState } from 'react';
 import type { Lead } from '@/lib/metrics/leads';
-import { heroStats } from '@/lib/metrics/hero';
-import { Card } from './Card';
+import { heroStats, heroSeries } from '@/lib/metrics/hero';
+import { Card, SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MobileNav, type MobileView } from './MobileNav';
 import { TrendCard } from './leadflow/TrendCard';
 import { HotLeads } from './leadflow/HotLeads';
 import { SourceDonut } from './leadflow/SourceDonut';
-import { QualityGauge } from './leadflow/QualityGauge';
 import { ValueWheel } from './leadflow/ValueWheel';
-import { AreaRacetrack } from './leadflow/AreaRacetrack';
+import { AreaBars } from './leadflow/AreaBars';
 import { TwinRings } from './pipeline/TwinRings';
 import { SpeedZone } from './speed/SpeedZone';
 import { JourneyRiver } from './journey/JourneyRiver';
@@ -22,11 +21,16 @@ import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
 import type { DashData } from './types';
 
+// Light-theme layout (2026-07 redesign): each zone is a large light-grey
+// SectionCard holding white stat sub-cards. Mobile stacks the white cards
+// directly on the warm canvas.
+
 export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
   const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: data.weekActionCount, minutesPerAction: 5 }); // PLAN3: retainer from session
+  const series = heroSeries(leads, data.events, { minutesPerAction: 5 });
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;
@@ -43,17 +47,17 @@ export function DashboardView({ session, leads, data }: {
   // Speed zone
   const speedZone = <SpeedZone leads={leads} events={data.events} />;
 
-  // Real widget zones
+  // Lead-flow zone: trend on top, 2x2 stat grid below (quality gauge lives
+  // on the HOT RIGHT NOW card since the 2026-07 merge).
   const leadFlowZone = (
     <div style={{ display: 'grid', gap: 10 }}>
       <TrendCard leads={leads} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <HotLeads leads={leads} sessionId={session.id} />
         <SourceDonut leads={leads} />
-        <QualityGauge leads={leads} />
         <ValueWheel leads={leads} />
+        <AreaBars leads={leads} />
       </div>
-      <AreaRacetrack leads={leads} />
     </div>
   );
   const pipelineZone = <TwinRings leads={leads} />;
@@ -61,7 +65,7 @@ export function DashboardView({ session, leads, data }: {
   // Mobile view stacks
   const mobileHome = (
     <>
-      <HeroStrip {...hero} />
+      <HeroStrip {...hero} series={series} />
       <Ticker events={data.events} />
       <HotLeads leads={leads} sessionId={session.id} />
       {calendarZone}
@@ -80,9 +84,8 @@ export function DashboardView({ session, leads, data }: {
         Open full leads table
       </a>
       <SourceDonut leads={leads} />
-      <QualityGauge leads={leads} />
       <ValueWheel leads={leads} />
-      <AreaRacetrack leads={leads} />
+      <AreaBars leads={leads} />
       {speedZone}
     </>
   );
@@ -124,19 +127,26 @@ export function DashboardView({ session, leads, data }: {
       `}</style>
 
       {/* Desktop layout */}
-      <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
-        <HeroStrip {...hero} />
+      <div className="dash-desktop" style={{ display: 'grid', gap: 12 }}>
+        <HeroStrip {...hero} series={series} />
         <Ticker events={data.events} />
-        <JourneyRiver leads={leads} />
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          {leadFlowZone}{calendarZone}
-          {pipelineZone}{followUpZone}
-          {speedZone}{reputationZone}
+        <SectionCard>
+          <JourneyRiver leads={leads} />
+        </SectionCard>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
+          <SectionCard>{calendarZone}</SectionCard>
+          <SectionCard>{pipelineZone}</SectionCard>
+          <SectionCard>{followUpZone}</SectionCard>
+          <SectionCard title="Speed">{speedZone}</SectionCard>
+          <SectionCard>{reputationZone}</SectionCard>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
-          <CrewRoster capabilities={data.capabilities} />
-          <SystemPulse incidents={data.incidents} />
-        </div>
+        <SectionCard title="Operations">
+          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
+            <CrewRoster capabilities={data.capabilities} />
+            <SystemPulse incidents={data.incidents} />
+          </div>
+        </SectionCard>
       </div>
 
       {/* Mobile layout */}

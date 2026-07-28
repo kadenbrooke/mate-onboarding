@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { BookedCalendar } from './BookedCalendar';
 import type { Appointment } from '@/lib/metrics/calendar';
 
@@ -20,5 +20,38 @@ describe('BookedCalendar', () => {
   it('renders locked note when empty', () => {
     render(<BookedCalendar appointments={[]} />);
     expect(screen.getByText(/appointments your agents book will land here/i)).toBeInTheDocument();
+  });
+});
+
+describe('BookedCalendar appointment popover', () => {
+  it('day cells are square (aspect-ratio 1/1)', () => {
+    const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
+    const cell = Array.from(container.querySelectorAll('div')).find(
+      d => (d as HTMLElement).style.aspectRatio === '1 / 1',
+    );
+    expect(cell).toBeTruthy();
+  });
+
+  it('clicking a dot opens details, tap-away dismisses', () => {
+    const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
+    const dot = container.querySelector('[data-testid^="appt-dot-"]') as HTMLElement;
+    expect(dot).toBeTruthy();
+    fireEvent.click(dot);
+    expect(screen.getByTestId('appt-popover')).toBeInTheDocument();
+    expect(screen.getByText('Mike R.')).toBeInTheDocument();
+    expect(screen.getByText(/Driveway/)).toBeInTheDocument();
+    expect(screen.getByText('$4,000')).toBeInTheDocument();
+    // Tap-away: pointerdown outside the calendar clears the sticky popover
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByTestId('appt-popover')).not.toBeInTheDocument();
+  });
+
+  it('Escape closes a sticky popover', () => {
+    const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
+    const dot = container.querySelector('[data-testid^="appt-dot-"]') as HTMLElement;
+    fireEvent.click(dot);
+    expect(screen.getByTestId('appt-popover')).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(screen.queryByTestId('appt-popover')).not.toBeInTheDocument();
   });
 });

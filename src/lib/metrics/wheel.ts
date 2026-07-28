@@ -6,10 +6,16 @@ const rad = (deg: number) => ((deg - 90) * Math.PI) / 180; // 0deg = 12 o'clock
 export function wheelWedges(stats: ServiceStat[], opts: { minR: number; maxR: number }): Wedge[] {
   const avgs = stats.map(s => s.avgCents);
   const lo = Math.min(...avgs), hi = Math.max(...avgs);
+  // Angles normalize over the stats actually passed in. Callers slice to a
+  // top-N, so the upstream `share` field (share of ALL leads) can sum below 1
+  // and used to leave a phantom gap; wedge angle must be exactly proportional
+  // to count within the wheel: count / totalCount * 360.
+  const totalCount = stats.reduce((a, s) => a + s.count, 0);
   let cursor = 0;
   return stats.map(s => {
+    const share = totalCount === 0 ? 0 : s.count / totalCount;
     const startDeg = cursor;
-    const endDeg = cursor + s.share * 360;
+    const endDeg = cursor + share * 360;
     cursor = endDeg;
     const t = hi === lo ? 1 : (s.avgCents - lo) / (hi - lo);
     const radius = opts.minR + t * (opts.maxR - opts.minR);

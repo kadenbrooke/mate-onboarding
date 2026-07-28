@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
+import { fireEvent } from '@testing-library/react';
 import { SpeedZone } from './SpeedZone';
 import { RaceCard } from './RaceCard';
+import { DayClock } from './DayClock';
 import type { Lead } from '@/lib/metrics/leads';
 
 const lead = (over: Partial<Lead>): Lead => ({
@@ -40,5 +42,25 @@ describe('RaceCard', () => {
     expect(screen.getByText('45 sec')).toBeInTheDocument();
     expect(screen.getByText(/beat the average company/i)).toBeInTheDocument();
     expect(screen.queryByText('waiting for your first lead')).not.toBeInTheDocument();
+  });
+});
+
+describe('DayClock (work-hours ring)', () => {
+  it('defaults center to the after-hours count (success metric)', () => {
+    render(<DayClock totalCount={10} afterHoursCount={4} />);
+    expect(screen.getByTestId('dayclock-center').textContent).toBe('4');
+    expect(screen.getByTestId('dayclock-center').getAttribute('fill')).toBe('#2e8f5a');
+  });
+
+  it('hover/tap on the work-hours segment swaps its stat into the center, color-matched and sticky', () => {
+    render(<DayClock totalCount={10} afterHoursCount={4} />);
+    fireEvent.click(screen.getByTestId('dayclock-seg-during'));
+    const center = screen.getByTestId('dayclock-center');
+    expect(center.textContent).toBe('6');
+    // color-matched to the brand (work-hours) segment
+    expect(center.getAttribute('fill')).toContain('var(--brand-primary');
+    // sticky: stays until another segment is picked
+    fireEvent.mouseEnter(screen.getByTestId('dayclock-seg-after'));
+    expect(center.textContent).toBe('4');
   });
 });

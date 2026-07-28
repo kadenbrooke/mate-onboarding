@@ -4,7 +4,7 @@ import { wheelWedges } from '@/lib/metrics/wheel';
 import type { Lead } from '@/lib/metrics/leads';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
-import { FONT_NUM, FONT_BODY } from '@/lib/theme';
+import { TEXT_MUTED, FONT_NUM, FONT_BODY, BG_CARD } from '@/lib/theme';
 
 const WEDGE_COLORS = BRAND_RAMP;
 
@@ -31,17 +31,17 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
               opacity={0.95 - i * 0.08}
             />
           ))}
-          <circle r={16} cx={0} cy={0} fill="#141414" />
-          {/* Center label: Geist 300 for numeric display */}
+          <circle r={17} cx={0} cy={0} fill={BG_CARD} />
+          {/* Center label: Geist for numeric display */}
           <text
             x={0}
             y={0}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={7}
-            fontWeight={300}
+            fontWeight={400}
             fontFamily={FONT_NUM}
-            fill="#fff"
+            fill="#141414"
           >
             {openLabel}
           </text>
@@ -54,17 +54,17 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
                 style={{
                   width: 9,
                   height: 9,
-                  borderRadius: 2,
+                  borderRadius: 3,
                   background: WEDGE_COLORS[i] ?? WEDGE_COLORS[WEDGE_COLORS.length - 1],
                   flexShrink: 0,
                 }}
               />
-              <span style={{ opacity: 0.75, fontFamily: FONT_BODY }}>
+              <span style={{ color: TEXT_MUTED, fontFamily: FONT_BODY }}>
                 {w.service} · {w.count} leads · {moneyShort(w.avgCents)} avg
               </span>
             </div>
           ))}
-          <div style={{ fontSize: 10, opacity: 0.45, marginTop: 2, fontFamily: FONT_BODY }}>
+          <div style={{ fontSize: 10, color: TEXT_MUTED, opacity: 0.8, marginTop: 2, fontFamily: FONT_BODY }}>
             slice reach = average job size
           </div>
         </div>

@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import type { Lead } from '@/lib/metrics/leads';
 import { LeadsTable } from '@/components/dash/leads/LeadsTable';
+import { BG_CARD, CARD_SHADOW } from '@/lib/theme';
 
 export default async function LeadsPage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
@@ -21,7 +22,9 @@ export default async function LeadsPage({ params, searchParams }: {
     <div>
       <Link href={`/dash/${sessionId}`} style={{ fontSize: 12, opacity: .7, color: 'inherit' }}>Back to dashboard</Link>
       <h1 style={{ fontSize: 18, margin: '12px 0' }}>Leads</h1>
-      <LeadsTable leads={(leads ?? []) as Lead[]} sessionId={sessionId} spotlightId={spotlight ?? null} />
+      <div style={{ background: BG_CARD, borderRadius: 16, padding: 8, boxShadow: CARD_SHADOW }}>
+        <LeadsTable leads={(leads ?? []) as Lead[]} sessionId={sessionId} spotlightId={spotlight ?? null} />
+      </div>
     </div>
   );
 }

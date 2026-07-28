@@ -22,6 +22,19 @@
   --mate-bg: #141414;
   --mate-primary: #e14d1a;
   --mate-accent: #ede6e6;
+
+  /* Dash light theme (2026-07 redesign). The /dash surface is light: warm
+     off-white canvas, light-grey section cards, white stat sub-cards. These
+     mirror the tokens in src/lib/theme.ts (single source for components);
+     they exist as CSS vars for any stylesheet-level dash styling. The
+     --mate-* dark defaults above stay untouched because onboarding, portal
+     and /demo still run the dark shell. */
+  --dash-bg: #dcd8d2;
+  --dash-section: #f0eeea;
+  --dash-card: #ffffff;
+  --dash-text: #141414;
+  --dash-muted: #6f6a63;
+  --dash-track: #e5e0d8;
 }
 
 @theme inline {
