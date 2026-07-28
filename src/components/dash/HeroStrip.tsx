@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { moneyShort } from '@/lib/metrics/format';
 
 function useCountUp(target: number, ms = 1500) {
   const [value, setValue] = useState(0);
@@ -21,13 +22,6 @@ function useCountUp(target: number, ms = 1500) {
   return value;
 }
 
-// >= $10,000 (1_000_000 cents) → "$38.2k"; below that plain dollars e.g. "$9,500"
-// Verified: 3820000 cents = $38,200 → $38,200 / 1000 = 38.2 → "$38.2k"
-const money = (cents: number) =>
-  cents >= 1_000_000
-    ? `$${(cents / 100_000).toFixed(1)}k`
-    : `$${Math.round(cents / 100).toLocaleString()}`;
-
 export function HeroStrip({ recoveredCents, roiMultiple, hoursSaved, actions }: {
   recoveredCents: number; roiMultiple: number; hoursSaved: number; actions: number;
 }) {
@@ -40,7 +34,7 @@ export function HeroStrip({ recoveredCents, roiMultiple, hoursSaved, actions }: 
       <div style={{ ...cell, flex: 2, textAlign: 'left',
         background: 'linear-gradient(90deg, color-mix(in srgb, var(--brand-primary, #e14d1a) 22%, #1d1d1d), #1d1d1d)' }}>
         <div style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-          {money(rec)}<span style={{ fontSize: 12, opacity: .6 }}> recovered</span>
+          {moneyShort(rec)}<span style={{ fontSize: 12, opacity: .6 }}> recovered</span>
         </div>
         <div style={{ fontSize: 11, opacity: .6 }}>{roiMultiple.toFixed(1)}x what you pay</div>
       </div>

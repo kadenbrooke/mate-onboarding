@@ -3,18 +3,15 @@ import { valueWheel, pipelineTotals } from '@/lib/metrics/leads';
 import { wheelWedges } from '@/lib/metrics/wheel';
 import type { Lead } from '@/lib/metrics/leads';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
+import { moneyShort } from '@/lib/metrics/format';
 
 const WEDGE_COLORS = BRAND_RAMP;
-
-function money(cents: number): string {
-  return '$' + (cents / 100000).toFixed(1) + 'k';
-}
 
 export function ValueWheel({ leads }: { leads: Lead[] }) {
   const stats = valueWheel(leads).slice(0, 5);
   const wedges = wheelWedges(stats, { minR: 34, maxR: 62 });
   const { openCents } = pipelineTotals(leads);
-  const openLabel = money(openCents);
+  const openLabel = moneyShort(openCents);
 
   return (
     <Card label="BY SERVICE">
@@ -60,7 +57,7 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
                 }}
               />
               <span style={{ opacity: 0.75 }}>
-                {w.service} · {w.count} leads · {money(w.avgCents)} avg
+                {w.service} · {w.count} leads · {moneyShort(w.avgCents)} avg
               </span>
             </div>
           ))}

@@ -4,6 +4,7 @@ import { pipelineTotals, type Lead } from '@/lib/metrics/leads';
 import { ringSegments } from '@/lib/metrics/ring';
 import { Card } from '../Card';
 import { FREE_GREEN, LOST_BROWN } from '@/lib/theme';
+import { moneyShort } from '@/lib/metrics/format';
 
 type Seg = 'won' | 'lost' | 'open';
 
@@ -19,8 +20,6 @@ const SEG_LABEL: Record<Seg, string> = {
   open: 'ON THE TABLE',
 };
 
-const money = (cents: number) => `$${(cents / 100000).toFixed(1)}k`;
-
 export function TwinRings({ leads }: { leads: Lead[] }) {
   const t = pipelineTotals(leads);
   const quotedTotal = t.wonCents + t.lostCents + t.openCents;
@@ -32,8 +31,8 @@ export function TwinRings({ leads }: { leads: Lead[] }) {
         <Ring
           idPrefix="rev"
           values={{ won: t.wonCents, lost: t.lostCents, open: t.openCents }}
-          format={money}
-          sub={(seg) => seg === 'won' ? `of ${money(quotedTotal)} quoted` : SEG_LABEL[seg]}
+          format={moneyShort}
+          sub={(seg) => seg === 'won' ? `of ${moneyShort(quotedTotal)} quoted` : SEG_LABEL[seg]}
           caption="REVENUE"
         />
         <Ring
@@ -57,7 +56,7 @@ export function TwinRings({ leads }: { leads: Lead[] }) {
       </div>
       <div style={{ textAlign: 'center', marginTop: 12 }}>
         <span style={{ fontSize: 18, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-          {avgJob ? money(avgJob) : '$0'}
+          {avgJob ? moneyShort(avgJob) : '$0'}
         </span>
         <span style={{ fontSize: 10, opacity: 0.5, marginLeft: 6 }}>AVG JOB</span>
       </div>
