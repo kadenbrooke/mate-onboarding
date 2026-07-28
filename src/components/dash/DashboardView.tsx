@@ -18,6 +18,7 @@ import { JourneyRiver } from './journey/JourneyRiver';
 import { Ticker } from './Ticker';
 import { BookedCalendar } from './calendar/BookedCalendar';
 import { FollowUpZone } from './followup/FollowUpZone';
+import { ReputationZone } from './reputation/ReputationZone';
 import type { DashData } from './types';
 
 export function DashboardView({ session, leads, data }: {
@@ -32,8 +33,10 @@ export function DashboardView({ session, leads, data }: {
   // Follow-up zone
   const followUpZone = <FollowUpZone reactivation={data.reactivation} wins={data.wins} />;
 
+  // Reputation zone
+  const reputationZone = <ReputationZone reputation={data.reputation} reviews={data.reviews} />;
+
   // Stub zones for features arriving in Plan 2
-  const reputationStub = <Card label="REPUTATION"><Dim note="turns on with review collection" /></Card>;
   const crewStub = <Card label="YOUR CREW"><Dim /></Card>;
   const pulseStub = <Card label="SYSTEM PULSE"><Dim /></Card>;
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
@@ -89,7 +92,7 @@ export function DashboardView({ session, leads, data }: {
     <>
       <TwinRings leads={leads} />
       {followUpZone}
-      {reputationStub}
+      {reputationZone}
     </>
   );
 
@@ -129,7 +132,7 @@ export function DashboardView({ session, leads, data }: {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {leadFlowZone}{calendarZone}
           {pipelineZone}{followUpZone}
-          {speedZone}{reputationStub}
+          {speedZone}{reputationZone}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
           {crewStub}{pulseStub}

@@ -20,8 +20,8 @@ const emptyDash: DashData = {
 describe('DashboardView', () => {
   it('renders stub zone labels + real widget labels', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
-    // Stub zones still present (CALENDAR replaced by real BookedCalendar)
-    for (const label of ['FOLLOW-UP ENGINE', 'REPUTATION', 'YOUR CREW', 'SYSTEM PULSE']) {
+    // Stub zones still present (CALENDAR and REPUTATION replaced by real components)
+    for (const label of ['FOLLOW-UP ENGINE', 'THE REPUTATION MACHINE', 'YOUR CREW', 'SYSTEM PULSE']) {
       expect(screen.getAllByText(label).length).toBeGreaterThanOrEqual(1);
     }
     // Calendar zone now real
