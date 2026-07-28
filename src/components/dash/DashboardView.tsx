@@ -12,12 +12,13 @@ import { QualityGauge } from './leadflow/QualityGauge';
 import { ValueWheel } from './leadflow/ValueWheel';
 import { AreaRacetrack } from './leadflow/AreaRacetrack';
 import { TwinRings } from './pipeline/TwinRings';
+import type { DashData } from './types';
 
-export function DashboardView({ session, leads }: {
-  session: { id: string; mate_name?: string | null }; leads: Lead[];
+export function DashboardView({ session, leads, data }: {
+  session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
-  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: leads.length * 6, minutesPerAction: 5 }); // PLAN2: real action count from events table
+  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: leads.length * 6, minutesPerAction: 5 }); // PLAN2: real action count from events table; PLAN3: retainer from session
 
   // Stub zones for features arriving in Plan 2
   const calendarStub = <Card label="CALENDAR"><Dim note="booked appointments arrive in the next build" /></Card>;
