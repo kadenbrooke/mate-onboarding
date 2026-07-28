@@ -1,7 +1,9 @@
 import { describe, it, expect, vi } from 'vitest';
 
-const eqMock = vi.fn().mockResolvedValue({ error: null });
-const updateMock = vi.fn(() => ({ eq: () => ({ eq: eqMock }) }));
+const eqArgs: unknown[][] = [];
+const eq2 = vi.fn((...a: unknown[]) => { eqArgs.push(a); return Promise.resolve({ error: null }); });
+const eq1 = vi.fn((...a: unknown[]) => { eqArgs.push(a); return { eq: eq2 }; });
+const updateMock = vi.fn(() => ({ eq: eq1 }));
 vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => ({ from: () => ({ update: updateMock }) }),
 }));
@@ -25,8 +27,16 @@ describe('PATCH /api/leads/[id]/status', () => {
   });
 
   it('updates status scoped to session', async () => {
+    eqArgs.length = 0;
     const res = await PATCH(req({ status: 'won', session_id: 's1' }) as never, { params });
     expect(res.status).toBe(200);
     expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'won' }));
+    expect(eqArgs).toContainEqual(['id', 'lead-1']);
+    expect(eqArgs).toContainEqual(['session_id', 's1']);
+  });
+
+  it('returns 400 for unparseable body', async () => {
+    const res = await PATCH(new Request('http://x', { method: 'PATCH', body: 'not-json' }) as never, { params });
+    expect(res.status).toBe(400);
   });
 });

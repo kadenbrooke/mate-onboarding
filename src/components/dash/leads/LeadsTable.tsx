@@ -43,7 +43,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
             }}>
             <td style={{ padding: 8, fontWeight: 800 }}>{l.score ?? ''}</td>
             <td>{l.name}</td><td>{l.service}</td><td>{l.city}</td>
-            <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>{l.source.replace('_', ' ')}</td>
+            <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>{l.source.replaceAll('_', ' ')}</td>
             <td>{dollars(l.quote_cents)}</td>
             <td>
               {l.status === 'open' ? (
