@@ -5,7 +5,10 @@ import {
   functionsBase,
   buildVmReplyMessages,
   claimTextForCall,
+  hangupCatchallDelaySeconds,
+  MISSED_CALL_STATUSES,
   parseCallbackFields,
+  runHangupCatchall,
   VM_REPLY_INSTRUCTION,
   TEXT_SENT_SCOPE,
 } from "../_shared/voicemail.ts"
@@ -212,4 +215,214 @@ Deno.test("parseCallbackFields: RecordingDuration / recording_duration / recordi
   assertEquals(b.recordingDurationSeconds, 3)
   const c = parseCallbackFields("recordingDuration=0", "application/x-www-form-urlencoded")
   assertEquals(c.recordingDurationSeconds, 0)
+})
+
+// --- callStatus parse (the hangup StatusCallback) -------------------------------
+
+Deno.test("parseCallbackFields: reads CallStatus / call_status without polluting transcriptionStatus", () => {
+  // Twilio-compat StatusCallback: CallStatus present, NO transcription fields.
+  const f = parseCallbackFields(
+    "CallSid=call-hangup-1&From=%2B18015551234&CallStatus=no-answer&CallDuration=0",
+    "application/x-www-form-urlencoded"
+  )
+  assertEquals(f.callId, "call-hangup-1")
+  assertEquals(f.from, "+18015551234")
+  assertEquals(f.callStatus, "no-answer")
+  // Crucially: a hangup event's CallStatus does NOT leak into transcriptionStatus.
+  assertEquals(f.transcriptionStatus, null)
+  assertEquals(f.recordingDurationSeconds, null)
+})
+
+Deno.test("parseCallbackFields: a transcribe callback's `status` does NOT leak into callStatus", () => {
+  // The transcribe callback uses `status`/`transcription_status`; that must map to
+  // transcriptionStatus, NEVER callStatus (kept on call-status-specific keys only).
+  const f = parseCallbackFields(
+    "CallSid=call-t&From=%2B18015551234&TranscriptionStatus=completed&TranscriptionText=hi",
+    "application/x-www-form-urlencoded"
+  )
+  assertEquals(f.transcriptionStatus, "completed")
+  assertEquals(f.callStatus, null)
+})
+
+Deno.test("parseCallbackFields: Telnyx JSON hangup (call_status / hangup_cause)", () => {
+  const body = JSON.stringify({
+    data: { payload: { call_sid: "cs-1", call_status: "completed", from: { phone_number: "+18015550000" } } },
+  })
+  const f = parseCallbackFields(body, "application/json")
+  assertEquals(f.callId, "cs-1")
+  assertEquals(f.callStatus, "completed")
+})
+
+Deno.test("MISSED_CALL_STATUSES covers the Twilio-compat missed/ended set", () => {
+  for (const s of ["completed", "no-answer", "busy", "failed", "canceled"]) {
+    assertEquals(MISSED_CALL_STATUSES.has(s), true)
+  }
+})
+
+// --- hangupCatchallDelaySeconds -------------------------------------------------
+
+Deno.test("hangupCatchallDelaySeconds: defaults to 45, env-overridable, never <= 0", () => {
+  Deno.env.delete("DEMO_HANGUP_CATCHALL_DELAY_SECONDS")
+  assertEquals(hangupCatchallDelaySeconds(), 45)
+  Deno.env.set("DEMO_HANGUP_CATCHALL_DELAY_SECONDS", "60")
+  assertEquals(hangupCatchallDelaySeconds(), 60)
+  // A 0 / negative / garbage value must NOT yield 0 (that would race the referencing
+  // path); it falls back to the safe default.
+  Deno.env.set("DEMO_HANGUP_CATCHALL_DELAY_SECONDS", "0")
+  assertEquals(hangupCatchallDelaySeconds(), 45)
+  Deno.env.set("DEMO_HANGUP_CATCHALL_DELAY_SECONDS", "-5")
+  assertEquals(hangupCatchallDelaySeconds(), 45)
+  Deno.env.set("DEMO_HANGUP_CATCHALL_DELAY_SECONDS", "abc")
+  assertEquals(hangupCatchallDelaySeconds(), 45)
+  Deno.env.delete("DEMO_HANGUP_CATCHALL_DELAY_SECONDS")
+})
+
+// --- runHangupCatchall: the ORDERING guarantee ----------------------------------
+//
+// These prove the whole point: the catch-all defers, then claims-at-fire, so the
+// referencing VM path always wins and exactly-one-text holds across all paths.
+// `sleep` is injected as a no-op AND used to sequence: a scenario "claims first"
+// simply pre-claims before the catch-all's deferred claim runs.
+
+const noopClient = {} as unknown as SupabaseClient
+
+Deno.test("runHangupCatchall: EARLY HANGUP (nobody else claimed) -> claims + sends the generic", async () => {
+  let claimed = false
+  const sends: { to: string; text: string }[] = []
+  const res = await runHangupCatchall(
+    noopClient,
+    { callId: "call-early", caller: "+18015551234", hasReadySession: true, greeting: "GENERIC", delaySeconds: 45 },
+    {
+      sleep: () => Promise.resolve(), // no real wait in tests
+      claim: (_id) => {
+        if (claimed) return Promise.resolve(false)
+        claimed = true
+        return Promise.resolve(true)
+      },
+      send: (to, text) => {
+        sends.push({ to, text })
+        return Promise.resolve(true)
+      },
+    }
+  )
+  assertEquals(res.outcome, "sent")
+  assertEquals(sends.length, 1)
+  assertEquals(sends[0].text, "GENERIC")
+})
+
+Deno.test("runHangupCatchall: VM PATH CLAIMED FIRST (transcribe raced ahead) -> catch-all no-ops, NO generic pre-empt", async () => {
+  // Simulate the transcribe (referencing) path claiming during the catch-all's sleep.
+  // The catch-all's deferred claim then finds it taken and MUST NOT send a generic.
+  let vmClaimed = false
+  const sends: string[] = []
+  const res = await runHangupCatchall(
+    noopClient,
+    { callId: "call-vm", caller: "+18015551234", hasReadySession: true, greeting: "GENERIC", delaySeconds: 45 },
+    {
+      // During the "sleep", the VM path claims the call's one text.
+      sleep: () => {
+        vmClaimed = true
+        return Promise.resolve()
+      },
+      // Claim-at-fire: the VM path already took it -> false.
+      claim: (_id) => Promise.resolve(!vmClaimed),
+      send: (_to, text) => {
+        sends.push(text)
+        return Promise.resolve(true)
+      },
+    }
+  )
+  assertEquals(res.outcome, "preempted")
+  assertEquals(sends.length, 0) // the referencing text wins; NO generic pre-empt
+})
+
+Deno.test("runHangupCatchall: NO-VM action path claimed first -> catch-all no-ops (exactly one text)", async () => {
+  const sends: string[] = []
+  const res = await runHangupCatchall(
+    noopClient,
+    { callId: "call-novm", caller: "+18015551234", hasReadySession: true, greeting: "GENERIC", delaySeconds: 45 },
+    {
+      sleep: () => Promise.resolve(),
+      claim: (_id) => Promise.resolve(false), // action path already claimed at schedule
+      send: (_to, text) => {
+        sends.push(text)
+        return Promise.resolve(true)
+      },
+    }
+  )
+  assertEquals(res.outcome, "preempted")
+  assertEquals(sends.length, 0)
+})
+
+Deno.test("runHangupCatchall: UNKNOWN caller (no ready session) -> skipped, never texts", async () => {
+  let claimCalls = 0
+  const sends: string[] = []
+  const res = await runHangupCatchall(
+    noopClient,
+    { callId: "call-unknown", caller: "+18019999999", hasReadySession: false, greeting: "GENERIC", delaySeconds: 45 },
+    {
+      sleep: () => Promise.resolve(),
+      claim: (_id) => {
+        claimCalls++
+        return Promise.resolve(true)
+      },
+      send: (_to, text) => {
+        sends.push(text)
+        return Promise.resolve(true)
+      },
+    }
+  )
+  assertEquals(res.outcome, "skipped")
+  assertEquals(claimCalls, 0) // never even attempts a claim for an unknown caller
+  assertEquals(sends.length, 0)
+})
+
+Deno.test("runHangupCatchall: missing CallSid / caller -> skipped (fail safe, no claim, no send)", async () => {
+  const sends: string[] = []
+  const deps = {
+    sleep: () => Promise.resolve(),
+    claim: (_id: string) => Promise.resolve(true),
+    send: (_to: string, text: string) => {
+      sends.push(text)
+      return Promise.resolve(true)
+    },
+  }
+  const noId = await runHangupCatchall(
+    noopClient,
+    { callId: null, caller: "+18015551234", hasReadySession: true, greeting: "G", delaySeconds: 45 },
+    deps
+  )
+  assertEquals(noId.outcome, "skipped")
+  const noCaller = await runHangupCatchall(
+    noopClient,
+    { callId: "c", caller: null, hasReadySession: true, greeting: "G", delaySeconds: 45 },
+    deps
+  )
+  assertEquals(noCaller.outcome, "skipped")
+  assertEquals(sends.length, 0)
+})
+
+Deno.test("runHangupCatchall: claims STRICTLY AFTER the sleep (claim-at-fire, not claim-at-schedule)", async () => {
+  // The invariant that guarantees the referencing text wins: the claim must not
+  // happen until AFTER the defer. Assert the ordering explicitly.
+  const order: string[] = []
+  await runHangupCatchall(
+    noopClient,
+    { callId: "call-order", caller: "+18015551234", hasReadySession: true, greeting: "G", delaySeconds: 45 },
+    {
+      sleep: () => {
+        order.push("sleep")
+        return Promise.resolve()
+      },
+      claim: (_id) => {
+        order.push("claim")
+        return Promise.resolve(true)
+      },
+      send: (_to, _text) => {
+        order.push("send")
+        return Promise.resolve(true)
+      },
+    }
+  )
+  assertEquals(order, ["sleep", "claim", "send"])
 })

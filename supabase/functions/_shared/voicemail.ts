@@ -69,12 +69,64 @@ export function modelSpendCap(): number {
 // still gets a generic callback -- see demo-transcribe -- so it is never silence.)
 export const NO_MESSAGE_MAX_DURATION_SECONDS = 2
 
+// HANGUP CATCH-ALL delay (seconds). The call-lifecycle StatusCallback (demo-call-
+// status) is a SAFETY NET for calls that never reach a callback the other paths
+// own: a caller who hangs up WHILE RINGING or DURING THE SPOKEN GREETING (before
+// the Record beep) reaches neither the Record `action` callback nor the transcribe
+// callback, so today they get NOTHING. The catch-all closes that.
+//
+// THE ORDERING GUARANTEE (why this is a DELAY, not an immediate send): a caller who
+// leaves a real voicemail must get the message-REFERENCING text (demo-transcribe),
+// never a generic pre-empt. But the hangup StatusCallback fires IMMEDIATELY at
+// hangup, while the transcribe callback arrives ~10-20s LATER (Telnyx has to
+// transcribe first). If the catch-all claimed+sent right away it would BEAT the
+// referencing path and win the one-text slot -> wrong text.
+//
+// So the catch-all DEFERS: it waits DEMO_HANGUP_CATCHALL_DELAY_SECONDS, and ONLY
+// THEN calls claimTextForCall (claim-at-FIRE, not claim-at-schedule). By fire time
+// any real path (referencing VM, or the no-VM Record `action` which claims
+// immediately) has already claimed the CallSid, so the catch-all's claim returns
+// false and it no-ops. It sends ONLY when nobody else claimed -- i.e. a true early
+// hangup where no other path exists. The delay MUST exceed typical transcription
+// latency AND the no-VM send_at buffer, hence a default well above both.
+//
+// RESIDUAL RISK (honest): the deferral runs in EdgeRuntime.waitUntil; if Supabase
+// recycles the function instance before the timer fires, an early-hangup caller
+// gets no text. Same class as the documented "lost transcribe webhook" gap, a bit
+// wider (this delay window). Keep the default as LOW as reliably clears the
+// referencing path so the window stays small.
+export function hangupCatchallDelaySeconds(): number {
+  const raw = Deno.env.get("DEMO_HANGUP_CATCHALL_DELAY_SECONDS")
+  const secs = raw === undefined || raw === "" ? 45 : Number(raw)
+  // Non-finite/negative -> fall back to the default rather than 0 (0 would race the
+  // referencing path and risk a generic pre-empt, the exact bug we're avoiding).
+  return Number.isFinite(secs) && secs > 0 ? secs : 45
+}
+
+// CallStatus values (Twilio-compat) that mean "the call ENDED without being
+// answered/handled" -> a genuine missed call the catch-all should back-stop. We do
+// NOT restrict to these (an unknown/absent status still gets the deferred claim,
+// which no-ops if another path already sent); this set is documentation + a hook
+// for future tightening. `completed` also lands here because a TeXML call that
+// speaks-then-hangs-up reports `completed`, and an early hangup mid-greeting can be
+// reported as `completed` OR `no-answer` depending on when the leg dropped.
+export const MISSED_CALL_STATUSES = new Set([
+  "completed",
+  "no-answer",
+  "no_answer",
+  "busy",
+  "failed",
+  "canceled",
+  "cancelled",
+])
+
 export interface CallbackFields {
   callId: string | null // CallSid: the exactly-one-text idempotency key
   from: string | null // caller number
   recordingDurationSeconds: number | null // action callback only
   transcriptionText: string | null // transcribe callback only
   transcriptionStatus: string | null // "completed" | "failed" | ...
+  callStatus: string | null // StatusCallback only: "completed" | "no-answer" | "busy" | ...
 }
 
 /**
@@ -132,6 +184,12 @@ export function parseCallbackFields(rawBody: string, contentType: string): Callb
     recordingDurationSeconds: dur !== null && Number.isFinite(dur) ? dur : null,
     transcriptionText: pick("TranscriptionText", "transcription_text", "transcript", "text"),
     transcriptionStatus: pick("TranscriptionStatus", "transcription_status", "status"),
+    // Call-lifecycle StatusCallback status. Twilio-compat PascalCase `CallStatus`
+    // (completed | no-answer | busy | failed | canceled) plus Telnyx-native
+    // `call_status` / `hangup_cause` / `state`. Kept SEPARATE from the generic
+    // `status` used for transcriptionStatus so a hangup event's CallStatus never
+    // pollutes the transcribe path (and vice versa).
+    callStatus: pick("CallStatus", "call_status", "callStatus", "hangup_cause", "state"),
   }
 }
 
@@ -205,4 +263,75 @@ export async function claimTextForCall(
 ): Promise<boolean> {
   if (!callId) return false // no call id => cannot dedupe => fail closed (no send)
   return await bumpCounter(supabase, TEXT_SENT_SCOPE, callId, 1)
+}
+
+/** Default async sleep. Injectable so tests resolve ordering without real timers. */
+export function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)))
+}
+
+export interface HangupCatchallDeps {
+  // Wait the catch-all buffer. Injected in tests to make ordering deterministic.
+  sleep?: (ms: number) => Promise<void>
+  // Atomically claim this call's one text. Default: claimTextForCall(supabase, id).
+  claim?: (callId: string) => Promise<boolean>
+  // Deliver the generic greeting. Default: sendGuarded(supabase, to, text).
+  // Returns whether an SMS actually went out (for the caller's bookkeeping).
+  send?: (to: string, text: string) => Promise<boolean>
+}
+
+export interface HangupCatchallResult {
+  // "sent"     -> the catch-all claimed and delivered the generic (a true early hangup)
+  // "preempted"-> another path already claimed this call (VM/no-VM); we no-opped (correct)
+  // "skipped"  -> nothing to do (no caller / no ready session / breaker at cap)
+  outcome: "sent" | "preempted" | "skipped"
+}
+
+/**
+ * The hangup catch-all (safety net) body, pure enough to unit-test the ORDERING.
+ *
+ * Sequence (claim-at-FIRE, the whole point):
+ *   1. No CallSid / no caller / no ready session -> "skipped" (never text an
+ *      unknown caller; parity with the rest of the demo).
+ *   2. SLEEP the catch-all buffer. This is what lets the referencing VM path (which
+ *      claims ~10-20s post-hangup at ITS send time) and the no-VM Record `action`
+ *      path (which claims immediately) win the one-text slot first.
+ *   3. THEN claim(CallSid). If another path already claimed -> "preempted", no-op
+ *      (the referencing / no-VM text already went / is scheduled). This is how the
+ *      VM-leaver always gets the referencing text and never a generic pre-empt.
+ *   4. Only on a fresh claim (true early hangup: nobody else fired) -> send the
+ *      generic greeting. Exactly one text, guaranteed by the atomic claim.
+ *
+ * `readySession` is the caller's ready session (or null); the caller looks it up so
+ * this stays free of DB shape. `greeting` is the text to send when we do send.
+ */
+export async function runHangupCatchall(
+  supabase: SupabaseClient,
+  args: {
+    callId: string | null
+    caller: string | null
+    hasReadySession: boolean
+    greeting: string
+    delaySeconds: number
+  },
+  deps: HangupCatchallDeps = {}
+): Promise<HangupCatchallResult> {
+  const { callId, caller, hasReadySession, greeting, delaySeconds } = args
+  // Unknown caller / no call id -> do nothing (demo only texts form-submitters).
+  if (!callId || !caller || !hasReadySession) return { outcome: "skipped" }
+
+  const sleep = deps.sleep ?? delay
+  const claim = deps.claim ?? ((id: string) => claimTextForCall(supabase, id))
+  const send = deps.send ?? ((to: string, text: string) => sendGuarded(supabase, to, text))
+
+  // 2. Defer PAST transcription latency + the no-VM send_at buffer so a real path
+  //    claims first. Claim-at-fire below is what makes the referencing text win.
+  await sleep(delaySeconds * 1000)
+
+  // 3. Claim ONLY now. If the VM/no-VM path already claimed this CallSid, no-op.
+  if (!(await claim(callId))) return { outcome: "preempted" }
+
+  // 4. Fresh claim -> genuine early hangup nobody else covered. Send the generic.
+  await send(caller, greeting)
+  return { outcome: "sent" }
 }

@@ -96,12 +96,38 @@ The caller flow, since Flow A:
    call (feels like a real callback, not an instant bot). No function stays alive to
    wait; Telnyx does the delaying. `send_at` is honoured to ~1-minute accuracy, so a
    30s buffer lands within the same or next minute.
+4. **Early-hangup path (ringing / during the greeting, before the beep):** a caller
+   who hangs up before the Record beep reaches NEITHER callback above -> today they
+   got NOTHING. `demo-call-status` (the call-lifecycle StatusCallback handler) is the
+   SAFETY NET that closes this. The TeXML app's Status Callback URL points at it; on
+   call end it DEFERS `DEMO_HANGUP_CATCHALL_DELAY_SECONDS` (default 45), THEN claims
+   the one-text slot and sends the generic greeting IF no other path already did. See
+   the ordering guarantee below for why the deferral is essential.
 
-**EXACTLY ONE TEXT PER CALL.** Both callback paths call `claimTextForCall(CallSid)`
-before sending. That is an atomic `demo_counter_bump('text_sent', CallSid, 1)`: the
-FIRST path to claim wins and sends; every later path for that call gets `false` and
-no-ops. So a call yields exactly one outbound text no matter which path (or both, in
-a race) fires. Fails CLOSED (no send) on a missing CallSid or a DB error.
+**HANGUP CATCH-ALL ORDERING (the hard part).** The StatusCallback fires IMMEDIATELY
+at hangup; the referencing transcribe callback arrives ~10-20s LATER (Telnyx has to
+transcribe first). So a voicemail-leaver must get the REFERENCING text, never a
+generic pre-empt. The catch-all guarantees this by claiming AT FIRE, not at schedule:
+it waits `DEMO_HANGUP_CATCHALL_DELAY_SECONDS` (which must exceed transcription latency
+AND the no-VM `send_at` buffer), and ONLY THEN calls `claimTextForCall(CallSid)`. By
+fire time the referencing VM path (claims at its send time) and the no-VM action path
+(claims immediately) have already taken the slot, so the catch-all's claim returns
+false and it no-ops. It sends ONLY on a true early hangup where no other path exists.
+This is why `DEMO_HANGUP_CATCHALL_DELAY_SECONDS` falls back to 45 (never 0) on a
+non-positive value: a 0 delay would race the referencing path and risk a generic
+pre-empt. *Residual risk (honest):* the deferral runs in `EdgeRuntime.waitUntil`; if
+Supabase recycles the instance before the timer fires, an early-hangup caller gets no
+text -- same class as the lost-transcribe-webhook gap, a bit wider (this delay
+window). Keep the delay as low as reliably clears the referencing path.
+
+**EXACTLY ONE TEXT PER CALL.** All THREE sending paths -- the VM transcribe callback,
+the no-VM Record `action` callback, and the hangup `demo-call-status` catch-all --
+call `claimTextForCall(CallSid)` before sending (the initial call webhook still sends
+nothing). That is an atomic `demo_counter_bump('text_sent', CallSid, 1)`: the FIRST
+path to claim wins and sends; every later path for that call gets `false` and no-ops.
+So a call yields exactly one outbound text no matter which path (or several, in a
+race) fires. Fails CLOSED (no send) on a missing CallSid or a DB error. The catch-all
+claims LAST by design (it defers first) so the referencing text always wins the slot.
 
 **FAILED / EMPTY TRANSCRIPTION IS NEVER SILENCE.** For a real message (duration above
 the no-message threshold) the no-VM action path early-returns, so `demo-transcribe`
@@ -142,9 +168,10 @@ seed) stays the same; only the transcript source changes.
 
 ### Deploy (edge functions)
 ```bash
-supabase functions deploy demo-voice demo-transcribe --no-verify-jwt \
+supabase functions deploy demo-voice demo-transcribe demo-call-status --no-verify-jwt \
   --project-ref jeqnvdlfybpmbovywknz
 supabase secrets set DEMO_TRANSCRIBE_TOKEN=<token> DEMO_TEXTBACK_DELAY_SECONDS=30 \
+  DEMO_HANGUP_CATCHALL_DELAY_SECONDS=45 \
   --project-ref jeqnvdlfybpmbovywknz
 ```
 `DEMO_VM_MODEL_MAX_PER_DAY` (default 500) caps the VM-reply model call in
@@ -153,6 +180,21 @@ budget. It is independent of `DEMO_SMS_MAX_PER_DAY` (the SMS breaker).
 The transcribe callback URL is constructed IN the TeXML `demo-voice` emits (from
 `SUPABASE_URL` or `DEMO_FUNCTIONS_BASE` + `DEMO_TRANSCRIBE_TOKEN`). No Telnyx
 dashboard change is needed to wire it.
+
+### Telnyx: wire the hangup catch-all StatusCallback (REQUIRED for demo-call-status)
+Unlike the transcribe callback (constructed in-band in the TeXML), the call-lifecycle
+StatusCallback is a TeXML APPLICATION setting, so it needs one dashboard/API change.
+Set the TeXML application's **Status Callback URL** to the new handler WITH its `?k=`
+token (reuses `DEMO_VOICE_TOKEN`), method POST:
+```
+https://jeqnvdlfybpmbovywknz.supabase.co/functions/v1/demo-call-status?k=<DEMO_VOICE_TOKEN>
+```
+TeXML app id: `3005465183788205904`. The StatusCallback is Twilio-compatible and
+carries `From` + `CallSid` (the exactly-one-text key) + `CallStatus`
+(`completed` | `no-answer` | `busy` | `failed` | `canceled`); `parseCallbackFields`
+reads all of these. GET-verify the URL stuck after setting it. If the app already
+had a StatusCallback for another purpose, do NOT clobber it -- this demo owns the
+whole demo number, so it should be free.
 
 ### Cost / abuse controls (all env-overridable)
 - **Start route (`/api/demo/start`):** per-phone/day + global daily breaker. The
