@@ -1,13 +1,9 @@
 import { Card } from '../Card';
 import { areaRanking } from '@/lib/metrics/leads';
 import type { Lead } from '@/lib/metrics/leads';
+import { BRAND_RAMP } from '@/lib/metrics/colors';
 
-const TRACK_COLORS = [
-  'var(--brand-primary, #e14d1a)',
-  '#e1774d',
-  '#b86a4a',
-  '#8a5a42',
-];
+const TRACK_COLORS = BRAND_RAMP.slice(0, 4);
 
 const RADII = [56, 44, 32, 20];
 

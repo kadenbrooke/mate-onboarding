@@ -2,14 +2,9 @@ import { Card } from '../Card';
 import { valueWheel, pipelineTotals } from '@/lib/metrics/leads';
 import { wheelWedges } from '@/lib/metrics/wheel';
 import type { Lead } from '@/lib/metrics/leads';
+import { BRAND_RAMP } from '@/lib/metrics/colors';
 
-const WEDGE_COLORS = [
-  'var(--brand-primary, #e14d1a)',
-  '#e1774d',
-  '#b86a4a',
-  '#8a5a42',
-  '#6a4a38',
-];
+const WEDGE_COLORS = BRAND_RAMP;
 
 function money(cents: number): string {
   return '$' + (cents / 100000).toFixed(1) + 'k';
@@ -19,7 +14,7 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
   const stats = valueWheel(leads).slice(0, 5);
   const wedges = wheelWedges(stats, { minR: 34, maxR: 62 });
   const { openCents } = pipelineTotals(leads);
-  const openLabel = '$' + (openCents / 100000).toFixed(1) + 'k';
+  const openLabel = money(openCents);
 
   return (
     <Card label="BY SERVICE">
@@ -65,11 +60,7 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
                 }}
               />
               <span style={{ opacity: 0.75 }}>
-                {w.service}
-                {' '}
-                <span style={{ opacity: 0.65 }}>{w.count} leads</span>
-                {' '}
-                <span style={{ opacity: 0.55 }}>{money(w.avgCents)} avg</span>
+                {w.service} · {w.count} leads · {money(w.avgCents)} avg
               </span>
             </div>
           ))}
