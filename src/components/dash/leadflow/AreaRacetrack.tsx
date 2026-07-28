@@ -2,6 +2,7 @@ import { Card } from '../Card';
 import { areaRanking } from '@/lib/metrics/leads';
 import type { Lead } from '@/lib/metrics/leads';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
+import { NUM_TABLE, FONT_BODY } from '@/lib/theme';
 
 const TRACK_COLORS = BRAND_RAMP.slice(0, 4);
 
@@ -77,10 +78,10 @@ export function AreaRacetrack({ leads }: { leads: Lead[] }) {
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ opacity: 0.75 }}>
+                <span style={{ opacity: 0.75, fontFamily: FONT_BODY }}>
                   {a.city}
                   {' '}
-                  <span style={{ fontWeight: 700, opacity: 1 }}>{a.count}</span>
+                  <span style={{ ...NUM_TABLE, opacity: 1 }}>{a.count}</span>
                 </span>
               </div>
             );

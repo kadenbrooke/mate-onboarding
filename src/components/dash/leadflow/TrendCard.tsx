@@ -2,7 +2,7 @@
 import { useState, useEffect, useId } from 'react';
 import { Card } from '../Card';
 import { weekBars, monthBuckets, yearBuckets } from '@/lib/metrics/leads';
-import { brandVar } from '@/lib/theme';
+import { brandVar, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 type Range = 'WEEK' | 'MONTH' | 'YEAR';
@@ -74,7 +74,7 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
             cursor: 'pointer',
             background: range === c ? brandVar : '#2a2a2a',
             color: range === c ? '#fff' : 'rgba(255,255,255,0.55)',
-            fontFamily: 'inherit',
+            fontFamily: FONT_BODY,
           }}
         >
           {c}
@@ -109,7 +109,7 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
                     borderRadius: '3px 3px 0 0',
                   }}
                 />
-                <span style={{ fontSize: 9, opacity: 0.4 }}>{day}</span>
+                <span style={{ fontSize: 9, opacity: 0.4, fontFamily: FONT_BODY }}>{day}</span>
               </div>
             );
           })}
@@ -122,7 +122,8 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
 
   return (
     <Card label="LEADS" right={right}>
-      <div style={{ fontSize: 28, fontWeight: 800, marginTop: 6, color: '#fff' }}>{weekCount}</div>
+      {/* Standalone display stat: Geist 300 pnum per brand guide */}
+      <div style={{ fontSize: 28, marginTop: 6, color: '#fff', ...NUM_DISPLAY }}>{weekCount}</div>
       {chartBody}
     </Card>
   );

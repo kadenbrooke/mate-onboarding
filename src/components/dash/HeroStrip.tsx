@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { moneyShort } from '@/lib/metrics/format';
+import { NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 
 function useCountUp(target: number, ms = 1500) {
   const [value, setValue] = useState(0);
@@ -33,18 +34,19 @@ export function HeroStrip({ recoveredCents, roiMultiple, hoursSaved, actions }: 
     <div style={{ display: 'flex', gap: 8 }}>
       <div style={{ ...cell, flex: 2, textAlign: 'left',
         background: 'linear-gradient(90deg, color-mix(in srgb, var(--brand-primary, #e14d1a) 22%, #1d1d1d), #1d1d1d)' }}>
-        <div style={{ fontSize: 26, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>
-          {moneyShort(rec)}<span style={{ fontSize: 12, opacity: .6 }}> recovered</span>
+        {/* Large display stat: Geist 300 pnum per brand guide */}
+        <div style={{ fontSize: 26, ...NUM_DISPLAY }}>
+          {moneyShort(rec)}<span style={{ fontSize: 12, opacity: .6, fontFamily: FONT_BODY, fontWeight: 400 }}> recovered</span>
         </div>
-        <div style={{ fontSize: 11, opacity: .6 }}>{roiMultiple.toFixed(1)}x what you pay</div>
+        <div style={{ fontSize: 11, opacity: .6, fontFamily: FONT_BODY }}>{roiMultiple.toFixed(1)}x what you pay</div>
       </div>
       <div style={{ ...cell, flex: 1 }}>
-        <div style={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{Math.round(hrs)}h</div>
-        <div style={{ fontSize: 10, opacity: .6 }}>SAVED</div>
+        <div style={{ fontSize: 22, ...NUM_DISPLAY }}>{Math.round(hrs)}h</div>
+        <div style={{ fontSize: 10, opacity: .6, fontFamily: FONT_BODY }}>SAVED</div>
       </div>
       <div style={{ ...cell, flex: 1 }}>
-        <div style={{ fontSize: 22, fontWeight: 800, fontVariantNumeric: 'tabular-nums' }}>{Math.round(act)}</div>
-        <div style={{ fontSize: 10, opacity: .6 }}>ACTIONS</div>
+        <div style={{ fontSize: 22, ...NUM_DISPLAY }}>{Math.round(act)}</div>
+        <div style={{ fontSize: 10, opacity: .6, fontFamily: FONT_BODY }}>ACTIONS</div>
       </div>
     </div>
   );

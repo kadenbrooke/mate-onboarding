@@ -4,6 +4,7 @@ import { wheelWedges } from '@/lib/metrics/wheel';
 import type { Lead } from '@/lib/metrics/leads';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
+import { FONT_NUM, FONT_BODY } from '@/lib/theme';
 
 const WEDGE_COLORS = BRAND_RAMP;
 
@@ -31,13 +32,15 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
             />
           ))}
           <circle r={16} cx={0} cy={0} fill="#141414" />
+          {/* Center label: Geist 300 for numeric display */}
           <text
             x={0}
             y={0}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={7}
-            fontWeight={700}
+            fontWeight={300}
+            fontFamily={FONT_NUM}
             fill="#fff"
           >
             {openLabel}
@@ -56,12 +59,12 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
                   flexShrink: 0,
                 }}
               />
-              <span style={{ opacity: 0.75 }}>
+              <span style={{ opacity: 0.75, fontFamily: FONT_BODY }}>
                 {w.service} · {w.count} leads · {moneyShort(w.avgCents)} avg
               </span>
             </div>
           ))}
-          <div style={{ fontSize: 10, opacity: 0.45, marginTop: 2 }}>
+          <div style={{ fontSize: 10, opacity: 0.45, marginTop: 2, fontFamily: FONT_BODY }}>
             slice reach = average job size
           </div>
         </div>

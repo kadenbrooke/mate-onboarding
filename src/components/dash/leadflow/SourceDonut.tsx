@@ -1,7 +1,7 @@
 import { Card } from '../Card';
 import { sourceBreakdown } from '@/lib/metrics/leads';
 import { ringSegments } from '@/lib/metrics/ring';
-import { FREE_GREEN } from '@/lib/theme';
+import { FREE_GREEN, FONT_NUM, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 const SOURCE_COLORS: Record<string, string> = {
@@ -51,14 +51,15 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
               );
             })}
           </g>
-          {/* Center label */}
+          {/* Center label: Geist 300 pnum for standalone display stat */}
           <text
             x={50}
             y={47}
             textAnchor="middle"
             dominantBaseline="middle"
             fontSize={20}
-            fontWeight={800}
+            fontWeight={300}
+            fontFamily={FONT_NUM}
             fill={FREE_GREEN}
           >
             {freeCount}
@@ -69,6 +70,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
             textAnchor="middle"
             fontSize={8}
             letterSpacing={1}
+            fontFamily={FONT_BODY}
             fill={FREE_GREEN}
           >
             FREE
@@ -92,7 +94,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ opacity: 0.75 }}>
+                <span style={{ opacity: 0.75, fontFamily: FONT_BODY }}>
                   {SOURCE_LABELS[s.source] ?? s.source}
                   {' '}
                   <span style={{ opacity: 0.65 }}>{s.count}</span>

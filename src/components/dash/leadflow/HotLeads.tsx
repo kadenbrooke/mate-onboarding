@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { Card } from '../Card';
 import { scoreStats } from '@/lib/metrics/leads';
-import { brandVar } from '@/lib/theme';
+import { brandVar, NUM_TABLE, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 function ScoreRing({ score }: { score: number }) {
@@ -28,9 +28,9 @@ function ScoreRing({ score }: { score: number }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontWeight: 800,
           fontSize: 13,
           color: '#fff',
+          ...NUM_TABLE,
         }}
       >
         {score}
@@ -56,8 +56,9 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
             >
               <ScoreRing score={l.score!} />
               <div>
-                <div style={{ fontWeight: 700, fontSize: 14, color: '#fff' }}>{l.name ?? 'Unknown'}</div>
-                <div style={{ fontSize: 11, opacity: 0.55 }}>
+                {/* Lead name: DM Sans semibold, not Syne (not a section heading) */}
+                <div style={{ fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: '#fff' }}>{l.name ?? 'Unknown'}</div>
+                <div style={{ fontSize: 11, opacity: 0.55, fontFamily: FONT_BODY }}>
                   {[l.service, l.city].filter(Boolean).join(' · ')}
                 </div>
               </div>

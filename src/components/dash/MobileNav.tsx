@@ -1,4 +1,5 @@
 'use client';
+import { FONT_BODY } from '@/lib/theme';
 export type MobileView = 'home' | 'leads' | 'money' | 'crew';
 
 export function MobileNav({ view, onChange }: { view: MobileView; onChange: (v: MobileView) => void }) {
@@ -16,7 +17,7 @@ export function MobileNav({ view, onChange }: { view: MobileView; onChange: (v: 
           style={{
             flex: 1, padding: '12px 0', background: 'none', border: 'none',
             color: view === t.key ? 'var(--brand-primary, #e14d1a)' : '#888',
-            fontWeight: view === t.key ? 800 : 500, fontSize: 12, cursor: 'pointer',
+            fontFamily: FONT_BODY, fontWeight: view === t.key ? 600 : 400, fontSize: 12, cursor: 'pointer',
           }}>
           {t.label}
         </button>

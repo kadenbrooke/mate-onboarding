@@ -1,6 +1,6 @@
 import { Card } from '../Card';
 import { scoreStats } from '@/lib/metrics/leads';
-import { brandVar } from '@/lib/theme';
+import { brandVar, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 export function QualityGauge({ leads }: { leads: Lead[] }) {
@@ -38,10 +38,10 @@ export function QualityGauge({ leads }: { leads: Lead[] }) {
             }}
           />
         </div>
-        {/* Score label: bottom-center below the semicircle */}
+        {/* Score label: Geist 300 pnum for standalone display stat */}
         <div style={{ marginTop: 4, display: 'flex', alignItems: 'baseline', gap: 4 }}>
-          <span style={{ fontSize: 30, fontWeight: 800, color: '#fff' }}>{avg}</span>
-          <span style={{ fontSize: 11, opacity: 0.5 }}>avg</span>
+          <span style={{ fontSize: 30, color: '#fff', ...NUM_DISPLAY }}>{avg}</span>
+          <span style={{ fontSize: 11, opacity: 0.5, fontFamily: FONT_BODY }}>avg</span>
         </div>
       </div>
     </Card>

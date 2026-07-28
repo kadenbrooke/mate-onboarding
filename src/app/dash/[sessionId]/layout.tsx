@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { createServiceClient } from '@/lib/supabase/service';
-import { brandToCssVars } from '@/lib/theme';
+import { brandToCssVars, FONT_BODY } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
 
 interface DashLayoutProps {
@@ -74,15 +74,16 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
           <img
             src={logoUrl}
             alt={businessName ?? 'Client logo'}
-            height={28}
-            style={{ width: 'auto', maxWidth: 140, objectFit: 'contain', display: 'block' }}
+            height={30}
+            style={{ width: 'auto', maxWidth: 160, objectFit: 'contain', display: 'block' }}
           />
         )}
         {businessName && (
           <span
             style={{
               fontSize: 15,
-              fontWeight: 700,
+              fontFamily: FONT_BODY,
+              fontWeight: 600,
               color: 'var(--mate-accent, #ede6e6)',
               letterSpacing: '-0.01em',
             }}

@@ -1,8 +1,11 @@
 @import "tailwindcss";
 
-/* Fonts are self-hosted only — no Google Fonts (repo rule).
-   --font-body is provided by next/font/local (Syne woff2) in layout.tsx;
-   --font-display uses the @font-face below, the same self-hosted woff2. */
+/* Fonts:
+   - Syne: self-hosted woff2 (Google Fonts strips ss04 alternate g -- rule: never load from CDN).
+     --font-body = Syne variable injected by next/font/local in layout.tsx.
+   - Geist: loaded via next/font/google (auto-downloaded at build time, served self-hosted).
+     --font-num = Geist variable injected by next/font/google in layout.tsx.
+   - DM Sans: loaded via Google Fonts CDN in components that need body font (OK per brand-typography.md). */
 @font-face {
   font-family: 'Syne';
   src: url('/fonts/Syne.woff2') format('woff2');
@@ -24,6 +27,7 @@
 @theme inline {
   --font-sans: var(--font-body);
   --font-display: 'Syne', sans-serif;
+  --font-numeric: var(--font-num, 'Geist', sans-serif);
   --color-brand-dark: #141414;
   --color-brand-orange: #e14d1a;
   --color-brand-white: #ede6e6;
