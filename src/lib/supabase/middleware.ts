@@ -31,16 +31,18 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  // /onboard (pre-auth concierge) and /portal (the client's ongoing POC) are
-  // client-facing surfaces for people who do not have an internal login. Both are
-  // session-scoped by an unguessable UUID, not by auth, so they must be public
-  // alongside login/auth/api. Phase-2 hardening: bind a signed session cookie.
+  // /onboard (pre-auth concierge), /portal (client POC), and /dash (client
+  // dashboard) are client-facing surfaces for people who do not have an
+  // internal login. All three are session-scoped by an unguessable UUID and
+  // use the service client internally, so middleware auth is redundant.
+  // Phase-2 hardening: bind a signed session cookie to /dash and /portal.
   const isPublic =
     path.startsWith("/login") ||
     path.startsWith("/auth") ||
     path.startsWith("/api/") ||
     path.startsWith("/onboard") ||
-    path.startsWith("/portal");
+    path.startsWith("/portal") ||
+    path.startsWith("/dash");
 
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
