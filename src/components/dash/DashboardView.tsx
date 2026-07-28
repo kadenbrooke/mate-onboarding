@@ -13,6 +13,7 @@ import { ValueWheel } from './leadflow/ValueWheel';
 import { AreaRacetrack } from './leadflow/AreaRacetrack';
 import { TwinRings } from './pipeline/TwinRings';
 import { SpeedZone } from './speed/SpeedZone';
+import { JourneyRiver } from './journey/JourneyRiver';
 import type { DashData } from './types';
 
 export function DashboardView({ session, leads, data }: {
@@ -60,6 +61,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileLeads = (
     <>
       <TrendCard leads={leads} />
+      <JourneyRiver leads={leads} />
       <a
         href={`/dash/${session.id}/leads`}
         style={{ fontSize: 13, color: 'var(--brand-primary, #e14d1a)', textDecoration: 'none', display: 'block', marginTop: 4 }}
@@ -113,6 +115,7 @@ export function DashboardView({ session, leads, data }: {
       {/* Desktop layout */}
       <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <HeroStrip {...hero} />
+        <JourneyRiver leads={leads} />
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
           {leadFlowZone}{calendarStub}
           {pipelineZone}{followUpStub}
