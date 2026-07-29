@@ -15,26 +15,31 @@ export default function SignupPage() {
     setBusy(true);
     setError(null);
 
-    const res = await fetch("/api/signup", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code, email, password }),
-    });
-    const data = (await res.json().catch(() => ({}))) as { sessionId?: string; error?: string };
-    if (!res.ok || !data.sessionId) {
-      setError(data.error ?? "Something went wrong. Try again.");
-      setBusy(false);
-      return;
-    }
+    try {
+      const res = await fetch("/api/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code, email, password }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { sessionId?: string; error?: string };
+      if (!res.ok || !data.sessionId) {
+        setError(data.error ?? "Something went wrong. Try again.");
+        setBusy(false);
+        return;
+      }
 
-    const supabase = createClient();
-    const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
-    if (signInErr) {
-      setError("Account created. Now sign in at the login page.");
+      const supabase = createClient();
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInErr) {
+        setError("Account created. Now sign in at the login page.");
+        setBusy(false);
+        return;
+      }
+      window.location.replace(`/onboard?session=${data.sessionId}`);
+    } catch {
+      setError("Network problem. Try again.");
       setBusy(false);
-      return;
     }
-    window.location.replace(`/onboard?session=${data.sessionId}`);
   }
 
   return (

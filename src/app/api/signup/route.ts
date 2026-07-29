@@ -50,6 +50,7 @@ export async function POST(req: Request) {
     );
   }
 
+  const createdSession = !claimed.session_id;
   let sessionId = claimed.session_id as string | null;
   if (!sessionId) {
     const now = new Date().toISOString();
@@ -75,6 +76,9 @@ export async function POST(req: Request) {
   if (memberErr) {
     await supabase.auth.admin.deleteUser(created.user.id).catch(() => undefined);
     await unclaim();
+    if (createdSession) {
+      await supabase.from("onboarding_sessions").delete().eq("id", sessionId).then(() => undefined, () => undefined);
+    }
     return NextResponse.json({ error: "Could not finish account setup. Try again." }, { status: 500 });
   }
 
