@@ -66,7 +66,7 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
   };
 
   return (
-    <div style={{
+    <div className="hero-dark" style={{
       flex: 1.6, minWidth: 260, borderRadius: 16, padding: 16,
       background: BG_DARK_CARD, color: LIGHT, boxShadow: CARD_SHADOW,
       display: 'flex', flexDirection: 'column',
@@ -99,8 +99,9 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
         </span>
       </div>
 
-      {/* Big number: cents rendered superscript, Mercury style */}
-      <div style={{ marginTop: 10, lineHeight: 1 }}>
+      {/* Big number: cents rendered superscript, Mercury style. nowrap keeps
+          the cents glued to the dollars at narrow widths. */}
+      <div style={{ marginTop: 10, lineHeight: 1, whiteSpace: 'nowrap' }}>
         <span style={{ fontSize: 32, ...NUM_DISPLAY }}>${dollars}</span>
         <span style={{
           fontSize: 16, ...NUM_DISPLAY,

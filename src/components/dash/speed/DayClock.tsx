@@ -79,10 +79,11 @@ export function DayClock({ totalCount, afterHoursCount }: { totalCount: number; 
             <button
               key={k}
               type="button"
+              className="dash-tap"
               onClick={() => setActive(k)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6, fontSize: 10,
-                fontFamily: FONT_BODY, background: 'none', border: 'none', padding: 0,
+                display: 'flex', alignItems: 'center', gap: 6, fontSize: 11,
+                fontFamily: FONT_BODY, background: 'none', border: 'none', padding: '4px 0',
                 cursor: 'pointer', textAlign: 'left',
                 color: active === k ? SEG_COLOR[k] : TEXT_MUTED,
                 fontWeight: active === k ? 700 : 400,

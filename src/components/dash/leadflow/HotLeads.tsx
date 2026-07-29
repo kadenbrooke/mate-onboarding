@@ -67,12 +67,16 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
           No uncontacted leads right now
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>
           {hot.map(l => (
             <Link
               key={l.id}
               href={`/dash/${sessionId}/leads?spotlight=${l.id}`}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit' }}
+              // minHeight 44: each row is a full-size touch target on mobile
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none',
+                color: 'inherit', minHeight: 44, padding: '2px 0',
+              }}
             >
               {/* Score as traffic-light colored number */}
               <span style={{

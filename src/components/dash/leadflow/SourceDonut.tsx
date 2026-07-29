@@ -65,7 +65,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
           {segments.map(s => {
             const color = SOURCE_COLORS[s.source] ?? SOURCE_COLORS.unknown;
             return (
-              <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9 }}>
+              <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
                 <div
                   style={{
                     width: 9,

@@ -69,11 +69,12 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
         <button
           key={c}
           aria-label={c}
+          className="dash-tap"
           onClick={() => setRange(c)}
           style={{
-            fontSize: 9,
+            fontSize: 10,
             letterSpacing: 1,
-            padding: '3px 8px',
+            padding: '5px 10px',
             borderRadius: 99,
             border: 'none',
             cursor: 'pointer',

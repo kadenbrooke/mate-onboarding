@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import { CaretRight } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
 import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/recovered';
@@ -21,15 +22,42 @@ import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
 import type { DashData } from './types';
+import {
+  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
+} from '@/lib/theme';
 
 // Light-theme layout (2026-07 redesign): each zone is a large light-grey
 // SectionCard holding white stat sub-cards. Mobile stacks the white cards
 // directly on the warm canvas.
 
+/** Mobile row link styled as a white card: full-width 48px touch target. */
+function LinkCard({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        minHeight: 48, padding: '0 16px', borderRadius: 16,
+        background: BG_CARD, boxShadow: CARD_SHADOW, textDecoration: 'none',
+        color: TEXT_DARK, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+      }}
+    >
+      {label}
+      <CaretRight size={15} weight="bold" color={brandVar} aria-hidden />
+    </a>
+  );
+}
+
 export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
+  // Tab switch resets scroll: landing mid-scroll on a shorter view strands
+  // the user below the fold. try/catch: jsdom has no scrollTo implementation.
+  const switchView = (v: MobileView) => {
+    setView(v);
+    try { window.scrollTo({ top: 0 }); } catch { /* non-browser env */ }
+  };
   const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: data.weekActionCount, minutesPerAction: 5 }); // PLAN3: retainer from session
   const series = heroSeries(leads, data.events, { minutesPerAction: 5 });
   // Daily cumulative series + WoW dollar delta for the Mercury-style dark card
@@ -78,12 +106,7 @@ export function DashboardView({ session, leads, data }: {
     <>
       <TrendCard leads={leads} />
       <JourneyRiver leads={leads} />
-      <a
-        href={`/dash/${session.id}/leads`}
-        style={{ fontSize: 13, color: 'var(--brand-primary, #e14d1a)', textDecoration: 'none', display: 'block', marginTop: 4 }}
-      >
-        Open full leads table
-      </a>
+      <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" />
       <SourceDonut leads={leads} />
       <ValueWheel leads={leads} />
       <AreaBars leads={leads} />
@@ -102,12 +125,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileCrew = (
     <>
       <CrewRoster capabilities={data.capabilities} />
-      <a
-        href={`/portal?session=${session.id}`}
-        style={{ fontSize: 13, color: 'var(--brand-primary, #e14d1a)', textDecoration: 'none', display: 'block', marginTop: 4 }}
-      >
-        Chat with Mate
-      </a>
+      <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" />
       {setupStub}
       <SystemPulse incidents={data.incidents} />
     </>
@@ -169,7 +187,7 @@ export function DashboardView({ session, leads, data }: {
         {mobileViewContent[view]}
       </div>
 
-      <MobileNav view={view} onChange={setView} />
+      <MobileNav view={view} onChange={switchView} />
     </main>
   );
 }

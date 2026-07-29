@@ -64,8 +64,12 @@ export function ReputationZone({
         </div>
       </div>
 
-      {/* Bottom: StarBars + ReferralRing sub-panels */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+      {/* Bottom: StarBars + ReferralRing sub-panels. Mobile stacks them: the
+          ReferralRing's 110px donut + revenue block overflows a half column. */}
+      <style>{`
+        @media (max-width: 640px) { .rep-panels { grid-template-columns: 1fr !important; } }
+      `}</style>
+      <div className="rep-panels" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
         <div style={{
           border: `1px solid ${BORDER_SOFT}`, borderRadius: 12, padding: 14,
           background: BG_SECTION,

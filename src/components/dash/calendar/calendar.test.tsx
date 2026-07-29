@@ -54,4 +54,23 @@ describe('BookedCalendar appointment popover', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('appt-popover')).not.toBeInTheDocument();
   });
+
+  it('tapping the whole day cell toggles the first appointment popover (44px mobile target)', () => {
+    render(<BookedCalendar appointments={[appt(0)]} />);
+    const day = new Date().getDate();
+    const cell = screen.getByTestId(`day-cell-${day}`);
+    fireEvent.click(cell);
+    expect(screen.getByTestId('appt-popover')).toBeInTheDocument();
+    // Tapping the cell again dismisses it
+    fireEvent.click(cell);
+    expect(screen.queryByTestId('appt-popover')).not.toBeInTheDocument();
+  });
+
+  it('popover carries a column-aware alignment so edge columns never clip offscreen', () => {
+    const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
+    const dot = container.querySelector('[data-testid^="appt-dot-"]') as HTMLElement;
+    fireEvent.click(dot);
+    const pop = screen.getByTestId('appt-popover');
+    expect(['left', 'center', 'right']).toContain(pop.getAttribute('data-align'));
+  });
 });

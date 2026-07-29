@@ -49,7 +49,7 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           {wedges.map((w, i) => (
-            <div key={w.service} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9 }}>
+            <div key={w.service} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
               <div
                 style={{
                   width: 9,

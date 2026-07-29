@@ -72,12 +72,17 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents }: {
 
   return (
     <header
+      className="dash-topbar"
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: 10, padding: '12px 16px', maxWidth: 1100, margin: '0 auto',
+        gap: 10, maxWidth: 1100, margin: '0 auto',
       }}
     >
       <style>{`
+        /* Respect the iPhone notch/Dynamic Island when installed as a PWA
+           (viewport-fit=cover): top padding grows by the safe-area inset.
+           Class-based (not inline): jsdom/CSSOM drops env() inline values. */
+        .dash-topbar { padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px; }
         @media (max-width: 640px) { .dash-topnav, .dash-avatar { display: none !important; } }
       `}</style>
 

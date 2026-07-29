@@ -69,15 +69,27 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         minHeight: '100vh',
         background: BG_PAGE,
         color: TEXT_DARK,
+        // Kill stray horizontal overflow (wide SVGs, popovers at row edges)
+        // without creating a scroll container: clip-x keeps overflow-y visible.
+        overflowX: 'clip',
         ...cssVars,
       }}
     >
       <style>{`
+        /* Bottom clearance = fixed MobileNav height + iPhone home indicator.
+           Class-based so env() survives (CSSOM drops it from inline styles in
+           some engines). */
+        .dash-shell { padding: 4px 16px calc(90px + env(safe-area-inset-bottom, 0px)); }
         /* Icon rail is desktop chrome; below 641px the bottom MobileNav owns nav. */
         @media (max-width: 640px) { .dash-rail { display: none !important; } }
         /* Mid widths: shift content right so the fixed rail never overlaps it.
            !important because the base padding is set inline. */
         @media (min-width: 641px) and (max-width: 1260px) { .dash-shell { padding-left: 70px !important; } }
+        /* Touch-target slop: extends the effective hit area of small controls
+           (range chips, ring legend buttons, calendar dots) without changing
+           their visual size. */
+        .dash-tap { position: relative; }
+        .dash-tap::after { content: ''; position: absolute; inset: -8px; }
       `}</style>
 
       <TopBar
@@ -88,7 +100,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
       />
       <IconRail />
 
-      <div className="dash-shell" style={{ maxWidth: 1100, margin: '0 auto', padding: '4px 16px 90px' }}>
+      <div className="dash-shell" style={{ maxWidth: 1100, margin: '0 auto' }}>
         {children}
       </div>
     </div>

@@ -55,4 +55,13 @@ describe('TopBar', () => {
     render(<TopBar sessionId="s1" businessName="J&C Asphalt" logoUrl={null} openIncidents={0} />);
     expect(screen.getByText('JC')).toBeInTheDocument();
   });
+
+  it('respects the notch: header top padding includes safe-area-inset-top', () => {
+    render(<TopBar sessionId="s1" businessName="J&C Asphalt" logoUrl={null} openIncidents={0} />);
+    const header = screen.getByRole('banner');
+    // env() is applied via an embedded class rule (jsdom drops env() from
+    // inline CSSOM styles): assert the rule ships with the component.
+    expect(header.className).toContain('dash-topbar');
+    expect(header.querySelector('style')?.textContent).toContain('safe-area-inset-top');
+  });
 });

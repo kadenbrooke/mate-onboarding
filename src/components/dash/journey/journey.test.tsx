@@ -14,8 +14,9 @@ describe('JourneyRiver', () => {
   it('renders source labels, quoted count, and won outcome', () => {
     render(<JourneyRiver leads={[lead({}), lead({ source: 'missed_call', status: 'open' })]} />);
     expect(screen.getByText('LEAD JOURNEY')).toBeInTheDocument();
-    expect(screen.getByText(/Won 1/)).toBeInTheDocument();
-    expect(screen.getByText(/Still open 1/)).toBeInTheDocument();
+    // Labels appear once per breakpoint variant (desktop + mobile SVGs)
+    expect(screen.getAllByText(/Won 1/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText(/Still open 1/).length).toBeGreaterThanOrEqual(1);
   });
 
   it('renders nothing-yet state with zero leads', () => {
@@ -30,11 +31,24 @@ describe('JourneyRiver', () => {
       lead({ source: 'web_form', status: 'open' }),
     ];
     const { container } = render(<JourneyRiver leads={leads} />);
-    const ribbons = container.querySelectorAll('[data-ribbon]');
+    // Scope to the desktop variant: the mobile SVG renders its own set
+    const ribbons = container.querySelectorAll('.jr-desktop [data-ribbon]');
     expect(ribbons).toHaveLength(3);
     // Each ribbon's d attribute must be unique (distinct destination y slices)
     const dAttrs = Array.from(ribbons).map(el => el.getAttribute('d'));
     const unique = new Set(dAttrs);
     expect(unique.size).toBe(3);
+  });
+
+  it('renders a narrow mobile SVG variant so labels stay readable at 390px', () => {
+    const { container } = render(<JourneyRiver leads={[lead({})]} />);
+    const desktop = container.querySelector('svg.jr-desktop');
+    const mobile = container.querySelector('svg.jr-mobile');
+    expect(desktop).toBeTruthy();
+    expect(mobile).toBeTruthy();
+    expect(desktop!.getAttribute('viewBox')).toBe('0 0 640 170');
+    expect(mobile!.getAttribute('viewBox')).toBe('0 0 360 170');
+    // Mobile variant carries the same ribbon data
+    expect(container.querySelectorAll('.jr-mobile [data-ribbon]').length).toBe(1);
   });
 });

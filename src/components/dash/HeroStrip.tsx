@@ -70,7 +70,7 @@ type HeroCardProps = {
 
 function HeroCard({ icon, label, trendPct, big, sub, buckets, sparkTestId }: HeroCardProps) {
   return (
-    <div style={{
+    <div className="hero-card" style={{
       flex: 1, minWidth: 0, borderRadius: 16, padding: 16,
       background: BG_CARD, color: TEXT_DARK, boxShadow: CARD_SHADOW,
       display: 'flex', flexDirection: 'column',
@@ -95,7 +95,7 @@ function HeroCard({ icon, label, trendPct, big, sub, buckets, sparkTestId }: Her
         </div>
         <TrendBadge pct={trendPct} />
       </div>
-      <div style={{ fontSize: 28, marginTop: 12, ...NUM_DISPLAY }}>{big}</div>
+      <div style={{ fontSize: 28, marginTop: 12, whiteSpace: 'nowrap', ...NUM_DISPLAY }}>{big}</div>
       {sub && (
         <div style={{ fontSize: 11, fontFamily: FONT_BODY, marginTop: 2, color: TEXT_MUTED }}>
           {sub}
@@ -118,7 +118,17 @@ export function HeroStrip({ recoveredCents, roiMultiple, hoursSaved, actions, se
   const hrs = useCountUp(hoursSaved, 1200);
   const act = useCountUp(actions, 1200);
   return (
-    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+    <div className="hero-strip" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+      {/* Mobile: the dark Recovered card would pin its 260px min-width while
+          the two white stat cards (min-width 0) got crushed to ~45px each.
+          Below 641px the dark card takes the full first row and the stat
+          cards split the second row 2-up. */}
+      <style>{`
+        @media (max-width: 640px) {
+          .hero-strip .hero-dark { flex: 1 1 100% !important; min-width: 100% !important; }
+          .hero-strip .hero-card { flex: 1 1 40% !important; min-width: 130px !important; }
+        }
+      `}</style>
       {/* Recovered $: the page's ONE dark accent card, Mercury-style chart */}
       <RecoveredCard
         totalCents={recoveredCents}

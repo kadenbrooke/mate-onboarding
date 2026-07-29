@@ -20,18 +20,26 @@ function formatTime(iso: string): string {
   return `${h}:${m}${ampm}`;
 }
 
-/** Popover with one appointment's details. Anchored above the dot's cell. */
-function ApptPopover({ appt }: { appt: Appointment }) {
+export type PopoverAlign = 'left' | 'center' | 'right';
+
+/** Popover with one appointment's details. Anchored above the dot's cell.
+ *  `align` clamps edge-column popovers inside the viewport: left columns
+ *  extend rightward, right columns leftward, so nothing clips offscreen. */
+function ApptPopover({ appt, align = 'center' }: { appt: Appointment; align?: PopoverAlign }) {
+  const alignStyle: React.CSSProperties =
+    align === 'left' ? { left: -6 }
+    : align === 'right' ? { right: -6 }
+    : { left: '50%', transform: 'translateX(-50%)' };
   return (
     <div
       role="dialog"
       aria-label="Appointment details"
       data-testid="appt-popover"
+      data-align={align}
       style={{
         position: 'absolute',
         bottom: 'calc(100% + 6px)',
-        left: '50%',
-        transform: 'translateX(-50%)',
+        ...alignStyle,
         zIndex: 20,
         background: '#ffffff',
         border: `1px solid ${BORDER_SOFT}`,
@@ -136,11 +144,22 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
             const cellDate = new Date(now.getFullYear(), now.getMonth(), cell.day);
             const isFuture = cellDate > now && !isToday;
             const appts = cell.appointments;
+            // Column position drives popover alignment (edge columns clamp
+            // inward so the popover never clips outside the viewport).
+            const col = idx % 7;
+            const popAlign: PopoverAlign = col <= 1 ? 'left' : col >= 5 ? 'right' : 'center';
 
             return (
               <div
                 key={`day-${cell.day}`}
+                data-testid={`day-cell-${cell.day}`}
+                // The 10px dots are sub-44px targets; on days with bookings the
+                // whole ~44px cell toggles the first appointment's popover, so
+                // the effective mobile touch target is the full cell. Dots
+                // stopPropagation, so precise taps still pick a specific one.
+                onClick={appts.length > 0 ? () => setStickyKey(k => (k === `${cell.day}-0` ? null : `${cell.day}-0`)) : undefined}
                 style={{
+                  cursor: appts.length > 0 ? 'pointer' : undefined,
                   background: BG_SECTION,
                   border: isToday ? `1px solid ${brandVar}` : `1px solid ${BORDER_SOFT}`,
                   borderRadius: 8,
@@ -154,7 +173,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                 }}
               >
                 <span style={{
-                  fontSize: 8,
+                  fontSize: 9,
                   color: isToday ? brandVar : TEXT_MUTED,
                   fontWeight: isToday ? 700 : 400,
                   lineHeight: 1,
@@ -170,6 +189,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                         <span key={key} style={{ position: 'relative', display: 'inline-flex' }}>
                           <button
                             type="button"
+                            className="dash-tap"
                             aria-label={`Appointment: ${a.customer_name ?? 'unknown'} on day ${cell.day}`}
                             aria-expanded={open}
                             data-testid={`appt-dot-${key}`}
@@ -189,7 +209,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                               outlineOffset: 2,
                             }}
                           />
-                          {open && <ApptPopover appt={a} />}
+                          {open && <ApptPopover appt={a} align={popAlign} />}
                         </span>
                       );
                     })}
