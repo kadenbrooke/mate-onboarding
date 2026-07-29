@@ -31,16 +31,15 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  // /onboard (pre-auth concierge), /portal (client POC), and /dash (client
-  // dashboard) are client-facing surfaces for people who do not have an
-  // internal login. All three are session-scoped by an unguessable UUID and
-  // use the service client internally, so middleware auth is redundant.
-  // Phase-2 hardening: bind a signed session cookie to /dash and /portal.
+  // /portal (client POC) and /dash (client dashboard) stay in the public list:
+  // /dash gating needs a DB read (is_demo) so it lives in the dash pages via
+  // requireDashAccess(); /portal is legacy and migrates in Plan 3. /onboard is
+  // no longer public: onboarding is a post-signup surface for claimed accounts.
   const isPublic =
     path.startsWith("/login") ||
+    path.startsWith("/signup") ||
     path.startsWith("/auth") ||
     path.startsWith("/api/") ||
-    path.startsWith("/onboard") ||
     path.startsWith("/portal") ||
     path.startsWith("/dash") ||
     // /demo is the public Instant First Responder Demo lander (prospect-facing,
@@ -53,6 +52,7 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    url.search = `?next=${encodeURIComponent(path)}`;
     return NextResponse.redirect(url);
   }
 
