@@ -1,4 +1,4 @@
-import { FREE_GREEN, NUM_TABLE, brandVar } from '@/lib/theme';
+import { FREE_GREEN, NUM_TABLE, brandVar, CARD_FG } from '@/lib/theme';
 
 export type CascadeStage = { label: string; count: number; highlight?: 'green' | 'brand' };
 
@@ -15,7 +15,7 @@ export function CascadeFunnel({ stages }: { stages: CascadeStage[] }) {
           ? FREE_GREEN
           : s.highlight === 'brand'
             ? brandVar
-            : `rgba(20,20,20,${(0.09 - i * 0.015).toFixed(3)})`;
+            : `color-mix(in srgb, ${CARD_FG} ${(9 - i * 1.5).toFixed(1)}%, transparent)`;
         return (
           <div key={s.label} style={{
             width: `${width}%`, marginLeft: `${indent}%`,

@@ -94,6 +94,9 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
            12px apart center-to-center; full slop would cover the neighbor). */
         .dash-tap-y { position: relative; }
         .dash-tap-y::after { content: ''; position: absolute; inset: -8px -1px; }
+        /* Card light/dark star toggle: 13px glyph + 16px slop = ~45px target. */
+        .dash-star { position: relative; }
+        .dash-star::after { content: ''; position: absolute; inset: -16px; }
       `}</style>
 
       <TopBar

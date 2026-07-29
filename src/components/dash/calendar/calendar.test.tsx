@@ -32,6 +32,14 @@ describe('BookedCalendar appointment popover', () => {
     expect(cell).toBeTruthy();
   });
 
+  it('wide mode keeps cells square too (round-4: no fixed-height rows)', () => {
+    render(<BookedCalendar appointments={[appt(0)]} wide showLabel={false} />);
+    const day = new Date().getDate();
+    const cell = screen.getByTestId(`day-cell-${day}`);
+    expect(cell.style.aspectRatio).toBe('1 / 1');
+    expect(cell.style.height).toBe('');
+  });
+
   it('clicking a dot opens details, tap-away dismisses', () => {
     const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
     const dot = container.querySelector('[data-testid^="appt-dot-"]') as HTMLElement;

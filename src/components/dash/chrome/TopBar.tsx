@@ -86,10 +86,12 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents }: {
         @media (max-width: 640px) { .dash-topnav, .dash-avatar { display: none !important; } }
       `}</style>
 
-      {/* Logo chip: tenant logo when set, black Auto Mate mark by default */}
+      {/* Logo chip: tenant logo when set; default is the inline Auto Mate
+          lockup ("auto mate" black + "AI" orange), trimmed to its content box
+          so height-based sizing renders at full wordmark size. */}
       <span style={{ ...CHIP, width: 'auto', minWidth: 40, borderRadius: 99, padding: '0 12px' }}>
         <img
-          src={logoUrl ?? '/logo-black.png'}
+          src={logoUrl ?? '/logo-inline.png'}
           alt={logoUrl ? (businessName ?? 'Client logo') : 'Auto Mate AI'}
           height={18}
           style={{ width: 'auto', maxWidth: 120, objectFit: 'contain', display: 'block' }}

@@ -1,7 +1,7 @@
 import { Card } from '../Card';
 import { CascadeFunnel } from './CascadeFunnel';
 import type { Reactivation, ReactivationWin } from '../types';
-import { FREE_GREEN, TEXT_MUTED, NUM_DISPLAY, NUM_TABLE, FONT_BODY } from '@/lib/theme';
+import { FREE_GREEN, CARD_MUTED, NUM_DISPLAY, NUM_TABLE, FONT_BODY } from '@/lib/theme';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
 
@@ -22,8 +22,8 @@ export function FollowUpZone({
   const label = showLabel ? 'FOLLOW-UP ENGINE' : undefined;
   if (reactivation == null) {
     return (
-      <Card label={label}>
-        <div style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
+      <Card label={label} themeKey="follow-up-engine">
+        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
           turns on with the Reactivator
         </div>
       </Card>
@@ -42,7 +42,7 @@ export function FollowUpZone({
   const BAR_MIN_H = 6;
 
   return (
-    <Card label={label}>
+    <Card label={label} themeKey="follow-up-engine">
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 10 }}>
         {/* Cascade funnel */}
         <CascadeFunnel stages={[
@@ -61,7 +61,7 @@ export function FollowUpZone({
           }}>
             {moneyShort(recovered_cents)}
           </div>
-          <div style={{ fontSize: 10, color: TEXT_MUTED, marginTop: 2 }}>recovered revenue</div>
+          <div style={{ fontSize: 10, color: CARD_MUTED, marginTop: 2 }}>recovered revenue</div>
         </div>
 
         {/* Dormancy bar chart */}
@@ -69,7 +69,7 @@ export function FollowUpZone({
           <div style={{
             fontSize: 10,
             letterSpacing: 1.5,
-            color: TEXT_MUTED,
+            color: CARD_MUTED,
             marginBottom: 8,
           }}>
             CONTACTS BY DORMANCY
@@ -85,7 +85,7 @@ export function FollowUpZone({
                     background: BRAND_RAMP[i],
                     borderRadius: '5px 5px 2px 2px',
                   }} />
-                  <div style={{ fontSize: 9, color: TEXT_MUTED }}>{dormancyLabels[i]}</div>
+                  <div style={{ fontSize: 9, color: CARD_MUTED }}>{dormancyLabels[i]}</div>
                 </div>
               );
             })}
@@ -94,11 +94,11 @@ export function FollowUpZone({
 
         {/* Recent wins */}
         <div>
-          <div style={{ fontSize: 10, letterSpacing: 1.5, color: TEXT_MUTED, marginBottom: 6 }}>
+          <div style={{ fontSize: 10, letterSpacing: 1.5, color: CARD_MUTED, marginBottom: 6 }}>
             RECENT WINS
           </div>
           {wins.length === 0 ? (
-            <div style={{ fontSize: 11, color: TEXT_MUTED }}>No wins yet, the machine is working</div>
+            <div style={{ fontSize: 11, color: CARD_MUTED }}>No wins yet, the machine is working</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
               {wins.map(w => (
@@ -115,7 +115,7 @@ export function FollowUpZone({
                   <span style={{ flex: 1 }}>
                     <b>{w.customer_name}</b>
                     {w.dormant_months != null && (
-                      <span style={{ color: TEXT_MUTED }}>{' '}&middot; {w.dormant_months}mo dormant</span>
+                      <span style={{ color: CARD_MUTED }}>{' '}&middot; {w.dormant_months}mo dormant</span>
                     )}
                   </span>
                   {/* Right side: money or replied */}

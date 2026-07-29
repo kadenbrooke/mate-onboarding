@@ -1,5 +1,5 @@
 import { Card } from '../Card';
-import { FREE_GREEN, TEXT_MUTED, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
+import { FREE_GREEN, CARD_BG, CARD_MUTED, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 
 export function StreakCard({ streakDays }: { streakDays: number }) {
   const TRAIL_COUNT = 7;
@@ -8,7 +8,7 @@ export function StreakCard({ streakDays }: { streakDays: number }) {
     <Card
       label="THE STREAK"
       style={{
-        background: `color-mix(in srgb, ${FREE_GREEN} 7%, #ffffff)`,
+        background: `color-mix(in srgb, ${FREE_GREEN} 7%, ${CARD_BG})`,
         border: `1px solid color-mix(in srgb, ${FREE_GREEN} 25%, transparent)`,
       }}
     >
@@ -29,7 +29,7 @@ export function StreakCard({ streakDays }: { streakDays: number }) {
         </div>
 
         {/* Sub copy */}
-        <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: TEXT_MUTED, textAlign: 'center' }}>
+        <div style={{ fontFamily: FONT_BODY, fontSize: 11, color: CARD_MUTED, textAlign: 'center' }}>
           without a single missed lead
         </div>
 

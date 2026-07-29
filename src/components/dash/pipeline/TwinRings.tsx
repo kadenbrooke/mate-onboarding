@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { pipelineTotals, type Lead } from '@/lib/metrics/leads';
 import { ringSegments } from '@/lib/metrics/ring';
 import { Card } from '../Card';
-import { FREE_GREEN, LOST_BROWN, TRACK_BEIGE, TEXT_MUTED, NUM_DISPLAY, FONT_NUM, FONT_BODY } from '@/lib/theme';
+import { FREE_GREEN, LOST_BROWN, CARD_TRACK, CARD_MUTED, NUM_DISPLAY, FONT_NUM, FONT_BODY } from '@/lib/theme';
 import { moneyShort } from '@/lib/metrics/format';
 
 type Seg = 'won' | 'lost' | 'open';
@@ -26,7 +26,7 @@ export function TwinRings({ leads, showLabel = true }: { leads: Lead[]; showLabe
   const avgJob = t.counts.won ? Math.round(t.wonCents / t.counts.won) : 0;
 
   return (
-    <Card label={showLabel ? 'THE PIPELINE' : undefined}>
+    <Card label={showLabel ? 'THE PIPELINE' : undefined} themeKey="the-pipeline">
       <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 8 }}>
         <Ring
           idPrefix="rev"
@@ -86,7 +86,7 @@ function Ring({ idPrefix, values, format, sub, caption }: {
     <div style={{ textAlign: 'center' }}>
       <svg viewBox="0 0 120 120" style={{ width: 140 }}>
         <g transform="translate(60,60) rotate(-90)">
-          <circle r={48} fill="none" stroke={TRACK_BEIGE} strokeWidth={11} />
+          <circle r={48} fill="none" stroke={CARD_TRACK} strokeWidth={11} />
           {segs.map(s => (
             <circle
               key={s.key}
@@ -117,7 +117,7 @@ function Ring({ idPrefix, values, format, sub, caption }: {
         >
           {format(values[active])}
         </text>
-        <text x="60" y="70" textAnchor="middle" fill={TEXT_MUTED} fontSize="7" fontFamily={FONT_BODY}>
+        <text x="60" y="70" textAnchor="middle" fill={CARD_MUTED} fontSize="7" fontFamily={FONT_BODY}>
           {sub(active)}
         </text>
       </svg>
