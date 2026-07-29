@@ -95,8 +95,8 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
         <img
           src={logoUrl ?? '/logo-inline.png'}
           alt={logoUrl ? (businessName ?? 'Client logo') : 'Auto Mate AI'}
-          height={18}
-          style={{ width: 'auto', maxWidth: 120, objectFit: 'contain', display: 'block' }}
+          height={28}
+          style={{ width: 'auto', maxWidth: 160, objectFit: 'contain', display: 'block' }}
         />
       </span>
 
