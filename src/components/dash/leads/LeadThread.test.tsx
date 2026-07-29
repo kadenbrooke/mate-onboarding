@@ -27,4 +27,12 @@ describe('LeadThread', () => {
     fireEvent.click(screen.getByRole('button', { name: /hand back to mate/i }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/leads/l1/handler', expect.objectContaining({ method: 'PATCH' })));
   });
+  it('does NOT flip the driver to You when the send fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"error":"send failed"}', { status: 502 })));
+    render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} />);
+    fireEvent.change(screen.getByPlaceholderText(/type a reply/i), { target: { value: 'on my way' } });
+    fireEvent.click(screen.getByRole('button', { name: /send/i }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/leads/l1/reply', expect.objectContaining({ method: 'POST' })));
+    expect(screen.getByText(/Driver: Mate/)).toBeTruthy();
+  });
 });

@@ -22,7 +22,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const sent = await sendSms(lead.phone, text);
   if (!sent.ok) return NextResponse.json({ error: sent.error ?? 'send failed' }, { status: 502 });
 
-  await logMessage(supabase, { leadId: id, sessionId: body.session_id, direction: 'outbound', author: 'human', body: text });
-  await setHandler(supabase, { leadId: id, sessionId: body.session_id, handler: 'human', by: 'dashboard' });
+  const logRes = await logMessage(supabase, { leadId: id, sessionId: body.session_id, direction: 'outbound', author: 'human', body: text });
+  const flipRes = await setHandler(supabase, { leadId: id, sessionId: body.session_id, handler: 'human', by: 'dashboard' });
+  // The SMS already went out; a post-send DB write failure is non-fatal but must be observable.
+  // We still return ok:true (do not fail the request over a bookkeeping miss), just surface it in logs.
+  if (logRes.error || flipRes.error) console.warn('reply post-send write failed', { id, logErr: logRes.error, flipErr: flipRes.error });
   return NextResponse.json({ ok: true });
 }

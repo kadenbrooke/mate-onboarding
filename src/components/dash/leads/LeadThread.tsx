@@ -17,20 +17,24 @@ export function LeadThread({ leadId, sessionId, handler, messages }: {
   async function send() {
     if (!text.trim() || busy) return;
     setBusy(true);
-    await fetch(`/api/leads/${leadId}/reply`, {
+    const res = await fetch(`/api/leads/${leadId}/reply`, {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, text }),
     });
-    setText(''); setDriver('human'); setBusy(false);
+    // Only clear the draft + flip the driver to You when the send actually landed.
+    if (res.ok) { setText(''); setDriver('human'); }
+    setBusy(false);
   }
   async function toggle(next: 'agent' | 'human') {
     if (busy) return;
     setBusy(true);
-    await fetch(`/api/leads/${leadId}/handler`, {
+    const res = await fetch(`/api/leads/${leadId}/handler`, {
       method: 'PATCH', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ session_id: sessionId, handler: next }),
     });
-    setDriver(next); setBusy(false);
+    // Only reflect the handler change locally if the PATCH succeeded.
+    if (res.ok) setDriver(next);
+    setBusy(false);
   }
 
   return (

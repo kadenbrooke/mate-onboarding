@@ -26,7 +26,7 @@ export default async function LeadsPage({ params, searchParams }: {
       .select('id, handler').eq('id', spotlight).eq('session_id', sessionId).single();
     if (lead) {
       const { data: messages } = await supabase.from('lead_messages')
-        .select('*').eq('lead_id', spotlight).order('created_at', { ascending: true }).limit(200);
+        .select('*').eq('lead_id', spotlight).eq('session_id', sessionId).order('created_at', { ascending: true }).limit(200);
       thread = { messages: (messages ?? []) as LeadMessage[], handler: (lead.handler ?? 'agent') as 'agent' | 'human', leadId: lead.id };
     }
   }
