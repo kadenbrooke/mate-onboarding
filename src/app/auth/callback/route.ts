@@ -18,11 +18,13 @@ export async function GET(req: Request) {
   if (oauthErr) return NextResponse.redirect(new URL("/login?error=oauth", url.origin));
 
   const oauthCode = url.searchParams.get("code");
+  // No error and no code = a malformed callback or a direct hit. Treat as a
+  // failed sign-in rather than falling through to the getUser path.
+  if (!oauthCode) return NextResponse.redirect(new URL("/login?error=oauth", url.origin));
+
   const supabase = await createClient();
-  if (oauthCode) {
-    const { error } = await supabase.auth.exchangeCodeForSession(oauthCode);
-    if (error) return NextResponse.redirect(new URL("/login?error=oauth", url.origin));
-  }
+  const { error: exchangeErr } = await supabase.auth.exchangeCodeForSession(oauthCode);
+  if (exchangeErr) return NextResponse.redirect(new URL("/login?error=oauth", url.origin));
 
   const {
     data: { user },
