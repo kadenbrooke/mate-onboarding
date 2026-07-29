@@ -10,7 +10,7 @@ afterEach(() => { process.env = { ...origEnv }; vi.restoreAllMocks(); });
 
 describe('sendSms', () => {
   it('POSTs to Telnyx with from/to/text and bearer auth', async () => {
-    const fetchMock = vi.fn(async () => new Response('{}', { status: 200 }));
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => new Response('{}', { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     const res = await sendSms('+18015551234', 'hello');
     expect(res.ok).toBe(true);
