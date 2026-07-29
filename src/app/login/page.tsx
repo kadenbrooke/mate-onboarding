@@ -22,7 +22,11 @@ export default function LoginPage() {
       setBusy(false);
       return;
     }
-    router.replace("/");
+    // window.location (not useSearchParams) avoids the Suspense/CSR-bailout
+    // requirement for search params in client pages.
+    const next = new URLSearchParams(window.location.search).get("next");
+    const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : "/postlogin";
+    router.replace(dest);
     router.refresh();
   }
 
