@@ -4,9 +4,11 @@ import type { Lead } from '@/lib/metrics/leads';
 import type { DashCapability } from '@/components/dash/types';
 import { DashboardView } from '@/components/dash/DashboardView';
 import type { DashData } from '@/components/dash/types';
+import { requireDashAccess } from '@/lib/portal/dash-gate';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
+  await requireDashAccess(sessionId);
   const supabase = createServiceClient();
 
   // Load session - also fetch contact_id so we can join client_capabilities

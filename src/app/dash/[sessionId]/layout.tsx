@@ -1,7 +1,17 @@
 import type { ReactNode } from 'react';
+import { redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
+import { createClient } from '@/lib/supabase/server';
 import { brandToCssVars, FONT_BODY, BG_PAGE, BORDER_SOFT, TEXT_DARK } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
+import { SignOut } from '@phosphor-icons/react/dist/ssr';
+
+async function signOutAction() {
+  'use server';
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect('/login');
+}
 
 interface DashLayoutProps {
   children: ReactNode;
@@ -36,6 +46,17 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
     }
   } catch {
     // Non-fatal: layout still renders with defaults.
+  }
+
+  let signedIn = false;
+  try {
+    const authClient = await createClient();
+    const {
+      data: { user },
+    } = await authClient.auth.getUser();
+    signedIn = !!user;
+  } catch {
+    // Fail-open to hidden control; page gates still enforce access.
   }
 
   // Wire session brand into CSS vars so all dash components that reference
@@ -93,6 +114,28 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
           >
             {businessName}
           </span>
+        )}
+        {signedIn && (
+          <form action={signOutAction} style={{ marginLeft: 'auto' }}>
+            <button
+              type="submit"
+              aria-label="Sign out"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 12,
+                fontFamily: FONT_BODY,
+                color: '#8a8078',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '4px 0',
+              }}
+            >
+              <SignOut size={15} /> sign out
+            </button>
+          </form>
         )}
       </header>
 

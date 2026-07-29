@@ -4,12 +4,14 @@ import Link from 'next/link';
 import type { Lead } from '@/lib/metrics/leads';
 import { LeadsTable } from '@/components/dash/leads/LeadsTable';
 import { BG_CARD, CARD_SHADOW } from '@/lib/theme';
+import { requireDashAccess } from '@/lib/portal/dash-gate';
 
 export default async function LeadsPage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
   searchParams: Promise<{ spotlight?: string }>;
 }) {
   const { sessionId } = await params;
+  await requireDashAccess(sessionId);
   const { spotlight } = await searchParams;
   const supabase = createServiceClient();
   const { data: session } = await supabase.from('onboarding_sessions').select('id').eq('id', sessionId).single();
