@@ -224,8 +224,8 @@ export default function OnboardPage() {
       // conversation. A brand having been captured also implies past 'website'.
       const persistedStep = data.step
       if (persistedStep === "ready") {
-        // Finished sessions live in the Command Center now, not /onboard.
-        window.location.replace("/portal")
+        // Finished sessions live on the dashboard now, not /onboard.
+        window.location.replace(`/dash/${data.id}`)
         return
       } else if (persistedStep === "review") {
         setStep("review")
@@ -420,7 +420,7 @@ export default function OnboardPage() {
           <BirthTransition
             agentName={mateName?.trim() || "your new assistant"}
             businessName={company?.name?.trim() || "your business"}
-            onDone={() => window.location.assign("/portal")}
+            onDone={() => window.location.assign(`/dash/${sessionId}`)}
           />
         )}
 

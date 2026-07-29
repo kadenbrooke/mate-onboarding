@@ -8,7 +8,9 @@ const updateMock = vi.fn(() => ({ eq: eq1 }));
 
 // Session select chain: default returns a demo session so existing tests need
 // no auth mock. Individual tests override via mockResolvedValueOnce.
-const maybeSingleMock = vi.fn(() => Promise.resolve({ data: { is_demo: true }, error: null }));
+const maybeSingleMock = vi.fn(() =>
+  Promise.resolve({ data: { is_demo: true } as { is_demo: boolean } | null, error: null })
+);
 const sessionEqMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
 const selectMock = vi.fn(() => ({ eq: sessionEqMock }));
 
