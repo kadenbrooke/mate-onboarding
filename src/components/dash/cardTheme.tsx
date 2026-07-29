@@ -70,15 +70,16 @@ export function useCardTheme(key: string | undefined, defaultDark = false) {
   }, [key]);
 
   const toggle = useCallback(() => {
-    setDark(d => {
-      const next = !d;
-      if (key) {
-        try { window.localStorage.setItem(STORAGE_PREFIX + key, next ? 'dark' : 'light'); } catch { /* ignore */ }
-        try { window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: { key, dark: next } })); } catch { /* ignore */ }
-      }
-      return next;
-    });
-  }, [key]);
+    // Side effects (storage + sync event) stay OUTSIDE the state updater:
+    // dispatching inside setDark triggers the sibling instance's setState
+    // mid-render (React warning, fragile under concurrent rendering).
+    const next = !dark;
+    setDark(next);
+    if (key) {
+      try { window.localStorage.setItem(STORAGE_PREFIX + key, next ? 'dark' : 'light'); } catch { /* ignore */ }
+      try { window.dispatchEvent(new CustomEvent(SYNC_EVENT, { detail: { key, dark: next } })); } catch { /* ignore */ }
+    }
+  }, [key, dark]);
 
   return { dark, vars: cardThemeVars(dark), toggle };
 }
