@@ -16,6 +16,7 @@ const emptyDash: DashData = {
   capabilities: [],
   incidents: [],
   weekActionCount: 0,
+  ads: null,
 };
 
 describe('DashboardView', () => {

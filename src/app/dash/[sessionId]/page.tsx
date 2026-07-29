@@ -5,6 +5,7 @@ import type { DashCapability } from '@/components/dash/types';
 import { DashboardView } from '@/components/dash/DashboardView';
 import type { DashData } from '@/components/dash/types';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
+import { adTotals, type AdMetricRow } from '@/lib/metrics/ads';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
@@ -31,6 +32,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     capabilitiesResult,
     incidentsResult,
     weekActionCountResult,
+    adMetricsResult,
   ] = await Promise.all([
     supabase
       .from('client_leads')
@@ -92,7 +94,21 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .select('id', { count: 'exact', head: true })
       .eq('session_id', sessionId)
       .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
+    // Ad Performance zone: latest daily snapshot. Ordered date desc; we keep
+    // only the rows sharing the most-recent date_pulled (one per campaign).
+    supabase
+      .from('ad_metrics')
+      .select('session_id, campaign_id, campaign_name, spend_cents, impressions, clicks, leads, cpl_cents, date_pulled, raw')
+      .eq('session_id', sessionId)
+      .order('date_pulled', { ascending: false })
+      .limit(50),
   ]);
+
+  // Collapse ad_metrics to the latest snapshot then compute zone totals.
+  const allAdRows = (adMetricsResult.data ?? []) as AdMetricRow[];
+  const latestDate = allAdRows.length ? allAdRows[0].date_pulled : null;
+  const latestAdRows = latestDate ? allAdRows.filter((r) => r.date_pulled === latestDate) : [];
+  const ads = latestAdRows.length ? adTotals(latestAdRows) : null;
 
   // Map client_capabilities rows: capability_key -> key
   const rawCaps = capabilitiesResult.data ?? [];
@@ -112,6 +128,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     capabilities,
     incidents: incidentsResult.data ?? [],
     weekActionCount: weekActionCountResult.count ?? 0,
+    ads,
   };
 
   return (
