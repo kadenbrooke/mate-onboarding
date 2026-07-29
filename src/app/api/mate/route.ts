@@ -2,6 +2,7 @@ import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
 import { z } from "zod"
 import { openai } from "@ai-sdk/openai"
+import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
 import {
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
 
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
-    .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key, step, status")
+    .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key, step, status, is_demo")
     .eq("id", resolvedSessionId)
     .maybeSingle()
 
@@ -70,6 +71,19 @@ export async function POST(req: Request) {
   }
   if (!session) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
+  }
+
+  // Real (non-demo) sessions require a signed-in user; demo sessions stay
+  // anonymous for the public Instant Demo flow. Membership-binding (user owns
+  // THIS session) is Plan-3 hardening.
+  if (!(session as { is_demo?: boolean | null }).is_demo) {
+    const ssr = await createClient()
+    const {
+      data: { user },
+    } = await ssr.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: "Sign in required." }, { status: 401 })
+    }
   }
 
   // Working copy of the collected blob. Tool executes mutate this via the pure

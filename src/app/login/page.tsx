@@ -1,8 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { safeNextPath } from "@/lib/portal/safe-next";
+
+// Human-readable reasons for the ?error= codes the routing code redirects with.
+const ERROR_MESSAGES: Record<string, string> = {
+  unauthorized: "That account does not have access.",
+  retry: "Temporary problem. Try signing in again.",
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -10,6 +17,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Surface routing-supplied error reasons (?error=unauthorized|retry) after
+  // mount. A useEffect keeps the SSR markup stable (no search-param read
+  // during render, so no hydration mismatch or Suspense bailout).
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get("error");
+    if (code && ERROR_MESSAGES[code]) setError(ERROR_MESSAGES[code]);
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -24,8 +39,8 @@ export default function LoginPage() {
     }
     // window.location (not useSearchParams) avoids the Suspense/CSR-bailout
     // requirement for search params in client pages.
-    const next = new URLSearchParams(window.location.search).get("next");
-    const dest = next && next.startsWith("/") && !next.startsWith("//") ? next : "/postlogin";
+    const raw = new URLSearchParams(window.location.search).get("next");
+    const dest = safeNextPath(raw, window.location.origin) ?? "/postlogin";
     router.replace(dest);
     router.refresh();
   }

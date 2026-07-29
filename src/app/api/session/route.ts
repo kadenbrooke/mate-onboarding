@@ -1,6 +1,22 @@
 import { NextRequest, NextResponse } from "next/server"
+import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { maskCollectedForClient, isMaskedValue } from "@/lib/mate/mask"
+
+/**
+ * True when the request carries an authenticated Supabase user (SSR cookies).
+ * Onboarding sessions are gated behind sign-in; only demo sessions stay
+ * anonymous. Membership-binding (user owns THIS session) is Plan-3 hardening.
+ */
+async function hasAuthedUser(): Promise<boolean> {
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+  return Boolean(user)
+}
+
+const SIGN_IN_REQUIRED = { error: "Sign in required." }
 
 // Columns the client is allowed to read back. Deliberately excludes anything
 // sensitive (contact_id, reseller_key, status internals) — the onboarding UI
@@ -18,6 +34,12 @@ const CLIENT_FIELDS = "id, mate_name, website_url, brand, collected, step, messa
  * Returns { id }.
  */
 export async function POST(req: NextRequest) {
+  // Session creation is an authenticated action: anonymous callers could
+  // otherwise mint unlimited onboarding_sessions rows.
+  if (!(await hasAuthedUser())) {
+    return NextResponse.json(SIGN_IN_REQUIRED, { status: 401 })
+  }
+
   let body: unknown = {}
   try {
     // A body is optional here; tolerate an empty / missing one.
@@ -85,7 +107,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from("onboarding_sessions")
-    .select(CLIENT_FIELDS)
+    .select(`${CLIENT_FIELDS}, is_demo`)
     .eq("id", id)
     .maybeSingle()
 
@@ -96,9 +118,19 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
+  // Real (non-demo) sessions require a signed-in user; demo sessions stay
+  // anonymous for the public Instant Demo flow.
+  if (!(data as { is_demo?: boolean | null }).is_demo && !(await hasAuthedUser())) {
+    return NextResponse.json(SIGN_IN_REQUIRED, { status: 401 })
+  }
+
   // Mask server-only fields (EIN -> last 4) before anything leaves the server.
+  // is_demo is a gate input, not a client field; keep the response shape to
+  // CLIENT_FIELDS exactly.
+  const clientData = { ...(data as Record<string, unknown>) }
+  delete clientData.is_demo
   const safe = {
-    ...data,
+    ...clientData,
     collected: maskCollectedForClient(
       (data as { collected?: Record<string, unknown> | null }).collected ?? null
     ),
@@ -249,6 +281,25 @@ export async function PATCH(req: NextRequest) {
   }
 
   const supabase = createServiceClient()
+
+  // Load the session row first: real (non-demo) sessions require a signed-in
+  // user before any write; demo sessions stay anonymous for the public
+  // Instant Demo flow.
+  const { data: sessionRow, error: sessionError } = await supabase
+    .from("onboarding_sessions")
+    .select("is_demo")
+    .eq("id", id)
+    .maybeSingle()
+
+  if (sessionError) {
+    return NextResponse.json({ error: sessionError.message }, { status: 500 })
+  }
+  if (!sessionRow) {
+    return NextResponse.json({ error: "Session not found" }, { status: 404 })
+  }
+  if (!sessionRow.is_demo && !(await hasAuthedUser())) {
+    return NextResponse.json(SIGN_IN_REQUIRED, { status: 401 })
+  }
 
   if (collectedPatch !== null) {
     // Read the current collected, shallow-merge the whitelisted patch on top,
