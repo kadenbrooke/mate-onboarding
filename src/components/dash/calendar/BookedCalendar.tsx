@@ -189,7 +189,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                         <span key={key} style={{ position: 'relative', display: 'inline-flex' }}>
                           <button
                             type="button"
-                            className="dash-tap"
+                            className="dash-tap-y"
                             aria-label={`Appointment: ${a.customer_name ?? 'unknown'} on day ${cell.day}`}
                             aria-expanded={open}
                             data-testid={`appt-dot-${key}`}

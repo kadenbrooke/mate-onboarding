@@ -11,7 +11,7 @@ const dollars = (cents: number | null) => cents == null ? '' : `$${Math.round(ce
 const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, transparent)';
 
 // Desktop: 7-column table. Mobile (<=640px): the table crushed unreadably at
-// 390px, so leads render as stacked card rows with 44px WON/LOST buttons.
+// 390px, so leads render as stacked card rows with 40px WON/LOST buttons.
 // Both variants render and CSS toggles display; state (optimistic status) is
 // shared so switching breakpoints never desyncs.
 

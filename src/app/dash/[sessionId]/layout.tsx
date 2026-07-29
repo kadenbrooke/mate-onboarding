@@ -90,6 +90,10 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
            their visual size. */
         .dash-tap { position: relative; }
         .dash-tap::after { content: ''; position: absolute; inset: -8px; }
+        /* Vertical-only slop for tightly packed siblings (calendar dots sit
+           12px apart center-to-center; full slop would cover the neighbor). */
+        .dash-tap-y { position: relative; }
+        .dash-tap-y::after { content: ''; position: absolute; inset: -8px -1px; }
       `}</style>
 
       <TopBar
