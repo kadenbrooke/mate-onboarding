@@ -46,7 +46,7 @@ export function SectionCard({ title, right, children, style, id }: {
  * `label` is optional: zones suppress it on desktop when the surrounding
  * SectionCard already carries the zone label.
  *
- * Round-4: every card carries a star toggle (top-left, before the label) that
+ * Round-4: every card carries a star toggle (top-right corner) that
  * flips it between light (white bg / dark text) and dark (RecoveredCard
  * treatment). The mode is expressed as --card-* vars on the container;
  * widget internals consume the CARD_* tokens so both modes render correctly.
@@ -67,14 +67,14 @@ export function Card({ label, right, children, style, themeKey }: {
     }}>
       {(key || label || right) && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, minWidth: 0 }}>
+          {label
+            ? /* Card label: DM Sans semibold eyebrow per brand typography guide */
+              <div style={{ fontSize: 11, letterSpacing: 2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600, minWidth: 0 }}>{label}</div>
+            : <span />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            {right}
             {key && <CardModeStar dark={dark} onToggle={toggle} />}
-            {label && (
-              /* Card label: DM Sans semibold eyebrow per brand typography guide */
-              <div style={{ fontSize: 11, letterSpacing: 2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>{label}</div>
-            )}
           </div>
-          {right}
         </div>
       )}
       {children}

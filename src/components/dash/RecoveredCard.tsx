@@ -71,10 +71,9 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
       background: CARD_BG, color: CARD_FG, boxShadow: CARD_SHADOW,
       display: 'flex', flexDirection: 'column', ...vars,
     }}>
-      {/* Header: star toggle + icon chip + label, WoW dollar delta right-aligned */}
+      {/* Header: icon chip + label, WoW dollar delta + star toggle right-aligned */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <CardModeStar dark={dark} onToggle={toggle} />
           <span aria-hidden style={{
             width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -89,15 +88,18 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
             RECOVERED
           </span>
         </div>
-        <span data-testid="recovered-delta" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 2,
-          fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
-          color: up ? SCORE_GREEN : SCORE_RED,
-          background: CARD_CHIP, borderRadius: 99, padding: '3px 8px',
-        }}>
-          <DeltaArrow size={11} weight="bold" aria-hidden />
-          {moneyShort(Math.abs(deltaCents))}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span data-testid="recovered-delta" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 2,
+            fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
+            color: up ? SCORE_GREEN : SCORE_RED,
+            background: CARD_CHIP, borderRadius: 99, padding: '3px 8px',
+          }}>
+            <DeltaArrow size={11} weight="bold" aria-hidden />
+            {moneyShort(Math.abs(deltaCents))}
+          </span>
+          <CardModeStar dark={dark} onToggle={toggle} />
+        </div>
       </div>
 
       {/* Big number: cents rendered superscript, Mercury style. nowrap keeps

@@ -79,7 +79,6 @@ function HeroCard({ icon, label, trendPct, big, sub, buckets, sparkTestId }: Her
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
-          <CardModeStar dark={dark} onToggle={toggle} />
           <span aria-hidden style={{
             width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -96,7 +95,10 @@ function HeroCard({ icon, label, trendPct, big, sub, buckets, sparkTestId }: Her
             {label}
           </span>
         </div>
-        <TrendBadge pct={trendPct} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <TrendBadge pct={trendPct} />
+          <CardModeStar dark={dark} onToggle={toggle} />
+        </div>
       </div>
       <div style={{ fontSize: 28, marginTop: 12, whiteSpace: 'nowrap', ...NUM_DISPLAY }}>{big}</div>
       {sub && (
