@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/ads/refresh",
+      "schedule": "0 13 * * *"
+    }
+  ]
+}
