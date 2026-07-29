@@ -2,7 +2,7 @@ import { Card } from '../Card';
 import { sourceBreakdown } from '@/lib/metrics/leads';
 import { ringSegments } from '@/lib/metrics/ring';
 import { SOURCE_COLORS, SOURCE_LABELS } from '@/lib/metrics/colors';
-import { FREE_GREEN, TEXT_MUTED, NUM_TABLE, FONT_NUM, FONT_BODY } from '@/lib/theme';
+import { FREE_GREEN, CARD_MUTED, NUM_TABLE, FONT_NUM, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 export function SourceDonut({ leads }: { leads: Lead[] }) {
@@ -65,7 +65,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
           {segments.map(s => {
             const color = SOURCE_COLORS[s.source] ?? SOURCE_COLORS.unknown;
             return (
-              <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 9 }}>
+              <div key={s.source} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
                 <div
                   style={{
                     width: 9,
@@ -75,7 +75,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
                     flexShrink: 0,
                   }}
                 />
-                <span style={{ color: TEXT_MUTED, fontFamily: FONT_BODY }}>
+                <span style={{ color: CARD_MUTED, fontFamily: FONT_BODY }}>
                   {SOURCE_LABELS[s.source] ?? s.source}
                   {' '}
                   <span style={{ ...NUM_TABLE }}>{s.count}</span>

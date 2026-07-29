@@ -10,6 +10,7 @@ export function journeyRiver(leads: Lead[]) {
   const quoted = leads.filter(l => l.quote_cents != null).length;
   const won = leads.filter(l => l.status === 'won').length;
   const open = leads.filter(l => l.status === 'open').length;
+  const lost = leads.filter(l => l.status === 'lost').length;
   const wonCents = leads.filter(l => l.status === 'won').reduce((a, l) => a + (l.quote_cents ?? 0), 0);
-  return { sources, quoted, won, open, wonCents, total: leads.length };
+  return { sources, quoted, won, open, lost, wonCents, total: leads.length };
 }

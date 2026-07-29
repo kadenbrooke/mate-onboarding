@@ -11,7 +11,12 @@ export function SpeedZone({ leads, events }: { leads: Lead[]; events: ClientEven
   const totalMissedCalls = missedCallEvents > 0 ? missedCallEvents : undefined;
   const s = speedStats(leads, totalMissedCalls);
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+    <div className="speed-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+      {/* Mobile: half-width columns (~160px) squish the DayClock/RescueRing
+          donut + legend rows; stack the four cards full-width instead. */}
+      <style>{`
+        @media (max-width: 640px) { .speed-grid { grid-template-columns: 1fr !important; } }
+      `}</style>
       <RaceCard avgReplySeconds={s.avgReplySeconds} />
       <StreakCard streakDays={s.streakDays} />
       <DayClock totalCount={leads.length} afterHoursCount={s.afterHoursCount} />

@@ -2,9 +2,10 @@ import type { ReactNode } from 'react';
 import { redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
-import { brandToCssVars, FONT_BODY, BG_PAGE, BORDER_SOFT, TEXT_DARK } from '@/lib/theme';
+import { brandToCssVars, BG_PAGE, TEXT_DARK } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
-import { SignOut } from '@phosphor-icons/react/dist/ssr';
+import { TopBar } from '@/components/dash/chrome/TopBar';
+import { IconRail } from '@/components/dash/chrome/IconRail';
 
 async function signOutAction() {
   'use server';
@@ -21,18 +22,26 @@ interface DashLayoutProps {
 export default async function DashLayout({ children, params }: DashLayoutProps) {
   const { sessionId } = await params;
 
-  // Fetch session brand + client identity. Fail-open: missing data falls
-  // back to Auto Mate default colors, and no logo is shown in the topbar.
+  // Fetch session brand + client identity + open incident count. Fail-open:
+  // missing data falls back to Auto Mate defaults (black logo, zero badge).
   let brand: Brand | null = null;
   let businessName: string | null = null;
   let logoUrl: string | null = null;
+  let openIncidents = 0;
   try {
     const supabase = createServiceClient();
-    const { data: session } = await supabase
-      .from('onboarding_sessions')
-      .select('brand, collected')
-      .eq('id', sessionId)
-      .maybeSingle();
+    const [{ data: session }, incidentsResult] = await Promise.all([
+      supabase
+        .from('onboarding_sessions')
+        .select('brand, collected')
+        .eq('id', sessionId)
+        .maybeSingle(),
+      supabase
+        .from('client_incidents')
+        .select('id', { count: 'exact', head: true })
+        .eq('session_id', sessionId)
+        .is('resolved_at', null),
+    ]);
     if (session?.brand && typeof session.brand === 'object') {
       brand = session.brand as Brand;
       logoUrl = brand.logo_url ?? null;
@@ -44,10 +53,14 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         businessName = (company as { name?: string }).name ?? null;
       }
     }
+    openIncidents = incidentsResult.count ?? 0;
   } catch {
     // Non-fatal: layout still renders with defaults.
   }
 
+  // UI convenience only: show the sign-out control when a Supabase user is
+  // present. Security is enforced by requireDashAccess in the dash pages, not
+  // here (demo viewers are unauthenticated and simply never see the control).
   let signedIn = false;
   try {
     const authClient = await createClient();
@@ -79,67 +92,47 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         minHeight: '100vh',
         background: BG_PAGE,
         color: TEXT_DARK,
+        // Kill stray horizontal overflow (wide SVGs, popovers at row edges)
+        // without creating a scroll container: clip-x keeps overflow-y visible.
+        overflowX: 'clip',
         ...cssVars,
       }}
     >
-      {/* Client identity topbar */}
-      <header
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '12px 16px',
-          borderBottom: `1px solid ${BORDER_SOFT}`,
-          maxWidth: 1100,
-          margin: '0 auto',
-        }}
-      >
-        {logoUrl && (
-          <img
-            src={logoUrl}
-            alt={businessName ?? 'Client logo'}
-            height={30}
-            style={{ width: 'auto', maxWidth: 160, objectFit: 'contain', display: 'block' }}
-          />
-        )}
-        {businessName && (
-          <span
-            style={{
-              fontSize: 15,
-              fontFamily: FONT_BODY,
-              fontWeight: 600,
-              color: TEXT_DARK,
-              letterSpacing: '-0.01em',
-            }}
-          >
-            {businessName}
-          </span>
-        )}
-        {signedIn && (
-          <form action={signOutAction} style={{ marginLeft: 'auto' }}>
-            <button
-              type="submit"
-              aria-label="Sign out"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                fontSize: 12,
-                fontFamily: FONT_BODY,
-                color: '#8a8078',
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                padding: '4px 0',
-              }}
-            >
-              <SignOut size={15} /> sign out
-            </button>
-          </form>
-        )}
-      </header>
+      <style>{`
+        /* Bottom clearance = fixed MobileNav height + iPhone home indicator.
+           Class-based so env() survives (CSSOM drops it from inline styles in
+           some engines). */
+        .dash-shell { padding: 4px 16px calc(90px + env(safe-area-inset-bottom, 0px)); }
+        /* Icon rail is desktop chrome; below 641px the bottom MobileNav owns nav. */
+        @media (max-width: 640px) { .dash-rail { display: none !important; } }
+        /* Mid widths: shift content right so the fixed rail never overlaps it.
+           !important because the base padding is set inline. */
+        @media (min-width: 641px) and (max-width: 1260px) { .dash-shell { padding-left: 70px !important; } }
+        /* Touch-target slop: extends the effective hit area of small controls
+           (range chips, ring legend buttons, calendar dots) without changing
+           their visual size. */
+        .dash-tap { position: relative; }
+        .dash-tap::after { content: ''; position: absolute; inset: -8px; }
+        /* Vertical-only slop for tightly packed siblings (calendar dots sit
+           12px apart center-to-center; full slop would cover the neighbor). */
+        .dash-tap-y { position: relative; }
+        .dash-tap-y::after { content: ''; position: absolute; inset: -8px -1px; }
+        /* Card light/dark star toggle: 13px glyph + 16px slop = ~45px target. */
+        .dash-star { position: relative; }
+        .dash-star::after { content: ''; position: absolute; inset: -16px; }
+      `}</style>
 
-      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '16px 16px 90px' }}>
+      <TopBar
+        sessionId={sessionId}
+        businessName={businessName}
+        logoUrl={logoUrl}
+        openIncidents={openIncidents}
+        signedIn={signedIn}
+        signOutAction={signOutAction}
+      />
+      <IconRail />
+
+      <div className="dash-shell" style={{ maxWidth: 1100, margin: '0 auto' }}>
         {children}
       </div>
     </div>

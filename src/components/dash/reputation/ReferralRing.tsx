@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { ringSegments } from '@/lib/metrics/ring';
 import { moneyShort } from '@/lib/metrics/format';
 import {
-  FREE_GREEN, LOST_BROWN, brandVar, TRACK_BEIGE, TEXT_MUTED,
+  FREE_GREEN, LOST_BROWN, brandVar, CARD_TRACK, CARD_MUTED,
   NUM_DISPLAY, FONT_BODY, FONT_HEAD, FONT_NUM,
 } from '@/lib/theme';
 import type { Reputation } from '@/components/dash/types';
@@ -40,7 +40,7 @@ export function ReferralRing({ reputation }: { reputation: Reputation }) {
       <div style={{ flexShrink: 0 }}>
         <svg viewBox="0 0 120 120" style={{ width: 110 }}>
           <g transform="translate(60,60) rotate(-90)">
-            <circle r={48} fill="none" stroke={TRACK_BEIGE} strokeWidth={11} />
+            <circle r={48} fill="none" stroke={CARD_TRACK} strokeWidth={11} />
             {segs.map((s) => (
               <circle
                 key={s.key}
@@ -68,7 +68,7 @@ export function ReferralRing({ reputation }: { reputation: Reputation }) {
           >
             {active === 'won' ? referrals_closed : active === 'lost' ? referrals_lost : open}
           </text>
-          <text x="60" y="67" textAnchor="middle" fill={TEXT_MUTED} fontSize="7" fontFamily={FONT_BODY}>
+          <text x="60" y="67" textAnchor="middle" fill={CARD_MUTED} fontSize="7" fontFamily={FONT_BODY}>
             {active === 'won' ? 'WON' : active === 'lost' ? 'LOST' : 'OPEN'}
           </text>
         </svg>

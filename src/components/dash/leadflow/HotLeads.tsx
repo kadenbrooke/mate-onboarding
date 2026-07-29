@@ -2,7 +2,7 @@ import Link from 'next/link';
 import { Card } from '../Card';
 import { scoreStats } from '@/lib/metrics/leads';
 import {
-  scoreColor, TRACK_BEIGE, TEXT_MUTED, NUM_DISPLAY, FONT_BODY, FONT_NUM,
+  scoreColor, CARD_TRACK, CARD_MUTED, NUM_DISPLAY, FONT_BODY, FONT_NUM,
 } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
@@ -22,7 +22,7 @@ function QualityArc({ avg }: { avg: number }) {
       <path
         d={`M ${50 - R} 50 A ${R} ${R} 0 0 1 ${50 + R} 50`}
         fill="none"
-        stroke={TRACK_BEIGE}
+        stroke={CARD_TRACK}
         strokeWidth={9}
         strokeLinecap="round"
       />
@@ -57,22 +57,26 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
       {/* Average lead quality gauge, merged from the old LEAD QUALITY card */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
         <QualityArc avg={avg} />
-        <div style={{ fontSize: 10, color: TEXT_MUTED, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
+        <div style={{ fontSize: 10, color: CARD_MUTED, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
           avg lead quality
         </div>
       </div>
 
       {hot.length === 0 ? (
-        <div style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 12, fontFamily: FONT_BODY }}>
+        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 12, fontFamily: FONT_BODY }}>
           No uncontacted leads right now
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>
           {hot.map(l => (
             <Link
               key={l.id}
               href={`/dash/${sessionId}/leads?spotlight=${l.id}`}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', color: 'inherit' }}
+              // minHeight 44: each row is a full-size touch target on mobile
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none',
+                color: 'inherit', minHeight: 44, padding: '2px 0',
+              }}
             >
               {/* Score as traffic-light colored number */}
               <span style={{
@@ -88,7 +92,7 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
               <div style={{ minWidth: 0 }}>
                 {/* Lead name: DM Sans semibold, not Syne (not a section heading) */}
                 <div style={{ fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14 }}>{l.name ?? 'Unknown'}</div>
-                <div style={{ fontSize: 11, color: TEXT_MUTED, fontFamily: FONT_BODY }}>
+                <div style={{ fontSize: 11, color: CARD_MUTED, fontFamily: FONT_BODY }}>
                   {[l.service, l.city].filter(Boolean).join(' · ')}
                 </div>
               </div>

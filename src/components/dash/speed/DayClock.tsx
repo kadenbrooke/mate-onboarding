@@ -2,7 +2,7 @@
 import { useState } from 'react';
 import { Card } from '../Card';
 import { ringSegments } from '@/lib/metrics/ring';
-import { FREE_GREEN, brandVar, TRACK_BEIGE, TEXT_MUTED, FONT_BODY, FONT_NUM } from '@/lib/theme';
+import { FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, FONT_BODY, FONT_NUM } from '@/lib/theme';
 
 // Two-segment ring: leads caught OUTSIDE work hours (the success metric,
 // green) vs during work hours (brand). The split reuses the existing
@@ -39,7 +39,7 @@ export function DayClock({ totalCount, afterHoursCount }: { totalCount: number; 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 10 }}>
         <svg viewBox="0 0 120 120" style={{ width: 116, flexShrink: 0 }} data-testid="dayclock-ring">
           <g transform="translate(60,60) rotate(-90)">
-            <circle r={R} fill="none" stroke={TRACK_BEIGE} strokeWidth={11} />
+            <circle r={R} fill="none" stroke={CARD_TRACK} strokeWidth={11} />
             {segs.map(s => (
               <circle
                 key={s.key}
@@ -69,7 +69,7 @@ export function DayClock({ totalCount, afterHoursCount }: { totalCount: number; 
           >
             {values[active]}
           </text>
-          <text x="60" y="71" textAnchor="middle" fill={TEXT_MUTED} fontSize="7" letterSpacing={1} fontFamily={FONT_BODY}>
+          <text x="60" y="71" textAnchor="middle" fill={CARD_MUTED} fontSize="7" letterSpacing={1} fontFamily={FONT_BODY}>
             {SEG_LABEL[active]}
           </text>
         </svg>
@@ -79,12 +79,13 @@ export function DayClock({ totalCount, afterHoursCount }: { totalCount: number; 
             <button
               key={k}
               type="button"
+              className="dash-tap"
               onClick={() => setActive(k)}
               style={{
-                display: 'flex', alignItems: 'center', gap: 6, fontSize: 10,
-                fontFamily: FONT_BODY, background: 'none', border: 'none', padding: 0,
+                display: 'flex', alignItems: 'center', gap: 6, fontSize: 11,
+                fontFamily: FONT_BODY, background: 'none', border: 'none', padding: '4px 0',
                 cursor: 'pointer', textAlign: 'left',
-                color: active === k ? SEG_COLOR[k] : TEXT_MUTED,
+                color: active === k ? SEG_COLOR[k] : CARD_MUTED,
                 fontWeight: active === k ? 700 : 400,
               }}
             >
@@ -95,7 +96,7 @@ export function DayClock({ totalCount, afterHoursCount }: { totalCount: number; 
               {SEG_LABEL[k].toLowerCase()} {values[k]}
             </button>
           ))}
-          <div style={{ fontFamily: FONT_BODY, fontSize: 10, color: TEXT_MUTED }}>
+          <div style={{ fontFamily: FONT_BODY, fontSize: 10, color: CARD_MUTED }}>
             {SEG_SUB[active]}
           </div>
         </div>

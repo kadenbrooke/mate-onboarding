@@ -1,6 +1,6 @@
 import { Card } from '../Card';
 import {
-  FREE_GREEN, brandVar, TRACK_BEIGE, TEXT_MUTED, FONT_BODY, NUM_DISPLAY, NUM_TABLE,
+  FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, FONT_BODY, NUM_DISPLAY, NUM_TABLE,
 } from '@/lib/theme';
 
 const INDUSTRY_AVG_MINUTES = 47;
@@ -23,14 +23,14 @@ function Lane({ label, fillPct, fillColor, value, valueColor, note }: {
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4,
       }}>
-        <span style={{ fontSize: 9, letterSpacing: 1, color: TEXT_MUTED, fontFamily: FONT_BODY }}>
+        <span style={{ fontSize: 9, letterSpacing: 1, color: CARD_MUTED, fontFamily: FONT_BODY }}>
           {label}
         </span>
         {value != null
           ? <span style={{ ...NUM_TABLE, fontSize: 12, color: valueColor ?? 'inherit' }}>{value}</span>
-          : <span style={{ fontSize: 9, color: TEXT_MUTED, fontFamily: FONT_BODY }}>{note}</span>}
+          : <span style={{ fontSize: 9, color: CARD_MUTED, fontFamily: FONT_BODY }}>{note}</span>}
       </div>
-      <div style={{ background: TRACK_BEIGE, borderRadius: 99, height: 10, overflow: 'hidden' }}>
+      <div style={{ background: CARD_TRACK, borderRadius: 99, height: 10, overflow: 'hidden' }}>
         {fillPct != null && (
           <div style={{
             width: `${Math.max(2, Math.min(100, fillPct))}%`,
@@ -51,17 +51,17 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
   const multiple = Math.max(1, Math.round(industrySeconds / Math.max(avgReplySeconds, 1)));
 
   return (
-    <Card label="SPEED TO LEAD">
+    <Card label="REPLY TIME">
       {/* Big reply-time stat */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
         {warming ? (
-          <span style={{ fontSize: 13, color: TEXT_MUTED, fontFamily: FONT_BODY }}>
+          <span style={{ fontSize: 13, color: CARD_MUTED, fontFamily: FONT_BODY }}>
             waiting for your first lead
           </span>
         ) : (
           <>
             <span style={{ ...NUM_DISPLAY, fontSize: 32, lineHeight: 1 }}>{avgReplySeconds}</span>
-            <span style={{ fontSize: 13, color: TEXT_MUTED, fontFamily: FONT_BODY }}>sec avg reply</span>
+            <span style={{ fontSize: 13, color: CARD_MUTED, fontFamily: FONT_BODY }}>sec avg reply</span>
           </>
         )}
       </div>
@@ -84,12 +84,12 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
           fillPct={100}
           fillColor="#b8b0a4"
           value={`${INDUSTRY_AVG_MINUTES} min`}
-          valueColor={TEXT_MUTED}
+          valueColor={CARD_MUTED}
         />
       </div>
 
       {/* Footer */}
-      <div style={{ fontSize: 12, fontFamily: FONT_BODY, color: TEXT_MUTED, marginTop: 12, lineHeight: 1.5 }}>
+      <div style={{ fontSize: 12, fontFamily: FONT_BODY, color: CARD_MUTED, marginTop: 12, lineHeight: 1.5 }}>
         {warming ? (
           <>{FIRST_RESPONDER_STAT}% of jobs go to the first responder.</>
         ) : (

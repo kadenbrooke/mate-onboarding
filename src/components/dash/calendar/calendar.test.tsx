@@ -32,6 +32,14 @@ describe('BookedCalendar appointment popover', () => {
     expect(cell).toBeTruthy();
   });
 
+  it('wide mode keeps cells square too (round-4: no fixed-height rows)', () => {
+    render(<BookedCalendar appointments={[appt(0)]} wide showLabel={false} />);
+    const day = new Date().getDate();
+    const cell = screen.getByTestId(`day-cell-${day}`);
+    expect(cell.style.aspectRatio).toBe('1 / 1');
+    expect(cell.style.height).toBe('');
+  });
+
   it('clicking a dot opens details, tap-away dismisses', () => {
     const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
     const dot = container.querySelector('[data-testid^="appt-dot-"]') as HTMLElement;
@@ -53,5 +61,24 @@ describe('BookedCalendar appointment popover', () => {
     expect(screen.getByTestId('appt-popover')).toBeInTheDocument();
     fireEvent.keyDown(document, { key: 'Escape' });
     expect(screen.queryByTestId('appt-popover')).not.toBeInTheDocument();
+  });
+
+  it('tapping the whole day cell toggles the first appointment popover (44px mobile target)', () => {
+    render(<BookedCalendar appointments={[appt(0)]} />);
+    const day = new Date().getDate();
+    const cell = screen.getByTestId(`day-cell-${day}`);
+    fireEvent.click(cell);
+    expect(screen.getByTestId('appt-popover')).toBeInTheDocument();
+    // Tapping the cell again dismisses it
+    fireEvent.click(cell);
+    expect(screen.queryByTestId('appt-popover')).not.toBeInTheDocument();
+  });
+
+  it('popover carries a column-aware alignment so edge columns never clip offscreen', () => {
+    const { container } = render(<BookedCalendar appointments={[appt(0)]} />);
+    const dot = container.querySelector('[data-testid^="appt-dot-"]') as HTMLElement;
+    fireEvent.click(dot);
+    const pop = screen.getByTestId('appt-popover');
+    expect(['left', 'center', 'right']).toContain(pop.getAttribute('data-align'));
   });
 });

@@ -1,7 +1,9 @@
 'use client';
 import { useState } from 'react';
+import { CaretRight } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
+import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/recovered';
 import { Card, SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MobileNav, type MobileView } from './MobileNav';
@@ -20,17 +22,46 @@ import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
 import type { DashData } from './types';
+import {
+  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
+} from '@/lib/theme';
 
 // Light-theme layout (2026-07 redesign): each zone is a large light-grey
 // SectionCard holding white stat sub-cards. Mobile stacks the white cards
 // directly on the warm canvas.
 
+/** Mobile row link styled as a white card: full-width 48px touch target. */
+function LinkCard({ href, label }: { href: string; label: string }) {
+  return (
+    <a
+      href={href}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        minHeight: 48, padding: '0 16px', borderRadius: 16,
+        background: BG_CARD, boxShadow: CARD_SHADOW, textDecoration: 'none',
+        color: TEXT_DARK, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+      }}
+    >
+      {label}
+      <CaretRight size={15} weight="bold" color={brandVar} aria-hidden />
+    </a>
+  );
+}
+
 export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
+  // Tab switch resets scroll: landing mid-scroll on a shorter view strands
+  // the user below the fold. try/catch: jsdom has no scrollTo implementation.
+  const switchView = (v: MobileView) => {
+    setView(v);
+    try { window.scrollTo({ top: 0 }); } catch { /* non-browser env */ }
+  };
   const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: data.weekActionCount, minutesPerAction: 5 }); // PLAN3: retainer from session
   const series = heroSeries(leads, data.events, { minutesPerAction: 5 });
+  // Daily cumulative series + WoW dollar delta for the Mercury-style dark card
+  const recovered = { points: recoveredDailySeries(leads), deltaCents: recoveredWowDeltaCents(leads) };
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;
@@ -60,12 +91,10 @@ export function DashboardView({ session, leads, data }: {
       </div>
     </div>
   );
-  const pipelineZone = <TwinRings leads={leads} />;
-
   // Mobile view stacks
   const mobileHome = (
     <>
-      <HeroStrip {...hero} series={series} />
+      <HeroStrip {...hero} series={series} recovered={recovered} />
       <Ticker events={data.events} />
       <HotLeads leads={leads} sessionId={session.id} />
       {calendarZone}
@@ -77,12 +106,7 @@ export function DashboardView({ session, leads, data }: {
     <>
       <TrendCard leads={leads} />
       <JourneyRiver leads={leads} />
-      <a
-        href={`/dash/${session.id}/leads`}
-        style={{ fontSize: 13, color: 'var(--brand-primary, #e14d1a)', textDecoration: 'none', display: 'block', marginTop: 4 }}
-      >
-        Open full leads table
-      </a>
+      <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" />
       <SourceDonut leads={leads} />
       <ValueWheel leads={leads} />
       <AreaBars leads={leads} />
@@ -101,12 +125,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileCrew = (
     <>
       <CrewRoster capabilities={data.capabilities} />
-      <a
-        href={`/portal?session=${session.id}`}
-        style={{ fontSize: 13, color: 'var(--brand-primary, #e14d1a)', textDecoration: 'none', display: 'block', marginTop: 4 }}
-      >
-        Chat with Mate
-      </a>
+      <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" />
       {setupStub}
       <SystemPulse incidents={data.incidents} />
     </>
@@ -126,27 +145,47 @@ export function DashboardView({ session, leads, data }: {
         @media (min-width: 641px) { .dash-mobile, .dash-nav { display: none !important; } }
       `}</style>
 
-      {/* Desktop layout */}
-      <div className="dash-desktop" style={{ display: 'grid', gap: 12 }}>
-        <HeroStrip {...hero} series={series} />
+      {/* Desktop layout. Every SectionCard carries an eyebrow label; ids are
+          the icon-rail scroll anchors. Round-4: the zone grid became two
+          independent masonry columns (alignItems start + alignContent start)
+          so every SectionCard takes exactly its content height instead of
+          stretching to the tallest row sibling; uneven column bottoms are
+          founder-approved. Lead-flow's big stack anchors the left column. */}
+      <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
+        <HeroStrip {...hero} series={series} recovered={recovered} />
         <Ticker events={data.events} />
-        <SectionCard>
-          <JourneyRiver leads={leads} />
+        <SectionCard id="zone-calendar" title="Calendar">
+          <BookedCalendar appointments={data.appointments} showLabel={false} wide />
         </SectionCard>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
-          <SectionCard>{calendarZone}</SectionCard>
-          <SectionCard>{pipelineZone}</SectionCard>
-          <SectionCard>{followUpZone}</SectionCard>
-          <SectionCard title="Speed">{speedZone}</SectionCard>
-          <SectionCard>{reputationZone}</SectionCard>
-        </div>
-        <SectionCard title="Operations">
-          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
-            <CrewRoster capabilities={data.capabilities} />
-            <SystemPulse incidents={data.incidents} />
+        <div
+          data-testid="dash-columns"
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}
+        >
+          <div data-testid="dash-col-left" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
+            <SectionCard id="zone-leadflow" title="Lead flow">{leadFlowZone}</SectionCard>
+            <SectionCard id="zone-speed" title="Speed to lead">{speedZone}</SectionCard>
+            <SectionCard title="Pipeline">
+              <TwinRings leads={leads} showLabel={false} />
+            </SectionCard>
           </div>
-        </SectionCard>
+          <div data-testid="dash-col-right" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
+            <SectionCard title="Lead journey">
+              <JourneyRiver leads={leads} showLabel={false} />
+            </SectionCard>
+            <SectionCard id="zone-followup" title="Follow-up engine">
+              <FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} />
+            </SectionCard>
+            <SectionCard id="zone-reputation" title="Reputation">
+              <ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} />
+            </SectionCard>
+            <SectionCard title="Operations">
+              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
+                <CrewRoster capabilities={data.capabilities} />
+                <SystemPulse incidents={data.incidents} />
+              </div>
+            </SectionCard>
+          </div>
+        </div>
       </div>
 
       {/* Mobile layout */}
@@ -158,7 +197,7 @@ export function DashboardView({ session, leads, data }: {
         {mobileViewContent[view]}
       </div>
 
-      <MobileNav view={view} onChange={setView} />
+      <MobileNav view={view} onChange={switchView} />
     </main>
   );
 }
