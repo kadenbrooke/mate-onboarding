@@ -43,3 +43,9 @@ create index if not exists ad_metrics_session_date_idx
 
 -- RLS on, no policies: only the service-role key reaches these rows.
 alter table public.ad_metrics enable row level security;
+
+-- Grant table access to service_role (the sb_secret_ key maps to it). When this
+-- migration is applied via the Management API (owner = postgres) the default
+-- privilege grants Supabase normally auto-applies on new public tables do NOT
+-- fire, so service_role would 42501 "permission denied" without this. Explicit.
+grant all on public.ad_metrics to service_role;
