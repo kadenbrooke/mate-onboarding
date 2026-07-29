@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { normalizeCode } from "@/lib/portal/access-code";
 import { validateSignupInput, type SignupInput } from "@/lib/portal/signup-validation";
+import { claimCode, unclaimCode, attachMembership } from "@/lib/portal/provision";
 
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as SignupInput | null;
@@ -10,17 +11,11 @@ export async function POST(req: Request) {
 
   const { email, password } = body!;
   const code = normalizeCode(body!.code)!;
-  const supabase = createServiceClient();
 
-  // Atomic single-use claim. No row back = missing, already claimed, or expired.
-  const { data: claimed } = await supabase
-    .from("portal_codes")
-    .update({ claimed_by_email: email.toLowerCase(), claimed_at: new Date().toISOString() })
-    .eq("code", code)
-    .is("claimed_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .select("code, session_id")
-    .maybeSingle();
+  // Claim FIRST (before createUser) so a caller cannot use this route to probe
+  // which emails already have accounts: an invalid code fails before any auth
+  // lookup happens.
+  const claimed = await claimCode(code);
   if (!claimed) {
     return NextResponse.json(
       { error: "That code is not valid. Check it, or ask us for a fresh one." },
@@ -28,12 +23,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const unclaim = () =>
-    supabase
-      .from("portal_codes")
-      .update({ claimed_by_email: null, claimed_at: null })
-      .eq("code", code)
-      .then(() => undefined);
+  const supabase = createServiceClient();
 
   // Invited clients skip the confirmation email: the access code IS the invite.
   const { data: created, error: userErr } = await supabase.auth.admin.createUser({
@@ -42,7 +32,7 @@ export async function POST(req: Request) {
     email_confirm: true,
   });
   if (userErr || !created?.user) {
-    await unclaim();
+    await unclaimCode(code);
     const exists = userErr?.message?.toLowerCase().includes("already");
     return NextResponse.json(
       { error: exists ? "An account with that email already exists. Log in instead." : "Could not create the account. Try again." },
@@ -50,37 +40,17 @@ export async function POST(req: Request) {
     );
   }
 
-  const createdSession = !claimed.session_id;
-  let sessionId = claimed.session_id as string | null;
-  if (!sessionId) {
-    const now = new Date().toISOString();
-    const { data: session, error: sessionErr } = await supabase
-      .from("onboarding_sessions")
-      .insert({ step: "website", status: "in_progress", created_at: now, updated_at: now })
-      .select("id")
-      .single();
-    if (sessionErr || !session) {
-      await supabase.auth.admin.deleteUser(created.user.id).catch(() => undefined);
-      await unclaim();
-      return NextResponse.json({ error: "Could not start onboarding. Try again." }, { status: 500 });
-    }
-    sessionId = session.id;
-  }
-
-  const { error: memberErr } = await supabase.from("portal_members").insert({
-    user_id: created.user.id,
-    email: email.toLowerCase(),
-    session_id: sessionId,
-    role: "owner",
+  const res = await attachMembership({
+    code,
+    userId: created.user.id,
+    email,
+    claimedSessionId: claimed.sessionId,
   });
-  if (memberErr) {
+  if ("error" in res) {
     await supabase.auth.admin.deleteUser(created.user.id).catch(() => undefined);
-    await unclaim();
-    if (createdSession) {
-      await supabase.from("onboarding_sessions").delete().eq("id", sessionId).then(() => undefined, () => undefined);
-    }
-    return NextResponse.json({ error: "Could not finish account setup. Try again." }, { status: 500 });
+    await unclaimCode(code);
+    return NextResponse.json({ error: res.error }, { status: 500 });
   }
 
-  return NextResponse.json({ sessionId });
+  return NextResponse.json({ sessionId: res.sessionId });
 }
