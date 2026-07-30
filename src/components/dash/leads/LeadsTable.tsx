@@ -24,7 +24,11 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
 }) {
   const [rows, setRows] = useState(leads);
   const [query, setQuery] = useState('');
-  const [sort, setSort] = useState<SortEntry[]>([]);
+  // Default sort: open leads first (open>won>lost), then highest score first.
+  const [sort, setSort] = useState<SortEntry[]>([
+    { key: 'status', dir: 'asc' },
+    { key: 'score', dir: 'desc' },
+  ]);
   const visible = useMemo(
     () => applySort(searchLeads(rows, query), sort),
     [rows, query, sort],
