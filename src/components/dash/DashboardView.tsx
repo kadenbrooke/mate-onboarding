@@ -21,6 +21,7 @@ import { FollowUpZone } from './followup/FollowUpZone';
 import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
+import { AssistantView } from './assistant/AssistantView';
 import type { DashData } from './types';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
@@ -136,6 +137,7 @@ export function DashboardView({ session, leads, data }: {
     leads: mobileLeads,
     money: mobileMoney,
     crew: mobileCrew,
+    assistant: <AssistantView sessionId={session.id} />,
   };
 
   return (

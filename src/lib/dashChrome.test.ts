@@ -13,6 +13,12 @@ describe('activeNavKey', () => {
   });
 });
 
+describe('activeNavKey assistant', () => {
+  it('detects assistant', () => { expect(activeNavKey('/dash/abc/assistant')).toBe('assistant'); });
+  it('detects leads', () => { expect(activeNavKey('/dash/abc/leads')).toBe('leads'); });
+  it('defaults to dashboard', () => { expect(activeNavKey('/dash/abc')).toBe('dashboard'); });
+});
+
 describe('businessInitials', () => {
   it('uses the capitals the business spells itself with', () => {
     expect(businessInitials('J&C Asphalt Paving')).toBe('JC');

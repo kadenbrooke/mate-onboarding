@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { SquaresFour, UsersThree, Bell, SignOut } from '@phosphor-icons/react';
+import { SquaresFour, UsersThree, ChatCircle, Bell, SignOut } from '@phosphor-icons/react';
 import { activeNavKey, businessInitials, type DashNavKey } from '@/lib/dashChrome';
 import { BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, TEXT_MUTED, brandVar } from '@/lib/theme';
 
@@ -69,6 +69,12 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
       href: `/dash/${sessionId}/leads`,
       label: 'Leads',
       icon: <UsersThree size={15} weight={active === 'leads' ? 'fill' : 'regular'} />,
+    },
+    {
+      key: 'assistant',
+      href: `/dash/${sessionId}/assistant`,
+      label: 'Assistant',
+      icon: <ChatCircle size={15} weight={active === 'assistant' ? 'fill' : 'regular'} />,
     },
   ];
 
