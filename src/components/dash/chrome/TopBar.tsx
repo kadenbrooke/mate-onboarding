@@ -91,7 +91,7 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
       {/* Logo chip: tenant logo when set; default is the inline Auto Mate
           lockup ("auto mate" black + "AI" orange), trimmed to its content box
           so height-based sizing renders at full wordmark size. */}
-      <span style={{ ...CHIP, width: 'auto', minWidth: 40, borderRadius: 99, padding: '0 14px' }}>
+      <span style={{ ...CHIP, width: 'auto', minWidth: 0, padding: 0, background: 'transparent', boxShadow: 'none' }}>
         <img
           src={logoUrl ?? '/logo-inline.png'}
           alt={logoUrl ? (businessName ?? 'Client logo') : 'Auto Mate AI'}
