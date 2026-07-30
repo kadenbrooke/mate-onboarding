@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import 'react-grid-layout/css/styles.css';
 import { redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
@@ -120,6 +121,19 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         /* Card light/dark star toggle: 13px glyph + 16px slop = ~45px target. */
         .dash-star { position: relative; }
         .dash-star::after { content: ''; position: absolute; inset: -16px; }
+        /* Movable dashboard grid (Customize mode): brand the drop placeholder
+           and keep the SE resize handle visible while editing. */
+        .dash-rgl-wrap { position: relative; }
+        .dash-rgl .react-grid-item.react-grid-placeholder {
+          background: var(--brand-primary, #e14d1a); opacity: 0.14; border-radius: 24px;
+        }
+        .dash-editing .dash-cell { outline: 1px dashed var(--brand-primary, #e14d1a); outline-offset: -1px; }
+        .dash-editing .react-grid-item > .react-resizable-handle { opacity: 1; }
+        .dash-editing .react-grid-item > .react-resizable-handle::after {
+          right: 5px; bottom: 5px; width: 8px; height: 8px;
+          border-right: 2px solid var(--brand-primary, #e14d1a);
+          border-bottom: 2px solid var(--brand-primary, #e14d1a);
+        }
       `}</style>
 
       <TopBar

@@ -45,22 +45,28 @@ describe('DashboardView', () => {
     }
   });
 
-  it('desktop zones pack into two masonry columns, each zone exactly once', () => {
+  it('desktop zones render once in the movable grid behind a Customize toggle', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
-    const cols = screen.getByTestId('dash-columns');
-    const left = screen.getByTestId('dash-col-left');
-    const right = screen.getByTestId('dash-col-right');
-    // Masonry: columns must not stretch to each other's height, and sections
-    // inside a column must not stretch to fill leftover space.
-    expect(cols.style.alignItems).toBe('start');
-    expect(left.style.alignContent).toBe('start');
-    expect(right.style.alignContent).toBe('start');
-    // Every zone lands in exactly one column (no duplicates, none dropped)
-    const zones = ['Lead flow', 'Speed to lead', 'Pipeline', 'Lead journey', 'Follow-up engine', 'Reputation', 'Operations'];
+    const desktop = screen.getByTestId('dash-desktop');
+    // Off by default: Customize entry shown, edit toolbar absent.
+    const customize = within(desktop).getByRole('button', { name: /customize layout/i });
+    expect(customize).toBeInTheDocument();
+    expect(within(desktop).queryByRole('button', { name: /done/i })).toBeNull();
+    // Every movable zone appears exactly once in the desktop grid.
+    const zones = ['Calendar', 'Lead flow', 'Speed to lead', 'Pipeline', 'Lead journey', 'Follow-up engine', 'Reputation', 'Operations'];
     for (const zone of zones) {
-      const count = within(left).queryAllByText(zone).length + within(right).queryAllByText(zone).length;
-      expect(count, `zone "${zone}" should appear exactly once across columns`).toBe(1);
+      expect(within(desktop).getAllByText(zone).length, `zone "${zone}" should appear exactly once`).toBe(1);
     }
+  });
+
+  it('entering Customize mode reveals Reset + Done controls', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    const desktop = screen.getByTestId('dash-desktop');
+    fireEvent.click(within(desktop).getByRole('button', { name: /customize layout/i }));
+    expect(within(desktop).getByRole('button', { name: /done/i })).toBeInTheDocument();
+    expect(within(desktop).getByRole('button', { name: /reset/i })).toBeInTheDocument();
+    // Customize entry hides while editing.
+    expect(within(desktop).queryByRole('button', { name: /customize layout/i })).toBeNull();
   });
 
   it('desktop section cards expose the icon-rail scroll anchors', () => {
