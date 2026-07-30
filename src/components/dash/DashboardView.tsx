@@ -23,6 +23,7 @@ import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
+import { SortableStack, type StackItem } from './SortableStack';
 import type { DashData } from './types';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, BORDER_SOFT, brandVar,
@@ -137,52 +138,36 @@ export function DashboardView({ session, leads, data }: {
     ) },
   ];
 
-  // Mobile view stacks
-  const mobileHome = (
-    <>
-      <HeroStrip {...hero} series={series} recovered={recovered} />
-      <Ticker events={data.events} />
-      <HotLeads leads={leads} sessionId={session.id} />
-      {calendarZone}
-      <SystemPulse incidents={data.incidents} />
-    </>
-  );
-
-  const mobileLeads = (
-    <>
-      <TrendCard leads={leads} />
-      <JourneyRiver leads={leads} />
-      <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" />
-      <SourceDonut leads={leads} />
-      <ValueWheel leads={leads} />
-      <AreaBars leads={leads} />
-      {speedZone}
-    </>
-  );
-
-  const mobileMoney = (
-    <>
-      <TwinRings leads={leads} />
-      {adPerformanceZone}
-      {followUpZone}
-      {reputationZone}
-    </>
-  );
-
-  const mobileCrew = (
-    <>
-      <CrewRoster capabilities={data.capabilities} />
-      <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" />
-      {setupStub}
-      <SystemPulse incidents={data.incidents} />
-    </>
-  );
-
-  const mobileViewContent: Record<MobileView, React.ReactNode> = {
-    home: mobileHome,
-    leads: mobileLeads,
-    money: mobileMoney,
-    crew: mobileCrew,
+  // Mobile view stacks. Each tab is a reorderable list (SortableStack); on
+  // 'home' the Hero strip + Ticker stay pinned above the sortable cards, same
+  // as the desktop pinning. Reorder-only (resize is desktop-only).
+  const mobileStacks: Record<MobileView, StackItem[]> = {
+    home: [
+      { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} /> },
+      { id: 'm-calendar', node: calendarZone },
+      { id: 'm-pulse', node: <SystemPulse incidents={data.incidents} /> },
+    ],
+    leads: [
+      { id: 'm-trend', node: <TrendCard leads={leads} /> },
+      { id: 'm-journey', node: <JourneyRiver leads={leads} /> },
+      { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" /> },
+      { id: 'm-source', node: <SourceDonut leads={leads} /> },
+      { id: 'm-value', node: <ValueWheel leads={leads} /> },
+      { id: 'm-area', node: <AreaBars leads={leads} /> },
+      { id: 'm-speed', node: speedZone },
+    ],
+    money: [
+      { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
+      { id: 'm-ads', node: adPerformanceZone },
+      { id: 'm-followup', node: followUpZone },
+      { id: 'm-reputation', node: reputationZone },
+    ],
+    crew: [
+      { id: 'm-crew', node: <CrewRoster capabilities={data.capabilities} /> },
+      { id: 'm-chatlink', node: <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" /> },
+      { id: 'm-setup', node: setupStub },
+      { id: 'm-pulse2', node: <SystemPulse incidents={data.incidents} /> },
+    ],
   };
 
   return (
@@ -201,21 +186,7 @@ export function DashboardView({ session, leads, data }: {
       <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <HeroStrip {...hero} series={series} recovered={recovered} />
         <Ticker events={data.events} />
-        {!editing && (
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px',
-                borderRadius: 999, border: `1px solid ${BORDER_SOFT}`, background: BG_CARD,
-                color: TEXT_DARK, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-              }}
-            >
-              <SquaresFour size={14} weight="bold" color={brandVar} aria-hidden /> Customize layout
-            </button>
-          </div>
-        )}
+        {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
         <MovableDashGrid
           sessionId={session.id}
           cards={movableCards}
@@ -224,13 +195,30 @@ export function DashboardView({ session, leads, data }: {
         />
       </div>
 
-      {/* Mobile layout */}
+      {/* Mobile layout. Each tab is a reorderable SortableStack behind the same
+          Customize (editing) mode; on 'home' the Hero strip + Ticker stay
+          pinned above it. `key={view}` remounts the stack per tab so its order
+          state is scoped to that tab. */}
       <div
         className="dash-mobile"
         data-testid={`view-${view}`}
         style={{ display: 'grid', gap: 10 }}
       >
-        {mobileViewContent[view]}
+        {view === 'home' && (
+          <>
+            <HeroStrip {...hero} series={series} recovered={recovered} />
+            <Ticker events={data.events} />
+          </>
+        )}
+        {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
+        <SortableStack
+          key={view}
+          sessionId={session.id}
+          stackId={`mobile-${view}`}
+          items={mobileStacks[view]}
+          editing={editing}
+          onDone={() => setEditing(false)}
+        />
       </div>
 
       <MobileNav view={view} onChange={switchView} />
@@ -240,4 +228,23 @@ export function DashboardView({ session, leads, data }: {
 
 function Dim({ note }: { note?: string }) {
   return <div style={{ opacity: 0.45, fontSize: 12, marginTop: 10 }}>{note ?? 'coming online'}</div>;
+}
+
+/** Right-aligned "Customize layout" entry that flips the dashboard into edit mode. */
+function CustomizeBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px',
+          borderRadius: 999, border: `1px solid ${BORDER_SOFT}`, background: BG_CARD,
+          color: TEXT_DARK, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        }}
+      >
+        <SquaresFour size={14} weight="bold" color={brandVar} aria-hidden /> Customize layout
+      </button>
+    </div>
+  );
 }

@@ -73,6 +73,59 @@ export function clearLayout(sessionId: string): void {
   }
 }
 
+// --- Mobile stack order (reorder-only) -------------------------------------
+// Each mobile tab is a vertical list; a client's custom order is stored as an
+// array of card ids keyed per session + stack (tab).
+
+const ORDER_PREFIX = 'mate:dash:order:v1:';
+const orderKey = (sessionId: string, stackId: string) =>
+  `${ORDER_PREFIX}${sessionId}:${stackId}`;
+
+function isStringArray(v: unknown): v is string[] {
+  return Array.isArray(v) && v.every((x) => typeof x === 'string');
+}
+
+/** Read a stored stack order; null when absent/corrupt/unavailable. */
+export function loadOrder(sessionId: string, stackId: string): string[] | null {
+  try {
+    const raw = window.localStorage.getItem(orderKey(sessionId, stackId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return isStringArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveOrder(sessionId: string, stackId: string, ids: string[]): void {
+  try {
+    window.localStorage.setItem(orderKey(sessionId, stackId), JSON.stringify(ids));
+  } catch {
+    /* no-op */
+  }
+}
+
+export function clearOrder(sessionId: string, stackId: string): void {
+  try {
+    window.localStorage.removeItem(orderKey(sessionId, stackId));
+  } catch {
+    /* no-op */
+  }
+}
+
+/**
+ * Reconcile a stored order against the current card set: keep stored positions
+ * for ids that still exist, drop ids that vanished, append newly-added cards at
+ * the end. Guarantees the rendered order always covers exactly `defaults`.
+ */
+export function mergeOrder(stored: string[], defaults: string[]): string[] {
+  const present = new Set(defaults);
+  const kept = stored.filter((id) => present.has(id));
+  const keptSet = new Set(kept);
+  const appended = defaults.filter((id) => !keptSet.has(id));
+  return [...kept, ...appended];
+}
+
 /** Convert a measured pixel height into whole grid rows (RGL row math). */
 export function pxToRows(px: number): number {
   return Math.max(1, Math.ceil((px + GRID_MARGIN) / (GRID_ROW_HEIGHT + GRID_MARGIN)));

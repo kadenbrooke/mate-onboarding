@@ -103,7 +103,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         /* Bottom clearance = fixed MobileNav height + iPhone home indicator.
            Class-based so env() survives (CSSOM drops it from inline styles in
            some engines). */
-        .dash-shell { padding: 4px 16px calc(90px + env(safe-area-inset-bottom, 0px)); }
+        .dash-shell { padding: 4px 12px calc(90px + env(safe-area-inset-bottom, 0px)); }
         /* Icon rail is desktop chrome; below 641px the bottom MobileNav owns nav. */
         @media (max-width: 640px) { .dash-rail { display: none !important; } }
         /* Mid widths: shift content right so the fixed rail never overlaps it.
@@ -146,7 +146,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
       />
       <IconRail />
 
-      <div className="dash-shell" style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <div className="dash-shell" style={{ maxWidth: 1480, margin: '0 auto' }}>
         {children}
       </div>
     </div>

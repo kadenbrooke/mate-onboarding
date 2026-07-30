@@ -23,8 +23,8 @@ export interface MovableCard {
 }
 
 const FALLBACK_H = 24; // rows, used only for the sub-frame before measurement
-const MIN_W = 4;
-const MIN_H = 6;
+const MIN_W = 3; // 12 / 3 = up to 4 cards across a row
+const MIN_H = 5;
 
 /**
  * Desktop dashboard grid: drag to reorder, drag the SE corner to resize, all

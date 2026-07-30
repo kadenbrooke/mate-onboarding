@@ -76,6 +76,18 @@ describe('DashboardView', () => {
     }
   });
 
+  it('mobile Customize enters reorder mode with per-card drag handles', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    const mobile = screen.getByTestId('view-home');
+    fireEvent.click(within(mobile).getByRole('button', { name: /customize layout/i }));
+    // Re-query: the container re-renders into edit mode.
+    const editing = screen.getByTestId('view-home');
+    expect(within(editing).getByText(/drag a card by its handle/i)).toBeInTheDocument();
+    expect(within(editing).getByRole('button', { name: /done/i })).toBeInTheDocument();
+    // One drag handle per sortable home card (Hero + Ticker stay pinned).
+    expect(within(editing).getAllByRole('button', { name: /drag to reorder/i }).length).toBe(3);
+  });
+
   it('renders the Mercury-style recovered chart as the dark hero card', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
     expect(screen.getAllByTestId('recovered-chart').length).toBeGreaterThanOrEqual(1);
