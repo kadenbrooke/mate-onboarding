@@ -2,7 +2,7 @@
 import { useState, useEffect, useId } from 'react';
 import { Card } from '../Card';
 import { weekBars, monthBuckets, yearBuckets } from '@/lib/metrics/leads';
-import { brandVar, TRACK_BEIGE, TEXT_MUTED, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
+import { brandVar, CARD_TRACK, CARD_MUTED, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 type Range = 'WEEK' | 'MONTH' | 'YEAR';
@@ -78,8 +78,8 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
             borderRadius: 99,
             border: 'none',
             cursor: 'pointer',
-            background: range === c ? brandVar : TRACK_BEIGE,
-            color: range === c ? '#fff' : TEXT_MUTED,
+            background: range === c ? brandVar : CARD_TRACK,
+            color: range === c ? '#fff' : CARD_MUTED,
             fontWeight: range === c ? 700 : 400,
             fontFamily: FONT_BODY,
           }}
@@ -117,11 +117,11 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
                   style={{
                     width: '100%',
                     height: h,
-                    background: count > 0 ? brandVar : TRACK_BEIGE,
+                    background: count > 0 ? brandVar : CARD_TRACK,
                     borderRadius: count > 0 ? '5px 5px 2px 2px' : 3,
                   }}
                 />
-                <span style={{ fontSize: 9, color: TEXT_MUTED, fontFamily: FONT_BODY }}>{day}</span>
+                <span style={{ fontSize: 9, color: CARD_MUTED, fontFamily: FONT_BODY }}>{day}</span>
               </div>
             );
           })}

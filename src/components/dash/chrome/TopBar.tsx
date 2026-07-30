@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { SquaresFour, UsersThree, Bell } from '@phosphor-icons/react';
+import { SquaresFour, UsersThree, ChatCircle, Bell, SignOut } from '@phosphor-icons/react';
 import { activeNavKey, businessInitials, type DashNavKey } from '@/lib/dashChrome';
 import { BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, TEXT_MUTED, brandVar } from '@/lib/theme';
 
@@ -46,11 +46,13 @@ function NavPill({ href, label, icon, active }: {
   );
 }
 
-export function TopBar({ sessionId, businessName, logoUrl, openIncidents }: {
+export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signedIn, signOutAction }: {
   sessionId: string;
   businessName: string | null;
   logoUrl: string | null;
   openIncidents: number;
+  signedIn?: boolean;
+  signOutAction?: () => void;
 }) {
   const pathname = usePathname() ?? '';
   const active: DashNavKey = activeNavKey(pathname);
@@ -67,6 +69,12 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents }: {
       href: `/dash/${sessionId}/leads`,
       label: 'Leads',
       icon: <UsersThree size={15} weight={active === 'leads' ? 'fill' : 'regular'} />,
+    },
+    {
+      key: 'assistant',
+      href: `/dash/${sessionId}/assistant`,
+      label: 'Assistant',
+      icon: <ChatCircle size={15} weight={active === 'assistant' ? 'fill' : 'regular'} />,
     },
   ];
 
@@ -86,10 +94,12 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents }: {
         @media (max-width: 640px) { .dash-topnav, .dash-avatar { display: none !important; } }
       `}</style>
 
-      {/* Logo chip: tenant logo when set, black Auto Mate mark by default */}
+      {/* Logo chip: tenant logo when set; default is the inline Auto Mate
+          lockup ("auto mate" black + "AI" orange), trimmed to its content box
+          so height-based sizing renders at full wordmark size. */}
       <span style={{ ...CHIP, width: 'auto', minWidth: 40, borderRadius: 99, padding: '0 12px' }}>
         <img
-          src={logoUrl ?? '/logo-black.png'}
+          src={logoUrl ?? '/logo-inline.png'}
           alt={logoUrl ? (businessName ?? 'Client logo') : 'Auto Mate AI'}
           height={18}
           style={{ width: 'auto', maxWidth: 120, objectFit: 'contain', display: 'block' }}
@@ -125,6 +135,17 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents }: {
         }} aria-label={businessName ?? 'Client'}>
           {businessInitials(businessName)}
         </span>
+        {signedIn && signOutAction && (
+          <form action={signOutAction}>
+            <button
+              type="submit"
+              aria-label="Sign out"
+              style={{ ...CHIP, color: TEXT_MUTED, border: 'none', cursor: 'pointer' }}
+            >
+              <SignOut size={17} weight="regular" aria-hidden />
+            </button>
+          </form>
+        )}
       </div>
     </header>
   );

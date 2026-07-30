@@ -1,5 +1,5 @@
 import { Card } from '../Card';
-import { brandVar, TRACK_BEIGE, FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
+import { brandVar, CARD_TRACK, FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
 import { ringSegments } from '@/lib/metrics/ring';
 
 export function RescueRing({ rescued, missedTotal }: { rescued: number; missedTotal: number }) {
@@ -25,7 +25,7 @@ export function RescueRing({ rescued, missedTotal }: { rescued: number; missedTo
                 cx={0}
                 cy={0}
                 fill="none"
-                stroke={seg.key === 'rescued' ? brandVar : TRACK_BEIGE}
+                stroke={seg.key === 'rescued' ? brandVar : CARD_TRACK}
                 strokeWidth={12}
                 strokeDasharray={`${seg.dash} ${circ}`}
                 strokeDashoffset={seg.offset}

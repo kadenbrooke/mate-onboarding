@@ -29,10 +29,10 @@ describe('TopBar', () => {
     expect(screen.getByRole('link', { name: /dashboard/i })).not.toHaveAttribute('aria-current');
   });
 
-  it('defaults to the black Auto Mate logo asset with no text wordmark', () => {
+  it('defaults to the inline Auto Mate logo asset with no text wordmark', () => {
     render(<TopBar sessionId="s1" businessName="J&C Asphalt" logoUrl={null} openIncidents={0} />);
     const logo = screen.getByAltText('Auto Mate AI');
-    expect(logo).toHaveAttribute('src', '/logo-black.png');
+    expect(logo).toHaveAttribute('src', '/logo-inline.png');
     // The business name must not render as header text (avatar initials only)
     expect(screen.queryByText('J&C Asphalt')).toBeNull();
   });

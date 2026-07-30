@@ -21,6 +21,18 @@ describe('journeyRiver', () => {
     expect(out.quoted).toBe(2);          // leads with quote_cents
     expect(out.won).toBe(1);
     expect(out.open).toBe(2);
+    expect(out.lost).toBe(0);
     expect(out.wonCents).toBe(100000);
+  });
+
+  it('counts lost leads as their own outcome', () => {
+    const out = journeyRiver([
+      lead({ status: 'lost' }),
+      lead({ status: 'lost', source: 'referral' }),
+      lead({ status: 'won' }),
+    ]);
+    expect(out.lost).toBe(2);
+    expect(out.won).toBe(1);
+    expect(out.open).toBe(0);
   });
 });

@@ -1,5 +1,5 @@
 import {
-  NUM_DISPLAY, NUM_TABLE, FONT_BODY, FONT_HEAD, brandVar, TRACK_BEIGE, TEXT_MUTED,
+  NUM_DISPLAY, NUM_TABLE, FONT_BODY, FONT_HEAD, brandVar, CARD_TRACK, CARD_MUTED,
 } from '@/lib/theme';
 import type { Review } from '@/components/dash/types';
 
@@ -31,14 +31,14 @@ export function StarBars({
     <div>
       {/* Header row */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
-        <span style={{ fontSize: 10, letterSpacing: 1.5, color: TEXT_MUTED, fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"' }}>
+        <span style={{ fontSize: 10, letterSpacing: 1.5, color: CARD_MUTED, fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"' }}>
           GOOGLE RATING
         </span>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 4 }}>
           <span style={{ fontSize: 20, ...NUM_DISPLAY }}>
             {avgRating != null ? avgRating.toFixed(1) : '--'}
           </span>
-          <span style={{ fontSize: 10, color: TEXT_MUTED, fontFamily: FONT_BODY }}>
+          <span style={{ fontSize: 10, color: CARD_MUTED, fontFamily: FONT_BODY }}>
             ({total})
           </span>
         </div>
@@ -56,7 +56,7 @@ export function StarBars({
                 {star}★
               </span>
               {/* Track */}
-              <div style={{ flex: 1, height: 8, background: TRACK_BEIGE, borderRadius: 4, overflow: 'hidden' }}>
+              <div style={{ flex: 1, height: 8, background: CARD_TRACK, borderRadius: 4, overflow: 'hidden' }}>
                 <div style={{
                   height: '100%',
                   width: `${pct}%`,
@@ -66,7 +66,7 @@ export function StarBars({
                 }} />
               </div>
               {/* Count */}
-              <span style={{ fontSize: 10, color: TEXT_MUTED, width: 22, textAlign: 'right', flexShrink: 0, ...NUM_TABLE }}>
+              <span style={{ fontSize: 10, color: CARD_MUTED, width: 22, textAlign: 'right', flexShrink: 0, ...NUM_TABLE }}>
                 {count}
               </span>
             </div>

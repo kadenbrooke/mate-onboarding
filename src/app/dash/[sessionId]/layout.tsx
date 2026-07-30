@@ -1,9 +1,18 @@
 import type { ReactNode } from 'react';
+import { redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
+import { createClient } from '@/lib/supabase/server';
 import { brandToCssVars, BG_PAGE, TEXT_DARK } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
 import { TopBar } from '@/components/dash/chrome/TopBar';
 import { IconRail } from '@/components/dash/chrome/IconRail';
+
+async function signOutAction() {
+  'use server';
+  const supabase = await createClient();
+  await supabase.auth.signOut();
+  redirect('/login');
+}
 
 interface DashLayoutProps {
   children: ReactNode;
@@ -47,6 +56,20 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
     openIncidents = incidentsResult.count ?? 0;
   } catch {
     // Non-fatal: layout still renders with defaults.
+  }
+
+  // UI convenience only: show the sign-out control when a Supabase user is
+  // present. Security is enforced by requireDashAccess in the dash pages, not
+  // here (demo viewers are unauthenticated and simply never see the control).
+  let signedIn = false;
+  try {
+    const authClient = await createClient();
+    const {
+      data: { user },
+    } = await authClient.auth.getUser();
+    signedIn = !!user;
+  } catch {
+    // Fail-open to hidden control; page gates still enforce access.
   }
 
   // Wire session brand into CSS vars so all dash components that reference
@@ -94,6 +117,9 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
            12px apart center-to-center; full slop would cover the neighbor). */
         .dash-tap-y { position: relative; }
         .dash-tap-y::after { content: ''; position: absolute; inset: -8px -1px; }
+        /* Card light/dark star toggle: 13px glyph + 16px slop = ~45px target. */
+        .dash-star { position: relative; }
+        .dash-star::after { content: ''; position: absolute; inset: -16px; }
       `}</style>
 
       <TopBar
@@ -101,6 +127,8 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         businessName={businessName}
         logoUrl={logoUrl}
         openIncidents={openIncidents}
+        signedIn={signedIn}
+        signOutAction={signOutAction}
       />
       <IconRail />
 

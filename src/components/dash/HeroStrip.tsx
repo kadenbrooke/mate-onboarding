@@ -5,9 +5,10 @@ import type { HeroSeries } from '@/lib/metrics/hero';
 import type { DailyPoint } from '@/lib/metrics/recovered';
 import { RecoveredCard } from './RecoveredCard';
 import { useCountUp } from './useCountUp';
+import { useCardTheme, CardModeStar, themeKeyFromLabel } from './cardTheme';
 import {
   NUM_DISPLAY, FONT_BODY, brandVar,
-  BG_CARD, CARD_SHADOW, TEXT_DARK, TEXT_MUTED,
+  CARD_BG, CARD_FG, CARD_MUTED, CARD_SHADOW,
   SCORE_GREEN, SCORE_RED,
 } from '@/lib/theme';
 
@@ -69,11 +70,12 @@ type HeroCardProps = {
 };
 
 function HeroCard({ icon, label, trendPct, big, sub, buckets, sparkTestId }: HeroCardProps) {
+  const { dark, vars, toggle } = useCardTheme(themeKeyFromLabel(label));
   return (
-    <div className="hero-card" style={{
+    <div className="hero-card" data-card-mode={dark ? 'dark' : 'light'} style={{
       flex: 1, minWidth: 0, borderRadius: 16, padding: 16,
-      background: BG_CARD, color: TEXT_DARK, boxShadow: CARD_SHADOW,
-      display: 'flex', flexDirection: 'column',
+      background: CARD_BG, color: CARD_FG, boxShadow: CARD_SHADOW,
+      display: 'flex', flexDirection: 'column', ...vars,
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
@@ -87,17 +89,20 @@ function HeroCard({ icon, label, trendPct, big, sub, buckets, sparkTestId }: Her
           </span>
           <span style={{
             fontSize: 11, letterSpacing: 1.5, fontWeight: 600, fontFamily: FONT_BODY,
-            color: TEXT_MUTED,
+            color: CARD_MUTED,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {label}
           </span>
         </div>
-        <TrendBadge pct={trendPct} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <TrendBadge pct={trendPct} />
+          <CardModeStar dark={dark} onToggle={toggle} />
+        </div>
       </div>
       <div style={{ fontSize: 28, marginTop: 12, whiteSpace: 'nowrap', ...NUM_DISPLAY }}>{big}</div>
       {sub && (
-        <div style={{ fontSize: 11, fontFamily: FONT_BODY, marginTop: 2, color: TEXT_MUTED }}>
+        <div style={{ fontSize: 11, fontFamily: FONT_BODY, marginTop: 2, color: CARD_MUTED }}>
           {sub}
         </div>
       )}

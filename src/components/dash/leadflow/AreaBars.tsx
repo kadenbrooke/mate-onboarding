@@ -1,7 +1,7 @@
 import { Card } from '../Card';
 import { areaRanking } from '@/lib/metrics/leads';
 import type { Lead } from '@/lib/metrics/leads';
-import { brandVar, TRACK_BEIGE, TEXT_MUTED, NUM_TABLE, FONT_BODY } from '@/lib/theme';
+import { brandVar, CARD_TRACK, CARD_MUTED, NUM_TABLE, FONT_BODY } from '@/lib/theme';
 
 // Horizontal bar chart of lead counts by city: label left, rounded bar on a
 // beige track, count right. Replaced the concentric "racetrack" rings
@@ -16,7 +16,7 @@ export function AreaBars({ leads }: { leads: Lead[] }) {
   return (
     <Card label="BY AREA">
       {areas.length === 0 ? (
-        <div style={{ fontSize: 11, color: TEXT_MUTED, marginTop: 10, fontFamily: FONT_BODY }}>
+        <div style={{ fontSize: 11, color: CARD_MUTED, marginTop: 10, fontFamily: FONT_BODY }}>
           no area data yet
         </div>
       ) : (
@@ -29,7 +29,7 @@ export function AreaBars({ leads }: { leads: Lead[] }) {
               }}>
                 {a.city}
               </span>
-              <div style={{ flex: 1, height: 10, background: TRACK_BEIGE, borderRadius: 99, overflow: 'hidden' }}>
+              <div style={{ flex: 1, height: 10, background: CARD_TRACK, borderRadius: 99, overflow: 'hidden' }}>
                 <div style={{
                   width: `${Math.max(4, (a.count / max) * 100)}%`,
                   height: '100%',

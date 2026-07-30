@@ -13,6 +13,12 @@ describe('activeNavKey', () => {
   });
 });
 
+describe('activeNavKey assistant', () => {
+  it('detects assistant', () => { expect(activeNavKey('/dash/abc/assistant')).toBe('assistant'); });
+  it('detects leads', () => { expect(activeNavKey('/dash/abc/leads')).toBe('leads'); });
+  it('defaults to dashboard', () => { expect(activeNavKey('/dash/abc')).toBe('dashboard'); });
+});
+
 describe('businessInitials', () => {
   it('uses the capitals the business spells itself with', () => {
     expect(businessInitials('J&C Asphalt Paving')).toBe('JC');
@@ -32,9 +38,9 @@ describe('businessInitials', () => {
 });
 
 describe('RAIL_SECTIONS', () => {
-  it('covers the five scroll zones in page order', () => {
+  it('covers the scroll zones in page order', () => {
     expect(RAIL_SECTIONS.map(s => s.id)).toEqual([
-      'zone-leadflow', 'zone-speed', 'zone-followup', 'zone-reputation', 'zone-calendar',
+      'zone-leadflow', 'zone-speed', 'zone-ads', 'zone-followup', 'zone-reputation', 'zone-calendar',
     ]);
   });
 });

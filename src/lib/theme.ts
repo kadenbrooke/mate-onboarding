@@ -53,6 +53,44 @@ export function scoreColor(score: number): string {
 export const brandVar = 'var(--brand-primary, #e14d1a)';
 
 // ---------------------------------------------------------------------------
+// Per-card light/dark theming (round-4 founder pass).
+// Card containers (Card, RecoveredCard, HeroCard) set the --card-* custom
+// properties for their mode; widget internals consume the CARD_* tokens below
+// so every widget renders correctly in both modes. Fallbacks equal the light
+// palette, so content rendered outside a themed card is unchanged.
+// Brand orange, FREE_GREEN, score colors, and the source palette are
+// intentionally NOT var-swapped: they read fine on both surfaces.
+// ---------------------------------------------------------------------------
+
+/** Dark-mode card palette literals (the RecoveredCard treatment) */
+export const DARK_CARD_FG = '#ede6e6';
+export const DARK_CARD_MUTED = 'rgba(237,230,230,0.65)';
+export const DARK_CARD_FAINT = 'rgba(237,230,230,0.45)';
+export const DARK_CARD_HAIRLINE = 'rgba(237,230,230,0.16)';
+export const DARK_CARD_TRACK = 'rgba(237,230,230,0.18)';
+export const DARK_CARD_CHIP = 'rgba(255,255,255,0.1)';
+export const DARK_CARD_INSET = 'rgba(255,255,255,0.07)';
+/** Light-mode chip bg (readouts, delta pills) */
+export const LIGHT_CARD_CHIP = 'rgba(20,20,20,0.06)';
+
+/** Card surface background (white light / #1d1d1d dark) */
+export const CARD_BG = `var(--card-bg, ${BG_CARD})`;
+/** Primary text inside a card */
+export const CARD_FG = `var(--card-fg, ${TEXT_DARK})`;
+/** Muted secondary text inside a card */
+export const CARD_MUTED = `var(--card-muted, ${TEXT_MUTED})`;
+/** Faint tertiary text inside a card */
+export const CARD_FAINT = `var(--card-faint, ${TEXT_FAINT})`;
+/** Hairline borders inside a card */
+export const CARD_HAIRLINE = `var(--card-hairline, ${BORDER_SOFT})`;
+/** Ring tracks / inactive bars inside a card */
+export const CARD_TRACK = `var(--card-track, ${TRACK_BEIGE})`;
+/** Subtle chip/readout background inside a card */
+export const CARD_CHIP = `var(--card-chip, ${LIGHT_CARD_CHIP})`;
+/** Inset panel background inside a card (calendar cells, sub-panels) */
+export const CARD_INSET = `var(--card-inset, ${BG_SECTION})`;
+
+// ---------------------------------------------------------------------------
 // Typography tokens -- sourced from departments/marketing/brand-typography.md
 // ---------------------------------------------------------------------------
 

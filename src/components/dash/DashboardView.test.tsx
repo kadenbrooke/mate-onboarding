@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import { DashboardView } from './DashboardView';
 import type { DashData } from './types';
 
@@ -16,6 +16,7 @@ const emptyDash: DashData = {
   capabilities: [],
   incidents: [],
   weekActionCount: 0,
+  ads: null,
 };
 
 describe('DashboardView', () => {
@@ -41,6 +42,24 @@ describe('DashboardView', () => {
     const cardLabels = ['HOT RIGHT NOW', 'YOUR CREW', 'SYSTEM PULSE', 'LEADS'];
     for (const label of cardLabels) {
       expect(screen.getAllByText(label).length, `card label "${label}" not found`).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('desktop zones pack into two masonry columns, each zone exactly once', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    const cols = screen.getByTestId('dash-columns');
+    const left = screen.getByTestId('dash-col-left');
+    const right = screen.getByTestId('dash-col-right');
+    // Masonry: columns must not stretch to each other's height, and sections
+    // inside a column must not stretch to fill leftover space.
+    expect(cols.style.alignItems).toBe('start');
+    expect(left.style.alignContent).toBe('start');
+    expect(right.style.alignContent).toBe('start');
+    // Every zone lands in exactly one column (no duplicates, none dropped)
+    const zones = ['Lead flow', 'Speed to lead', 'Pipeline', 'Lead journey', 'Follow-up engine', 'Reputation', 'Operations'];
+    for (const zone of zones) {
+      const count = within(left).queryAllByText(zone).length + within(right).queryAllByText(zone).length;
+      expect(count, `zone "${zone}" should appear exactly once across columns`).toBe(1);
     }
   });
 

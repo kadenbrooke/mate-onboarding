@@ -24,6 +24,25 @@ describe('JourneyRiver', () => {
     expect(screen.getByText(/leads will flow here/i)).toBeInTheDocument();
   });
 
+  it('renders a Lost outcome node fed from Quoted in both variants', () => {
+    const { container } = render(<JourneyRiver leads={[
+      lead({}),
+      lead({ source: 'missed_call', status: 'lost' }),
+      lead({ source: 'web_form', status: 'open' }),
+    ]} />);
+    // Once per breakpoint variant (desktop + mobile SVGs)
+    expect(screen.getAllByText(/Lost 1/).length).toBe(2);
+    // Node + link exist in the desktop variant alongside the other outcomes
+    const desktopTexts = Array.from(container.querySelectorAll('.jr-desktop text')).map(t => t.textContent);
+    expect(desktopTexts.some(t => /Lost 1/.test(t ?? ''))).toBe(true);
+    expect(desktopTexts.some(t => /Won 1/.test(t ?? ''))).toBe(true);
+  });
+
+  it('omits the Lost node entirely when no leads are lost', () => {
+    render(<JourneyRiver leads={[lead({}), lead({ source: 'missed_call', status: 'open' })]} />);
+    expect(screen.queryByText(/Lost/)).toBeNull();
+  });
+
   it('3 distinct sources render 3 ribbon paths with unique destination y-coords', () => {
     const leads = [
       lead({ source: 'referral', status: 'won' }),

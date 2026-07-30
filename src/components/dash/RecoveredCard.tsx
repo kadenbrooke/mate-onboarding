@@ -7,18 +7,17 @@ import {
   nearestIndexForFraction, type DailyPoint,
 } from '@/lib/metrics/recovered';
 import { useCountUp } from './useCountUp';
+import { useCardTheme, CardModeStar } from './cardTheme';
 import {
-  NUM_DISPLAY, FONT_BODY, brandVar, BG_DARK_CARD, CARD_SHADOW,
+  NUM_DISPLAY, FONT_BODY, brandVar, CARD_SHADOW,
+  CARD_BG, CARD_FG, CARD_MUTED, CARD_FAINT, CARD_HAIRLINE, CARD_CHIP,
   SCORE_GREEN, SCORE_RED,
 } from '@/lib/theme';
 
-// Mercury-style interactive area chart: the page's single dark accent card.
-// Big number with cents superscript, WoW dollar delta, smooth monotone curve
-// with a gradient fade, hover/touch crosshair, sparse x-axis date labels.
-
-const LIGHT = '#ede6e6';
-const LIGHT_DIM = 'rgba(237,230,230,0.6)';
-const HAIRLINE = 'rgba(237,230,230,0.14)';
+// Mercury-style interactive area chart. Defaults to the page's dark accent
+// treatment; the star toggle (round-4) flips it to the light card treatment.
+// All surface-dependent colors come from the --card-* vars so the chart,
+// gradient, crosshair, and readout adapt to either mode.
 
 /** viewBox space; the svg stretches, strokes stay uniform via vector-effect. */
 const VW = 100;
@@ -41,6 +40,7 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
   const rawId = useId();
   const gradId = `rec-grad-${rawId.replace(/:/g, '')}`;
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const { dark, vars, toggle } = useCardTheme('recovered', true);
 
   const animated = useCountUp(totalCents);
   const { dollars, cents } = splitDollarsCents(animated);
@@ -66,37 +66,40 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
   };
 
   return (
-    <div className="hero-dark" style={{
+    <div className="hero-dark" data-card-mode={dark ? 'dark' : 'light'} style={{
       flex: 1.6, minWidth: 260, borderRadius: 16, padding: 16,
-      background: BG_DARK_CARD, color: LIGHT, boxShadow: CARD_SHADOW,
-      display: 'flex', flexDirection: 'column',
+      background: CARD_BG, color: CARD_FG, boxShadow: CARD_SHADOW,
+      display: 'flex', flexDirection: 'column', ...vars,
     }}>
-      {/* Header: icon chip + label, WoW dollar delta right-aligned */}
+      {/* Header: icon chip + label, WoW dollar delta + star toggle right-aligned */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
           <span aria-hidden style={{
             width: 30, height: 30, borderRadius: '50%', flexShrink: 0,
             display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-            background: 'rgba(255,255,255,0.1)', color: brandVar,
+            background: CARD_CHIP, color: brandVar,
           }}>
             <CurrencyDollar size={16} weight="bold" />
           </span>
           <span style={{
             fontSize: 11, letterSpacing: 1.5, fontWeight: 600, fontFamily: FONT_BODY,
-            color: 'rgba(237,230,230,0.65)', whiteSpace: 'nowrap',
+            color: CARD_MUTED, whiteSpace: 'nowrap',
           }}>
             RECOVERED
           </span>
         </div>
-        <span data-testid="recovered-delta" style={{
-          display: 'inline-flex', alignItems: 'center', gap: 2,
-          fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
-          color: up ? SCORE_GREEN : SCORE_RED,
-          background: 'rgba(255,255,255,0.08)', borderRadius: 99, padding: '3px 8px',
-        }}>
-          <DeltaArrow size={11} weight="bold" aria-hidden />
-          {moneyShort(Math.abs(deltaCents))}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+          <span data-testid="recovered-delta" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 2,
+            fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
+            color: up ? SCORE_GREEN : SCORE_RED,
+            background: CARD_CHIP, borderRadius: 99, padding: '3px 8px',
+          }}>
+            <DeltaArrow size={11} weight="bold" aria-hidden />
+            {moneyShort(Math.abs(deltaCents))}
+          </span>
+          <CardModeStar dark={dark} onToggle={toggle} />
+        </div>
       </div>
 
       {/* Big number: cents rendered superscript, Mercury style. nowrap keeps
@@ -105,12 +108,12 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
         <span style={{ fontSize: 32, ...NUM_DISPLAY }}>${dollars}</span>
         <span style={{
           fontSize: 16, ...NUM_DISPLAY,
-          verticalAlign: 'super', marginLeft: 1, color: LIGHT_DIM,
+          verticalAlign: 'super', marginLeft: 1, color: CARD_MUTED,
         }}>
           .{cents}
         </span>
       </div>
-      <div style={{ fontSize: 11, fontFamily: FONT_BODY, marginTop: 5, color: LIGHT_DIM }}>
+      <div style={{ fontSize: 11, fontFamily: FONT_BODY, marginTop: 5, color: CARD_MUTED }}>
         {points.length > 0 ? longDate(points[points.length - 1].date) : ''}
         {roiMultiple > 0 ? ` · ${roiMultiple.toFixed(1)}x what you pay` : ''}
       </div>
@@ -155,14 +158,14 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
             <div aria-hidden style={{
               position: 'absolute', left: `${hover.xPct}%`, width: 1,
               top: `${hover.yPct}%`, bottom: 0,
-              background: 'rgba(237,230,230,0.35)', transform: 'translateX(-0.5px)',
+              background: CARD_FAINT, transform: 'translateX(-0.5px)',
               pointerEvents: 'none',
             }} />
             {/* Hollow dot on the line */}
             <div aria-hidden style={{
               position: 'absolute', left: `${hover.xPct}%`, top: `${hover.yPct}%`,
               width: 9, height: 9, borderRadius: '50%',
-              background: BG_DARK_CARD, border: `2px solid ${brandVar}`,
+              background: CARD_BG, border: `2px solid ${brandVar}`,
               transform: 'translate(-50%, -50%)', pointerEvents: 'none',
             }} />
             {/* Value + date readout */}
@@ -170,12 +173,12 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
               position: 'absolute', top: -6,
               left: `${Math.min(80, Math.max(20, hover.xPct))}%`,
               transform: 'translateX(-50%)',
-              background: 'rgba(255,255,255,0.1)', borderRadius: 8,
+              background: CARD_CHIP, borderRadius: 8,
               padding: '3px 8px', fontSize: 10, fontFamily: FONT_BODY,
-              whiteSpace: 'nowrap', pointerEvents: 'none', color: LIGHT,
+              whiteSpace: 'nowrap', pointerEvents: 'none', color: CARD_FG,
             }}>
               <span style={{ fontWeight: 700 }}>{moneyShort(hover.point.cents)}</span>
-              <span style={{ color: LIGHT_DIM }}> · {shortDate(hover.point.date)}</span>
+              <span style={{ color: CARD_MUTED }}> · {shortDate(hover.point.date)}</span>
             </div>
           </>
         )}
@@ -184,10 +187,10 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
       {/* Hairline + sparse date labels */}
       <div style={{
         display: 'flex', justifyContent: 'space-between',
-        borderTop: `1px solid ${HAIRLINE}`, marginTop: 2, paddingTop: 5,
+        borderTop: `1px solid ${CARD_HAIRLINE}`, marginTop: 2, paddingTop: 5,
       }}>
         {ticks.map(i => (
-          <span key={i} style={{ fontSize: 9, fontFamily: FONT_BODY, color: 'rgba(237,230,230,0.45)' }}>
+          <span key={i} style={{ fontSize: 9, fontFamily: FONT_BODY, color: CARD_FAINT }}>
             {shortDate(points[i].date)}
           </span>
         ))}

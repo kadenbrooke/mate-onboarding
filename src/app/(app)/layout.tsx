@@ -28,9 +28,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .eq("client_slug", CLIENT_SLUG)
     .maybeSingle();
 
+  // No portal_access here does NOT mean stranger: portal members (clients)
+  // belong on their dash, not this internal shell. /postlogin re-routes them
+  // there and sends true strangers to /auth/signout for a real cookie-clearing
+  // sign-out (signOut() in a Server Component cannot write cookies). No loop:
+  // strangers never get redirected back to "/".
   if (!access) {
-    await supabase.auth.signOut();
-    redirect("/login?error=unauthorized");
+    redirect("/postlogin");
   }
 
   return (

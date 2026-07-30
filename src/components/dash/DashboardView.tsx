@@ -21,6 +21,8 @@ import { FollowUpZone } from './followup/FollowUpZone';
 import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
+import { AssistantView } from './assistant/AssistantView';
+import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import type { DashData } from './types';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
@@ -72,6 +74,9 @@ export function DashboardView({ session, leads, data }: {
   // Reputation zone
   const reputationZone = <ReputationZone reputation={data.reputation} reviews={data.reviews} />;
 
+  // Ad Performance zone (Meta spend + cost-per-lead)
+  const adPerformanceZone = <AdPerformanceZone ads={data.ads} />;
+
   // Stub zone for features arriving in a future plan
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
 
@@ -117,6 +122,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileMoney = (
     <>
       <TwinRings leads={leads} />
+      {adPerformanceZone}
       {followUpZone}
       {reputationZone}
     </>
@@ -136,6 +142,7 @@ export function DashboardView({ session, leads, data }: {
     leads: mobileLeads,
     money: mobileMoney,
     crew: mobileCrew,
+    assistant: <AssistantView sessionId={session.id} />,
   };
 
   return (
@@ -146,36 +153,49 @@ export function DashboardView({ session, leads, data }: {
       `}</style>
 
       {/* Desktop layout. Every SectionCard carries an eyebrow label; ids are
-          the icon-rail scroll anchors. Calendar (full width) and the journey
-          Sankey (grid cell) swapped slots in the round-2 founder pass. */}
+          the icon-rail scroll anchors. Round-4: the zone grid became two
+          independent masonry columns (alignItems start + alignContent start)
+          so every SectionCard takes exactly its content height instead of
+          stretching to the tallest row sibling; uneven column bottoms are
+          founder-approved. Lead-flow's big stack anchors the left column. */}
       <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <HeroStrip {...hero} series={series} recovered={recovered} />
         <Ticker events={data.events} />
         <SectionCard id="zone-calendar" title="Calendar">
           <BookedCalendar appointments={data.appointments} showLabel={false} wide />
         </SectionCard>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-          <SectionCard id="zone-leadflow" title="Lead flow">{leadFlowZone}</SectionCard>
-          <SectionCard title="Lead journey">
-            <JourneyRiver leads={leads} showLabel={false} />
-          </SectionCard>
-          <SectionCard title="Pipeline">
-            <TwinRings leads={leads} showLabel={false} />
-          </SectionCard>
-          <SectionCard id="zone-followup" title="Follow-up engine">
-            <FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} />
-          </SectionCard>
-          <SectionCard id="zone-speed" title="Speed to lead">{speedZone}</SectionCard>
-          <SectionCard id="zone-reputation" title="Reputation">
-            <ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} />
-          </SectionCard>
-        </div>
-        <SectionCard title="Operations">
-          <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
-            <CrewRoster capabilities={data.capabilities} />
-            <SystemPulse incidents={data.incidents} />
+        <div
+          data-testid="dash-columns"
+          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}
+        >
+          <div data-testid="dash-col-left" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
+            <SectionCard id="zone-leadflow" title="Lead flow">{leadFlowZone}</SectionCard>
+            <SectionCard id="zone-speed" title="Speed to lead">{speedZone}</SectionCard>
+            <SectionCard title="Pipeline">
+              <TwinRings leads={leads} showLabel={false} />
+            </SectionCard>
+            <SectionCard id="zone-ads" title="Ad performance">
+              <AdPerformanceZone ads={data.ads} showLabel={false} />
+            </SectionCard>
           </div>
-        </SectionCard>
+          <div data-testid="dash-col-right" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
+            <SectionCard title="Lead journey">
+              <JourneyRiver leads={leads} showLabel={false} />
+            </SectionCard>
+            <SectionCard id="zone-followup" title="Follow-up engine">
+              <FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} />
+            </SectionCard>
+            <SectionCard id="zone-reputation" title="Reputation">
+              <ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} />
+            </SectionCard>
+            <SectionCard title="Operations">
+              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
+                <CrewRoster capabilities={data.capabilities} />
+                <SystemPulse incidents={data.incidents} />
+              </div>
+            </SectionCard>
+          </div>
+        </div>
       </div>
 
       {/* Mobile layout */}

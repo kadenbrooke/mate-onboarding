@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { Card, SectionCard } from './Card';
 
 describe('Card', () => {
@@ -7,6 +7,51 @@ describe('Card', () => {
     render(<Card label="THE PIPELINE"><span>body</span></Card>);
     expect(screen.getByText('THE PIPELINE')).toBeInTheDocument();
     expect(screen.getByText('body')).toBeInTheDocument();
+  });
+});
+
+describe('Card star mode toggle', () => {
+  beforeEach(() => { window.localStorage.clear(); });
+
+  it('star flips the card between light and dark --card-* vars', () => {
+    const { container } = render(<Card label="THE PIPELINE"><span>body</span></Card>);
+    const card = container.querySelector('section')!;
+    expect(card.getAttribute('data-card-mode')).toBe('light');
+    expect(card.style.getPropertyValue('--card-bg')).toBe('#ffffff');
+    expect(card.style.getPropertyValue('--card-fg')).toBe('#141414');
+
+    const star = screen.getByRole('button', { name: /switch card to dark mode/i });
+    expect(star).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(star);
+
+    expect(card.getAttribute('data-card-mode')).toBe('dark');
+    expect(card.style.getPropertyValue('--card-bg')).toBe('#1d1d1d');
+    expect(card.style.getPropertyValue('--card-fg')).toBe('#ede6e6');
+    expect(screen.getByRole('button', { name: /switch card to light mode/i }))
+      .toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('persists the chosen mode per card in localStorage', () => {
+    render(<Card label="THE PIPELINE"><span>body</span></Card>);
+    fireEvent.click(screen.getByRole('button', { name: /dark mode/i }));
+    expect(window.localStorage.getItem('mate-card-theme:the-pipeline')).toBe('dark');
+    fireEvent.click(screen.getByRole('button', { name: /light mode/i }));
+    expect(window.localStorage.getItem('mate-card-theme:the-pipeline')).toBe('light');
+  });
+
+  it('restores a persisted dark mode on mount (SSR-safe effect read)', async () => {
+    window.localStorage.setItem('mate-card-theme:leads', 'dark');
+    const { container } = render(<Card label="LEADS"><span>body</span></Card>);
+    await waitFor(() => {
+      expect(container.querySelector('section')!.getAttribute('data-card-mode')).toBe('dark');
+    });
+  });
+
+  it('prefers an explicit themeKey over the label slug (month-dependent labels)', () => {
+    render(<Card label="JULY BOOKED APPOINTMENTS" themeKey="calendar"><span>body</span></Card>);
+    fireEvent.click(screen.getByRole('button', { name: /dark mode/i }));
+    expect(window.localStorage.getItem('mate-card-theme:calendar')).toBe('dark');
+    expect(window.localStorage.getItem('mate-card-theme:july-booked-appointments')).toBeNull();
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 import { usePathname } from 'next/navigation';
-import { Funnel, Timer, ArrowsClockwise, Star, CalendarBlank } from '@phosphor-icons/react';
+import { Funnel, Timer, ArrowsClockwise, Star, CalendarBlank, Megaphone } from '@phosphor-icons/react';
 import { RAIL_SECTIONS, activeNavKey } from '@/lib/dashChrome';
 import { BG_CARD, CARD_SHADOW, TEXT_MUTED } from '@/lib/theme';
 
@@ -11,6 +11,7 @@ import { BG_CARD, CARD_SHADOW, TEXT_MUTED } from '@/lib/theme';
 const SECTION_ICONS: Record<(typeof RAIL_SECTIONS)[number]['id'], React.ReactNode> = {
   'zone-leadflow': <Funnel size={17} weight="regular" />,
   'zone-speed': <Timer size={17} weight="regular" />,
+  'zone-ads': <Megaphone size={17} weight="regular" />,
   'zone-followup': <ArrowsClockwise size={17} weight="regular" />,
   'zone-reputation': <Star size={17} weight="regular" />,
   'zone-calendar': <CalendarBlank size={17} weight="regular" />,

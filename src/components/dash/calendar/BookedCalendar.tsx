@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { monthGrid } from '@/lib/metrics/calendar';
 import { moneyShort } from '@/lib/metrics/format';
 import {
-  brandVar, BG_SECTION, BORDER_SOFT, TEXT_MUTED, TEXT_FAINT, CARD_SHADOW,
-  NUM_TABLE, FONT_BODY,
+  brandVar, CARD_BG, CARD_FG, CARD_INSET, CARD_HAIRLINE, CARD_MUTED, CARD_FAINT,
+  CARD_SHADOW, NUM_TABLE, FONT_BODY,
 } from '@/lib/theme';
 import { Card } from '../Card';
 import type { Appointment } from '@/lib/metrics/calendar';
@@ -41,8 +41,9 @@ function ApptPopover({ appt, align = 'center' }: { appt: Appointment; align?: Po
         bottom: 'calc(100% + 6px)',
         ...alignStyle,
         zIndex: 20,
-        background: '#ffffff',
-        border: `1px solid ${BORDER_SOFT}`,
+        background: CARD_BG,
+        color: CARD_FG,
+        border: `1px solid ${CARD_HAIRLINE}`,
         borderRadius: 10,
         boxShadow: CARD_SHADOW,
         padding: '8px 10px',
@@ -55,7 +56,7 @@ function ApptPopover({ appt, align = 'center' }: { appt: Appointment; align?: Po
       }}
     >
       <div style={{ fontWeight: 600 }}>{appt.customer_name ?? 'Appointment'}</div>
-      <div style={{ color: TEXT_MUTED, marginTop: 2 }}>
+      <div style={{ color: CARD_MUTED, marginTop: 2 }}>
         {[formatTime(appt.starts_at), appt.service].filter(Boolean).join(' · ')}
       </div>
       {appt.price_cents != null && (
@@ -99,7 +100,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
     };
   }, [stickyKey]);
 
-  if (!mounted) return <div style={{ height: wide ? 260 : 320 }} />;
+  if (!mounted) return <div style={{ height: wide ? 640 : 320 }} />;
 
   const grid = monthGrid(appointments);
   const isEmpty = grid.totalCount === 0;
@@ -113,17 +114,24 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
     </span>
   );
 
-  // Wide slots drop the square aspect so a full month stays a short strip.
-  const cellShape: React.CSSProperties = wide ? { height: 44 } : { aspectRatio: '1 / 1' };
+  // Cells are square in EVERY mode (round-4: as tall as they are wide, full
+  // stop). Wide slots scale the day number + dots up so ~140px desktop cells
+  // don't look empty; the section simply gets tall, which is accepted.
+  const cellShape: React.CSSProperties = { aspectRatio: '1 / 1' };
+  const dayNumSize = wide ? 14 : 9;
+  const headerSize = wide ? 11 : 9;
+  const dotSize = wide ? 15 : 10;
+  const cellGap = wide ? 5 : 3;
+  const cellPad = wide ? '6px 8px' : '3px 4px';
 
   return (
-    <Card label={showLabel ? `${grid.monthLabel} BOOKED APPOINTMENTS` : undefined} right={rightSlot}>
+    <Card label={showLabel ? `${grid.monthLabel} BOOKED APPOINTMENTS` : undefined} themeKey="calendar" right={rightSlot}>
       {/* Mo-Su header row */}
       <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginTop: 10, marginBottom: 4,
+        display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: cellGap, marginTop: 10, marginBottom: 4,
       }}>
         {DAY_HEADERS.map(h => (
-          <div key={h} style={{ fontSize: 9, color: TEXT_FAINT, textAlign: 'center', fontFamily: FONT_BODY }}>
+          <div key={h} style={{ fontSize: headerSize, color: CARD_FAINT, textAlign: 'center', fontFamily: FONT_BODY }}>
             {h}
           </div>
         ))}
@@ -131,11 +139,11 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
 
       {/* Calendar grid */}
       <div style={{ position: 'relative' }} ref={wrapRef}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: cellGap }}>
           {grid.weeks.flat().map((cell, idx) => {
             if (!cell) {
               return <div key={`empty-${idx}`} style={{
-                background: 'transparent', border: `1px solid ${BORDER_SOFT}`,
+                background: 'transparent', border: `1px solid ${CARD_HAIRLINE}`,
                 borderRadius: 8, ...cellShape,
               }} />;
             }
@@ -160,11 +168,11 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                 onClick={appts.length > 0 ? () => setStickyKey(k => (k === `${cell.day}-0` ? null : `${cell.day}-0`)) : undefined}
                 style={{
                   cursor: appts.length > 0 ? 'pointer' : undefined,
-                  background: BG_SECTION,
-                  border: isToday ? `1px solid ${brandVar}` : `1px solid ${BORDER_SOFT}`,
+                  background: CARD_INSET,
+                  border: isToday ? `1px solid ${brandVar}` : `1px solid ${CARD_HAIRLINE}`,
                   borderRadius: 8,
                   ...cellShape,
-                  padding: '3px 4px',
+                  padding: cellPad,
                   opacity: isFuture ? 0.6 : 1,
                   display: 'flex',
                   flexDirection: 'column',
@@ -173,8 +181,8 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                 }}
               >
                 <span style={{
-                  fontSize: 9,
-                  color: isToday ? brandVar : TEXT_MUTED,
+                  fontSize: dayNumSize,
+                  color: isToday ? brandVar : CARD_MUTED,
                   fontWeight: isToday ? 700 : 400,
                   lineHeight: 1,
                 }}>
@@ -202,7 +210,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
                             onFocus={() => setHoverKey(key)}
                             onBlur={() => setHoverKey(k => (k === key ? null : k))}
                             style={{
-                              width: 10, height: 10, borderRadius: '50%',
+                              width: dotSize, height: dotSize, borderRadius: '50%',
                               background: brandVar,
                               border: 'none', padding: 0, cursor: 'pointer',
                               flexShrink: 0,
@@ -227,7 +235,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             pointerEvents: 'none',
           }}>
-            <span style={{ fontSize: 11, color: TEXT_MUTED, textAlign: 'center', fontFamily: FONT_BODY }}>
+            <span style={{ fontSize: 11, color: CARD_MUTED, textAlign: 'center', fontFamily: FONT_BODY }}>
               Appointments your agents book will land here
             </span>
           </div>
@@ -239,7 +247,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
         marginTop: 8, fontSize: 10,
       }}>
-        <span style={{ color: TEXT_MUTED, display: 'flex', alignItems: 'center', gap: 5, fontFamily: FONT_BODY }}>
+        <span style={{ color: CARD_MUTED, display: 'flex', alignItems: 'center', gap: 5, fontFamily: FONT_BODY }}>
           <span style={{
             display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
             background: brandVar,

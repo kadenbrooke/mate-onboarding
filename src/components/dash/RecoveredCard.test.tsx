@@ -50,4 +50,22 @@ describe('RecoveredCard', () => {
     render(<RecoveredCard totalCents={0} roiMultiple={0} deltaCents={0} points={[]} />);
     expect(screen.getByTestId('recovered-chart')).toBeInTheDocument();
   });
+
+  it('defaults dark and the star toggles it to the light treatment', () => {
+    window.localStorage.clear();
+    const { container } = render(
+      <RecoveredCard totalCents={0} roiMultiple={0} deltaCents={0} points={[]} />,
+    );
+    const card = container.querySelector('.hero-dark') as HTMLElement;
+    expect(card.getAttribute('data-card-mode')).toBe('dark');
+    expect(card.style.getPropertyValue('--card-bg')).toBe('#1d1d1d');
+
+    const star = screen.getByRole('button', { name: /switch card to light mode/i });
+    expect(star).toHaveAttribute('aria-pressed', 'true');
+    fireEvent.click(star);
+
+    expect(card.getAttribute('data-card-mode')).toBe('light');
+    expect(card.style.getPropertyValue('--card-bg')).toBe('#ffffff');
+    expect(window.localStorage.getItem('mate-card-theme:recovered')).toBe('light');
+  });
 });

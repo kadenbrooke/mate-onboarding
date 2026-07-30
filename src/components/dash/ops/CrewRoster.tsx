@@ -7,7 +7,7 @@
 // render LOCKED. This matches how capability.ts defines "usable".
 
 import { Card } from '../Card';
-import { FONT_BODY, FREE_GREEN, brandVar, TRACK_BEIGE, TEXT_MUTED, TEXT_DARK, BORDER_SOFT } from '@/lib/theme';
+import { FONT_BODY, FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, CARD_FG, CARD_HAIRLINE } from '@/lib/theme';
 import type { DashCapability } from '../types';
 
 const UNLOCK_HINTS: Record<string, string> = {
@@ -27,7 +27,7 @@ function isLive(status: string): boolean {
 function CrewChip({ label, live }: { label: string; live: boolean }) {
   const bg = live
     ? `radial-gradient(circle at 40% 35%, ${brandVar}, #a0340f)`
-    : TRACK_BEIGE;
+    : CARD_TRACK;
   return (
     <div
       aria-hidden
@@ -43,7 +43,7 @@ function CrewChip({ label, live }: { label: string; live: boolean }) {
         fontSize: 11,
         fontWeight: 700,
         fontFamily: FONT_BODY,
-        color: live ? '#fff' : TEXT_MUTED,
+        color: live ? '#fff' : CARD_MUTED,
         letterSpacing: 0.5,
       }}
     >
@@ -79,9 +79,9 @@ function StatusPill({ live }: { live: boolean }) {
         fontWeight: 700,
         fontFamily: FONT_BODY,
         letterSpacing: 1,
-        color: TEXT_MUTED,
-        background: TRACK_BEIGE,
-        border: `1px solid ${BORDER_SOFT}`,
+        color: CARD_MUTED,
+        background: CARD_TRACK,
+        border: `1px solid ${CARD_HAIRLINE}`,
         borderRadius: 99,
         padding: '2px 8px',
       }}
@@ -111,7 +111,7 @@ function CrewRow({ cap }: { cap: DashCapability }) {
             fontSize: 13,
             fontWeight: 700,
             fontFamily: FONT_BODY,
-            color: TEXT_DARK,
+            color: CARD_FG,
             lineHeight: '1.2',
           }}
         >

@@ -2,7 +2,7 @@ import { Card } from '@/components/dash/Card';
 import { CascadeFunnel } from '../followup/CascadeFunnel';
 import { StarBars } from './StarBars';
 import { ReferralRing } from './ReferralRing';
-import { FREE_GREEN, TEXT_MUTED, BG_SECTION, BORDER_SOFT, FONT_BODY, FONT_HEAD } from '@/lib/theme';
+import { FREE_GREEN, CARD_MUTED, CARD_BG, CARD_INSET, CARD_HAIRLINE, FONT_BODY, FONT_HEAD } from '@/lib/theme';
 import type { Reputation, Review } from '@/components/dash/types';
 
 export function ReputationZone({
@@ -18,8 +18,8 @@ export function ReputationZone({
   const label = showLabel ? 'THE REPUTATION MACHINE' : undefined;
   if (reputation == null) {
     return (
-      <Card label={label}>
-        <div style={{ color: TEXT_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
+      <Card label={label} themeKey="the-reputation-machine">
+        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
           turns on with review collection
         </div>
       </Card>
@@ -29,13 +29,13 @@ export function ReputationZone({
   const safeReviews = reviews ?? [];
 
   return (
-    <Card label={label}>
+    <Card label={label} themeKey="the-reputation-machine">
       {/* Twin cascades: 2-col grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 12 }}>
         {/* Left: REVIEWS cascade */}
         <div>
           <div style={{
-            fontSize: 10, letterSpacing: 1.5, color: TEXT_MUTED,
+            fontSize: 10, letterSpacing: 1.5, color: CARD_MUTED,
             fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 8,
           }}>
             REVIEWS
@@ -71,15 +71,15 @@ export function ReputationZone({
       `}</style>
       <div className="rep-panels" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
         <div style={{
-          border: `1px solid ${BORDER_SOFT}`, borderRadius: 12, padding: 14,
-          background: BG_SECTION,
+          border: `1px solid ${CARD_HAIRLINE}`, borderRadius: 12, padding: 14,
+          background: CARD_INSET,
         }}>
           <StarBars reviews={safeReviews} avgRating={reputation.avg_rating} />
         </div>
 
         <div style={{
           border: `1px solid color-mix(in srgb, ${FREE_GREEN} 25%, transparent)`, borderRadius: 12, padding: 14,
-          background: `color-mix(in srgb, ${FREE_GREEN} 6%, #ffffff)`,
+          background: `color-mix(in srgb, ${FREE_GREEN} 6%, ${CARD_BG})`,
         }}>
           <ReferralRing reputation={reputation} />
         </div>
