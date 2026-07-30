@@ -1,7 +1,7 @@
 'use client';
-import { House, UsersThree, CurrencyDollar, Robot } from '@phosphor-icons/react';
+import { House, UsersThree, CurrencyDollar, Robot, ChatCircle } from '@phosphor-icons/react';
 import { FONT_BODY, BG_CARD, BORDER_SOFT, TEXT_MUTED, brandVar } from '@/lib/theme';
-export type MobileView = 'home' | 'leads' | 'money' | 'crew';
+export type MobileView = 'home' | 'leads' | 'money' | 'crew' | 'assistant';
 
 // Bottom tab bar (<=640px only). Icon + label per tab, >=48px touch targets,
 // bottom padding clears the iPhone home indicator (safe-area-inset-bottom).
@@ -14,6 +14,7 @@ export function MobileNav({ view, onChange }: { view: MobileView; onChange: (v: 
     { key: 'leads', label: 'Leads', icon: a => <UsersThree size={20} weight={a ? 'fill' : 'regular'} /> },
     { key: 'money', label: 'Money', icon: a => <CurrencyDollar size={20} weight={a ? 'fill' : 'regular'} /> },
     { key: 'crew', label: 'Crew', icon: a => <Robot size={20} weight={a ? 'fill' : 'regular'} /> },
+    { key: 'assistant', label: 'Assistant', icon: a => <ChatCircle size={20} weight={a ? 'fill' : 'regular'} /> },
   ];
   return (
     <nav
