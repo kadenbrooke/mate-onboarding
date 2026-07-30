@@ -24,3 +24,12 @@ create table if not exists assistant_messages (
 
 create index if not exists idx_assistant_messages_chat
   on assistant_messages(chat_id, created_at asc);
+
+-- Tables created via the Management API are owned by postgres and do NOT
+-- inherit the PostgREST role grants automatically; grant explicitly so the
+-- service-role routes can read/write (all access is through service routes).
+-- RLS stays disabled to match the client_leads/onboarding_sessions pattern.
+grant all privileges on table assistant_chats, assistant_messages
+  to service_role, anon, authenticated;
+alter table assistant_chats disable row level security;
+alter table assistant_messages disable row level security;
