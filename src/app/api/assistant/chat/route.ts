@@ -23,6 +23,15 @@ export async function POST(request: NextRequest) {
 
   const supabase = createServiceClient();
 
+  // Tenant isolation: the chat must belong to THIS session. Demo sessions are
+  // public, so without this guard a caller could pass a known demo session_id
+  // plus another tenant's chat_id and read/write that tenant's conversation.
+  const { data: owner } = await supabase
+    .from('assistant_chats').select('session_id').eq('id', chat_id).maybeSingle();
+  if (!owner || owner.session_id !== session_id) {
+    return NextResponse.json({ error: 'chat not found' }, { status: 404 });
+  }
+
   const [{ data: session }, { data: leadsData }, { data: history }] = await Promise.all([
     supabase.from('onboarding_sessions').select('collected').eq('id', session_id).maybeSingle(),
     supabase.from('client_leads').select('*').eq('session_id', session_id).limit(500),
