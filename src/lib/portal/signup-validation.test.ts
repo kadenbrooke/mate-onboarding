@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { validateSignupInput } from "./signup-validation";
 
 describe("validateSignupInput", () => {
-  const good = { code: "MATE-AB24-CD56", email: "owner@biz.com", password: "longenough1" };
+  const good = { email: "owner@biz.com", password: "longenough1" };
   it("accepts a valid payload", () => {
     expect(validateSignupInput(good)).toBeNull();
   });
@@ -16,8 +16,5 @@ describe("validateSignupInput", () => {
   });
   it("rejects short password", () => {
     expect(validateSignupInput({ ...good, password: "short" })).toBeTruthy();
-  });
-  it("rejects unshapeable code", () => {
-    expect(validateSignupInput({ ...good, code: "nope" })).toBeTruthy();
   });
 });
