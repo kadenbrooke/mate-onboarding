@@ -37,6 +37,9 @@ export const TASK_MODELS = {
   extract: "google/gemini-2.5-flash",
   // First Responder SMS reply (light reasoning, 1-2 sentences): cheap, non-reasoning.
   reply: "google/gemini-2.5-flash",
+  // Dashboard assistant chat: longer answers about the client's data. Cheap,
+  // non-reasoning (same reasoning-model empty-output trap applies).
+  assistant: "google/gemini-2.5-flash",
 } as const
 
 export type TaskClass = keyof typeof TASK_MODELS
@@ -48,6 +51,7 @@ export type TaskClass = keyof typeof TASK_MODELS
 export const MIN_MAX_TOKENS: Record<TaskClass, number> = {
   extract: 1024,
   reply: 256,
+  assistant: 1500,
 }
 
 export function modelForClass(cls: TaskClass): string {
@@ -153,4 +157,49 @@ export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
   } catch {
     return ""
   }
+}
+
+export interface ChatStreamOpts {
+  messages: ChatMessage[]
+  system?: string
+  maxTokens?: number
+  taskClass?: TaskClass
+}
+
+/**
+ * Start a STREAMING chat completion through Portkey. Returns the raw fetch
+ * Response so the caller can pipe/parse the SSE body. Throws only on a
+ * misconfigured model id; network/HTTP errors surface via res.ok / res.body
+ * for the caller to handle. Mirrors chatComplete's provider/bypass logic.
+ */
+export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response> {
+  const cls = opts.taskClass ?? "assistant"
+  const { provider, model } = parseModelId(modelForClass(cls))
+  const key = providerKey(provider)
+
+  const messages: ChatMessage[] = opts.system
+    ? [{ role: "system", content: opts.system }, ...opts.messages]
+    : opts.messages
+
+  const floor = MIN_MAX_TOKENS[cls]
+  const maxTokens = Math.max(opts.maxTokens ?? floor, floor)
+
+  const bypass = process.env.LLM_PORTKEY_BYPASS === "1"
+  const baseUrl = bypass && provider === "openai" ? "https://api.openai.com" : portkeyBaseUrl()
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${key}`,
+  }
+  if (!(bypass && provider === "openai")) {
+    headers["x-portkey-provider"] = provider
+    headers["x-portkey-metadata"] = JSON.stringify({ app: "mate-onboarding", surface: "assistant" })
+  }
+
+  return fetch(`${baseUrl}/v1/chat/completions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true }),
+    signal: AbortSignal.timeout(60000),
+  })
 }

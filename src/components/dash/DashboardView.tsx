@@ -21,6 +21,7 @@ import { FollowUpZone } from './followup/FollowUpZone';
 import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
+import { AssistantView } from './assistant/AssistantView';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
 import { SortableStack, type StackItem } from './SortableStack';
@@ -138,10 +139,11 @@ export function DashboardView({ session, leads, data }: {
     ) },
   ];
 
-  // Mobile view stacks. Each tab is a reorderable list (SortableStack); on
-  // 'home' the Hero strip + Ticker stay pinned above the sortable cards, same
-  // as the desktop pinning. Reorder-only (resize is desktop-only).
-  const mobileStacks: Record<MobileView, StackItem[]> = {
+  // Mobile view stacks. Each non-assistant tab is a reorderable list
+  // (SortableStack); on 'home' the Hero strip + Ticker stay pinned above the
+  // sortable cards. Reorder-only (resize is desktop-only). The assistant tab is
+  // a full chat view, rendered directly below (never reorderable).
+  const mobileStacks: Record<Exclude<MobileView, 'assistant'>, StackItem[]> = {
     home: [
       { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} /> },
       { id: 'm-calendar', node: calendarZone },
@@ -204,21 +206,27 @@ export function DashboardView({ session, leads, data }: {
         data-testid={`view-${view}`}
         style={{ display: 'grid', gap: 10 }}
       >
-        {view === 'home' && (
+        {view === 'assistant' ? (
+          <AssistantView sessionId={session.id} />
+        ) : (
           <>
-            <HeroStrip {...hero} series={series} recovered={recovered} />
-            <Ticker events={data.events} />
+            {view === 'home' && (
+              <>
+                <HeroStrip {...hero} series={series} recovered={recovered} />
+                <Ticker events={data.events} />
+              </>
+            )}
+            {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
+            <SortableStack
+              key={view}
+              sessionId={session.id}
+              stackId={`mobile-${view}`}
+              items={mobileStacks[view]}
+              editing={editing}
+              onDone={() => setEditing(false)}
+            />
           </>
         )}
-        {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
-        <SortableStack
-          key={view}
-          sessionId={session.id}
-          stackId={`mobile-${view}`}
-          items={mobileStacks[view]}
-          editing={editing}
-          onDone={() => setEditing(false)}
-        />
       </div>
 
       <MobileNav view={view} onChange={switchView} />

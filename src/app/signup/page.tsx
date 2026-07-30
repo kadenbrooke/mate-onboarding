@@ -5,7 +5,6 @@ import { GoogleLogo } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
-  const [code, setCode] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -20,10 +19,10 @@ export default function SignupPage() {
       const res = await fetch("/api/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code, email, password }),
+        body: JSON.stringify({ email, password }),
       });
-      const data = (await res.json().catch(() => ({}))) as { sessionId?: string; error?: string };
-      if (!res.ok || !data.sessionId) {
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !data.ok) {
         setError(data.error ?? "Something went wrong. Try again.");
         setBusy(false);
         return;
@@ -32,37 +31,20 @@ export default function SignupPage() {
       const supabase = createClient();
       const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
       if (signInErr) {
-        setError("Account created. Now sign in at the login page.");
+        setError("Account created. Now sign in.");
         setBusy(false);
         return;
       }
-      window.location.replace(`/onboard?session=${data.sessionId}`);
+      window.location.replace("/postlogin");
     } catch {
       setError("Network problem. Try again.");
       setBusy(false);
     }
   }
 
-  // Google signup: reserve the code first (validate + stash signed cookie),
-  // then hand off to Google. /auth/callback claims the code once Google returns.
   async function onGoogle() {
     setError(null);
-    if (!code.trim()) {
-      setError("Enter your access code first.");
-      return;
-    }
     setBusy(true);
-    const res = await fetch("/api/signup/reserve", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ code }),
-    }).catch(() => null);
-    const data = res ? await res.json().catch(() => ({})) : {};
-    if (!res || !res.ok) {
-      setError(data.error ?? "Could not start. Try again.");
-      setBusy(false);
-      return;
-    }
     const supabase = createClient();
     const { error: oauthErr } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -84,34 +66,23 @@ export default function SignupPage() {
           <div className="text-sm text-[#888] mt-3">create your account</div>
         </div>
 
+        <button
+          type="button"
+          onClick={onGoogle}
+          disabled={busy}
+          className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] border border-[#333] hover:border-[#555] disabled:opacity-60 text-[#ede6e6] rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+        >
+          <GoogleLogo size={18} weight="bold" className="text-[#e14d1a]" />
+          Continue with Google
+        </button>
+
+        <div className="my-4 flex items-center gap-3 text-[#555] text-xs">
+          <div className="h-px flex-1 bg-[#2a2a2a]" />
+          or use email
+          <div className="h-px flex-1 bg-[#2a2a2a]" />
+        </div>
+
         <form onSubmit={onSubmit} className="space-y-3">
-          <input
-            type="text"
-            required
-            placeholder="access code"
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            autoCapitalize="characters"
-            autoComplete="off"
-            className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2.5 text-sm text-[#ede6e6] placeholder-[#666] focus:outline-none focus:border-[#e14d1a] tracking-widest"
-          />
-
-          <button
-            type="button"
-            onClick={onGoogle}
-            disabled={busy}
-            className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] border border-[#333] hover:border-[#555] disabled:opacity-60 text-[#ede6e6] rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
-          >
-            <GoogleLogo size={18} weight="bold" className="text-[#e14d1a]" />
-            Continue with Google
-          </button>
-
-          <div className="flex items-center gap-3 text-[#555] text-xs py-1">
-            <div className="h-px flex-1 bg-[#2a2a2a]" />
-            or use email
-            <div className="h-px flex-1 bg-[#2a2a2a]" />
-          </div>
-
           <input
             type="email"
             required

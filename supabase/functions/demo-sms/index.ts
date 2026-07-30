@@ -39,7 +39,7 @@ const BUSINESS = "fr_demo"
 // belt-and-suspenders fallback so an inbound reply never 401s if a signature is
 // ever absent. See _shared/webhook-auth.ts.
 const SMS_TOKEN_ENV = "DEMO_SMS_TOKEN"
-const HISTORY_TURNS = 10
+const HISTORY_TURNS = 50
 const FALLBACK_REPLY = "Thanks! One of our team will follow up shortly."
 const DEFAULT_GREETING = "Sorry we missed you. What can we help you with?"
 // Said once when a per-sender cap is hit, then we go silent for that number.

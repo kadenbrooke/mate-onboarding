@@ -2,10 +2,11 @@
 // Dash chrome helpers -- pure functions behind the top bar + icon rail.
 // ---------------------------------------------------------------------------
 
-export type DashNavKey = 'dashboard' | 'leads';
+export type DashNavKey = 'dashboard' | 'leads' | 'assistant';
 
 /** Which top-nav pill is active for the current pathname. */
 export function activeNavKey(pathname: string): DashNavKey {
+  if (/\/assistant\/?$/.test(pathname)) return 'assistant';
   return /\/leads\/?$/.test(pathname) ? 'leads' : 'dashboard';
 }
 
