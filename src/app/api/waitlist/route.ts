@@ -33,7 +33,7 @@ export async function POST(req: Request) {
 
   let contactId: string | null = existing?.contact_id ?? null;
   if (!existing) {
-    const { data: contact } = await service
+    const { data: contact, error: contactErr } = await service
       .from("contacts")
       .insert({
         name: businessName,
@@ -47,10 +47,13 @@ export async function POST(req: Request) {
       })
       .select("id")
       .maybeSingle();
+    // Non-fatal: the user still gets demo access. Log so a lost lead is
+    // diagnosable rather than vanishing silently.
+    if (contactErr) console.error("[waitlist] contacts insert failed:", contactErr.message);
     contactId = contact?.id ?? null;
   }
 
-  await service
+  const { error: waitlistErr } = await service
     .from("portal_waitlist")
     .upsert(
       {
@@ -63,6 +66,10 @@ export async function POST(req: Request) {
       },
       { onConflict: "user_id" }
     );
+  if (waitlistErr) {
+    console.error("[waitlist] portal_waitlist upsert failed:", waitlistErr.message);
+    return NextResponse.json({ error: "Could not join the waitlist. Try again." }, { status: 500 });
+  }
 
   // Best-effort founder nudge; never fail the request on a nudge error.
   await service
