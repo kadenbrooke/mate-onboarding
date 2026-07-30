@@ -1,7 +1,5 @@
 # Mate Dashboard — Contributor Guardrails (Claude Code)
 
-> DRAFT. At repo extraction this file becomes the **root `CLAUDE.md`** of the standalone mate repo. It is NOT active while mate lives in the amos monorepo (would misdirect internal sessions). Keep it here until the split.
-
 You are helping **Ben** make visual and design improvements to the Mate client dashboard (a Next.js app). Ben is not a developer. He describes what he wants in plain English; you handle all the mechanics safely.
 
 ## Non-negotiable rules
