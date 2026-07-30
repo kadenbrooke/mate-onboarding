@@ -38,9 +38,9 @@ describe('businessInitials', () => {
 });
 
 describe('RAIL_SECTIONS', () => {
-  it('covers the five scroll zones in page order', () => {
+  it('covers the scroll zones in page order', () => {
     expect(RAIL_SECTIONS.map(s => s.id)).toEqual([
-      'zone-leadflow', 'zone-speed', 'zone-followup', 'zone-reputation', 'zone-calendar',
+      'zone-leadflow', 'zone-speed', 'zone-ads', 'zone-followup', 'zone-reputation', 'zone-calendar',
     ]);
   });
 });

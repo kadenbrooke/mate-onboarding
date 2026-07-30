@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { GoogleLogo } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
@@ -42,6 +43,37 @@ export default function SignupPage() {
     }
   }
 
+  // Google signup: reserve the code first (validate + stash signed cookie),
+  // then hand off to Google. /auth/callback claims the code once Google returns.
+  async function onGoogle() {
+    setError(null);
+    if (!code.trim()) {
+      setError("Enter your access code first.");
+      return;
+    }
+    setBusy(true);
+    const res = await fetch("/api/signup/reserve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    }).catch(() => null);
+    const data = res ? await res.json().catch(() => ({})) : {};
+    if (!res || !res.ok) {
+      setError(data.error ?? "Could not start. Try again.");
+      setBusy(false);
+      return;
+    }
+    const supabase = createClient();
+    const { error: oauthErr } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (oauthErr) {
+      setError("Google sign-in did not complete. Try again.");
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
@@ -63,6 +95,23 @@ export default function SignupPage() {
             autoComplete="off"
             className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2.5 text-sm text-[#ede6e6] placeholder-[#666] focus:outline-none focus:border-[#e14d1a] tracking-widest"
           />
+
+          <button
+            type="button"
+            onClick={onGoogle}
+            disabled={busy}
+            className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] border border-[#333] hover:border-[#555] disabled:opacity-60 text-[#ede6e6] rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+          >
+            <GoogleLogo size={18} weight="bold" className="text-[#e14d1a]" />
+            Continue with Google
+          </button>
+
+          <div className="flex items-center gap-3 text-[#555] text-xs py-1">
+            <div className="h-px flex-1 bg-[#2a2a2a]" />
+            or use email
+            <div className="h-px flex-1 bg-[#2a2a2a]" />
+          </div>
+
           <input
             type="email"
             required

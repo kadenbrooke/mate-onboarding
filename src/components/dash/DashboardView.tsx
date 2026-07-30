@@ -22,6 +22,7 @@ import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
 import { AssistantView } from './assistant/AssistantView';
+import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import type { DashData } from './types';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
@@ -73,6 +74,9 @@ export function DashboardView({ session, leads, data }: {
   // Reputation zone
   const reputationZone = <ReputationZone reputation={data.reputation} reviews={data.reviews} />;
 
+  // Ad Performance zone (Meta spend + cost-per-lead)
+  const adPerformanceZone = <AdPerformanceZone ads={data.ads} />;
+
   // Stub zone for features arriving in a future plan
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
 
@@ -118,6 +122,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileMoney = (
     <>
       <TwinRings leads={leads} />
+      {adPerformanceZone}
       {followUpZone}
       {reputationZone}
     </>
@@ -168,6 +173,9 @@ export function DashboardView({ session, leads, data }: {
             <SectionCard id="zone-speed" title="Speed to lead">{speedZone}</SectionCard>
             <SectionCard title="Pipeline">
               <TwinRings leads={leads} showLabel={false} />
+            </SectionCard>
+            <SectionCard id="zone-ads" title="Ad performance">
+              <AdPerformanceZone ads={data.ads} showLabel={false} />
             </SectionCard>
           </div>
           <div data-testid="dash-col-right" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>

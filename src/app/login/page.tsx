@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { GoogleLogo } from "@phosphor-icons/react";
 import { createClient } from "@/lib/supabase/client";
 import { safeNextPath } from "@/lib/portal/safe-next";
 
@@ -9,6 +10,7 @@ import { safeNextPath } from "@/lib/portal/safe-next";
 const ERROR_MESSAGES: Record<string, string> = {
   unauthorized: "That account does not have access.",
   retry: "Temporary problem. Try signing in again.",
+  oauth: "Google sign-in did not complete. Try again.",
 };
 
 export default function LoginPage() {
@@ -45,6 +47,20 @@ export default function LoginPage() {
     router.refresh();
   }
 
+  async function onGoogle() {
+    setError(null);
+    setBusy(true);
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) {
+      setError("Google sign-in did not complete. Try again.");
+      setBusy(false);
+    }
+  }
+
   return (
     <main className="min-h-screen flex items-center justify-center p-6">
       <div className="w-full max-w-sm">
@@ -56,6 +72,22 @@ export default function LoginPage() {
             Mate
           </div>
           <div className="text-sm text-[#888] mt-3">onboarding</div>
+        </div>
+
+        <button
+          type="button"
+          onClick={onGoogle}
+          disabled={busy}
+          className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] border border-[#333] hover:border-[#555] disabled:opacity-60 text-[#ede6e6] rounded-lg px-3 py-2.5 text-sm font-medium transition-colors"
+        >
+          <GoogleLogo size={18} weight="bold" className="text-[#e14d1a]" />
+          Continue with Google
+        </button>
+
+        <div className="my-4 flex items-center gap-3 text-[#555] text-xs">
+          <div className="h-px flex-1 bg-[#2a2a2a]" />
+          or
+          <div className="h-px flex-1 bg-[#2a2a2a]" />
         </div>
 
         <form onSubmit={onSubmit} className="space-y-3">

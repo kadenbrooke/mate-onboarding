@@ -31,6 +31,7 @@ export function businessInitials(name: string | null | undefined): string {
 export const RAIL_SECTIONS = [
   { id: 'zone-leadflow', label: 'Lead flow' },
   { id: 'zone-speed', label: 'Speed to lead' },
+  { id: 'zone-ads', label: 'Ad performance' },
   { id: 'zone-followup', label: 'Follow-up engine' },
   { id: 'zone-reputation', label: 'Reputation' },
   { id: 'zone-calendar', label: 'Calendar' },
