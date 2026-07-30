@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { CaretRight } from '@phosphor-icons/react';
+import { CaretRight, SquaresFour } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
 import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/recovered';
@@ -23,9 +23,11 @@ import { CrewRoster } from './ops/CrewRoster';
 import { SystemPulse } from './ops/SystemPulse';
 import { AssistantView } from './assistant/AssistantView';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
+import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
+import { SortableStack, type StackItem } from './SortableStack';
 import type { DashData } from './types';
 import {
-  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
+  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, BORDER_SOFT, brandVar,
 } from '@/lib/theme';
 
 // Light-theme layout (2026-07 redesign): each zone is a large light-grey
@@ -54,6 +56,7 @@ export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
+  const [editing, setEditing] = useState(false);
   // Tab switch resets scroll: landing mid-scroll on a shorter view strands
   // the user below the fold. try/catch: jsdom has no scrollTo implementation.
   const switchView = (v: MobileView) => {
@@ -96,53 +99,77 @@ export function DashboardView({ session, leads, data }: {
       </div>
     </div>
   );
-  // Mobile view stacks
-  const mobileHome = (
-    <>
-      <HeroStrip {...hero} series={series} recovered={recovered} />
-      <Ticker events={data.events} />
-      <HotLeads leads={leads} sessionId={session.id} />
-      {calendarZone}
-      <SystemPulse incidents={data.incidents} />
-    </>
-  );
+  // Desktop movable card set. Geometry (x/y/w) is the founder-designed default:
+  // Calendar full-width on top, then a left column (Lead flow, Speed, Pipeline,
+  // Ad performance) and a right column (Lead journey, Follow-up, Reputation,
+  // Operations). Heights are measured at runtime by MovableDashGrid; the `id`s
+  // remain the IconRail scroll anchors.
+  const movableCards: MovableCard[] = [
+    { id: 'zone-calendar', x: 0, y: 0, w: 12, node: (
+      <SectionCard title="Calendar"><BookedCalendar appointments={data.appointments} showLabel={false} wide /></SectionCard>
+    ) },
+    { id: 'zone-leadflow', x: 0, y: 1, w: 6, node: (
+      <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
+    ) },
+    { id: 'zone-journey', x: 6, y: 1, w: 6, node: (
+      <SectionCard title="Lead journey"><JourneyRiver leads={leads} showLabel={false} /></SectionCard>
+    ) },
+    { id: 'zone-speed', x: 0, y: 2, w: 6, node: (
+      <SectionCard title="Speed to lead">{speedZone}</SectionCard>
+    ) },
+    { id: 'zone-followup', x: 6, y: 2, w: 6, node: (
+      <SectionCard title="Follow-up engine"><FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} /></SectionCard>
+    ) },
+    { id: 'zone-pipeline', x: 0, y: 3, w: 6, node: (
+      <SectionCard title="Pipeline"><TwinRings leads={leads} showLabel={false} /></SectionCard>
+    ) },
+    { id: 'zone-reputation', x: 6, y: 3, w: 6, node: (
+      <SectionCard title="Reputation"><ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} /></SectionCard>
+    ) },
+    { id: 'zone-ads', x: 0, y: 4, w: 6, node: (
+      <SectionCard title="Ad performance"><AdPerformanceZone ads={data.ads} showLabel={false} /></SectionCard>
+    ) },
+    { id: 'zone-operations', x: 6, y: 4, w: 6, node: (
+      <SectionCard title="Operations">
+        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
+          <CrewRoster capabilities={data.capabilities} />
+          <SystemPulse incidents={data.incidents} />
+        </div>
+      </SectionCard>
+    ) },
+  ];
 
-  const mobileLeads = (
-    <>
-      <TrendCard leads={leads} />
-      <JourneyRiver leads={leads} />
-      <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" />
-      <SourceDonut leads={leads} />
-      <ValueWheel leads={leads} />
-      <AreaBars leads={leads} />
-      {speedZone}
-    </>
-  );
-
-  const mobileMoney = (
-    <>
-      <TwinRings leads={leads} />
-      {adPerformanceZone}
-      {followUpZone}
-      {reputationZone}
-    </>
-  );
-
-  const mobileCrew = (
-    <>
-      <CrewRoster capabilities={data.capabilities} />
-      <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" />
-      {setupStub}
-      <SystemPulse incidents={data.incidents} />
-    </>
-  );
-
-  const mobileViewContent: Record<MobileView, React.ReactNode> = {
-    home: mobileHome,
-    leads: mobileLeads,
-    money: mobileMoney,
-    crew: mobileCrew,
-    assistant: <AssistantView sessionId={session.id} />,
+  // Mobile view stacks. Each non-assistant tab is a reorderable list
+  // (SortableStack); on 'home' the Hero strip + Ticker stay pinned above the
+  // sortable cards. Reorder-only (resize is desktop-only). The assistant tab is
+  // a full chat view, rendered directly below (never reorderable).
+  const mobileStacks: Record<Exclude<MobileView, 'assistant'>, StackItem[]> = {
+    home: [
+      { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} /> },
+      { id: 'm-calendar', node: calendarZone },
+      { id: 'm-pulse', node: <SystemPulse incidents={data.incidents} /> },
+    ],
+    leads: [
+      { id: 'm-trend', node: <TrendCard leads={leads} /> },
+      { id: 'm-journey', node: <JourneyRiver leads={leads} /> },
+      { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" /> },
+      { id: 'm-source', node: <SourceDonut leads={leads} /> },
+      { id: 'm-value', node: <ValueWheel leads={leads} /> },
+      { id: 'm-area', node: <AreaBars leads={leads} /> },
+      { id: 'm-speed', node: speedZone },
+    ],
+    money: [
+      { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
+      { id: 'm-ads', node: adPerformanceZone },
+      { id: 'm-followup', node: followUpZone },
+      { id: 'm-reputation', node: reputationZone },
+    ],
+    crew: [
+      { id: 'm-crew', node: <CrewRoster capabilities={data.capabilities} /> },
+      { id: 'm-chatlink', node: <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" /> },
+      { id: 'm-setup', node: setupStub },
+      { id: 'm-pulse2', node: <SystemPulse incidents={data.incidents} /> },
+    ],
   };
 
   return (
@@ -152,59 +179,54 @@ export function DashboardView({ session, leads, data }: {
         @media (min-width: 641px) { .dash-mobile, .dash-nav { display: none !important; } }
       `}</style>
 
-      {/* Desktop layout. Every SectionCard carries an eyebrow label; ids are
-          the icon-rail scroll anchors. Round-4: the zone grid became two
-          independent masonry columns (alignItems start + alignContent start)
-          so every SectionCard takes exactly its content height instead of
-          stretching to the tallest row sibling; uneven column bottoms are
-          founder-approved. Lead-flow's big stack anchors the left column. */}
-      <div className="dash-desktop" style={{ display: 'grid', gap: 10 }}>
+      {/* Desktop layout. Hero + Ticker stay pinned at the top; everything below
+          lives in MovableDashGrid, where a client can drag to reorder and drag
+          a card's SE corner to resize once they enter Customize mode. The
+          default arrangement reproduces the prior two-column masonry (Calendar
+          full-width on top; heights measured at runtime). Zone `id`s ride the
+          grid cells so the IconRail scroll anchors still resolve. */}
+      <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <HeroStrip {...hero} series={series} recovered={recovered} />
         <Ticker events={data.events} />
-        <SectionCard id="zone-calendar" title="Calendar">
-          <BookedCalendar appointments={data.appointments} showLabel={false} wide />
-        </SectionCard>
-        <div
-          data-testid="dash-columns"
-          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, alignItems: 'start' }}
-        >
-          <div data-testid="dash-col-left" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
-            <SectionCard id="zone-leadflow" title="Lead flow">{leadFlowZone}</SectionCard>
-            <SectionCard id="zone-speed" title="Speed to lead">{speedZone}</SectionCard>
-            <SectionCard title="Pipeline">
-              <TwinRings leads={leads} showLabel={false} />
-            </SectionCard>
-            <SectionCard id="zone-ads" title="Ad performance">
-              <AdPerformanceZone ads={data.ads} showLabel={false} />
-            </SectionCard>
-          </div>
-          <div data-testid="dash-col-right" style={{ display: 'grid', gap: 10, alignContent: 'start' }}>
-            <SectionCard title="Lead journey">
-              <JourneyRiver leads={leads} showLabel={false} />
-            </SectionCard>
-            <SectionCard id="zone-followup" title="Follow-up engine">
-              <FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} />
-            </SectionCard>
-            <SectionCard id="zone-reputation" title="Reputation">
-              <ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} />
-            </SectionCard>
-            <SectionCard title="Operations">
-              <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
-                <CrewRoster capabilities={data.capabilities} />
-                <SystemPulse incidents={data.incidents} />
-              </div>
-            </SectionCard>
-          </div>
-        </div>
+        {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
+        <MovableDashGrid
+          sessionId={session.id}
+          cards={movableCards}
+          editing={editing}
+          onDone={() => setEditing(false)}
+        />
       </div>
 
-      {/* Mobile layout */}
+      {/* Mobile layout. Each tab is a reorderable SortableStack behind the same
+          Customize (editing) mode; on 'home' the Hero strip + Ticker stay
+          pinned above it. `key={view}` remounts the stack per tab so its order
+          state is scoped to that tab. */}
       <div
         className="dash-mobile"
         data-testid={`view-${view}`}
         style={{ display: 'grid', gap: 10 }}
       >
-        {mobileViewContent[view]}
+        {view === 'assistant' ? (
+          <AssistantView sessionId={session.id} />
+        ) : (
+          <>
+            {view === 'home' && (
+              <>
+                <HeroStrip {...hero} series={series} recovered={recovered} />
+                <Ticker events={data.events} />
+              </>
+            )}
+            {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
+            <SortableStack
+              key={view}
+              sessionId={session.id}
+              stackId={`mobile-${view}`}
+              items={mobileStacks[view]}
+              editing={editing}
+              onDone={() => setEditing(false)}
+            />
+          </>
+        )}
       </div>
 
       <MobileNav view={view} onChange={switchView} />
@@ -214,4 +236,23 @@ export function DashboardView({ session, leads, data }: {
 
 function Dim({ note }: { note?: string }) {
   return <div style={{ opacity: 0.45, fontSize: 12, marginTop: 10 }}>{note ?? 'coming online'}</div>;
+}
+
+/** Right-aligned "Customize layout" entry that flips the dashboard into edit mode. */
+function CustomizeBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      <button
+        type="button"
+        onClick={onClick}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px',
+          borderRadius: 999, border: `1px solid ${BORDER_SOFT}`, background: BG_CARD,
+          color: TEXT_DARK, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+        }}
+      >
+        <SquaresFour size={14} weight="bold" color={brandVar} aria-hidden /> Customize layout
+      </button>
+    </div>
+  );
 }

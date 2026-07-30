@@ -45,22 +45,28 @@ describe('DashboardView', () => {
     }
   });
 
-  it('desktop zones pack into two masonry columns, each zone exactly once', () => {
+  it('desktop zones render once in the movable grid behind a Customize toggle', () => {
     render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
-    const cols = screen.getByTestId('dash-columns');
-    const left = screen.getByTestId('dash-col-left');
-    const right = screen.getByTestId('dash-col-right');
-    // Masonry: columns must not stretch to each other's height, and sections
-    // inside a column must not stretch to fill leftover space.
-    expect(cols.style.alignItems).toBe('start');
-    expect(left.style.alignContent).toBe('start');
-    expect(right.style.alignContent).toBe('start');
-    // Every zone lands in exactly one column (no duplicates, none dropped)
-    const zones = ['Lead flow', 'Speed to lead', 'Pipeline', 'Lead journey', 'Follow-up engine', 'Reputation', 'Operations'];
+    const desktop = screen.getByTestId('dash-desktop');
+    // Off by default: Customize entry shown, edit toolbar absent.
+    const customize = within(desktop).getByRole('button', { name: /customize layout/i });
+    expect(customize).toBeInTheDocument();
+    expect(within(desktop).queryByRole('button', { name: /done/i })).toBeNull();
+    // Every movable zone appears exactly once in the desktop grid.
+    const zones = ['Calendar', 'Lead flow', 'Speed to lead', 'Pipeline', 'Lead journey', 'Follow-up engine', 'Reputation', 'Operations'];
     for (const zone of zones) {
-      const count = within(left).queryAllByText(zone).length + within(right).queryAllByText(zone).length;
-      expect(count, `zone "${zone}" should appear exactly once across columns`).toBe(1);
+      expect(within(desktop).getAllByText(zone).length, `zone "${zone}" should appear exactly once`).toBe(1);
     }
+  });
+
+  it('entering Customize mode reveals Reset + Done controls', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    const desktop = screen.getByTestId('dash-desktop');
+    fireEvent.click(within(desktop).getByRole('button', { name: /customize layout/i }));
+    expect(within(desktop).getByRole('button', { name: /done/i })).toBeInTheDocument();
+    expect(within(desktop).getByRole('button', { name: /reset/i })).toBeInTheDocument();
+    // Customize entry hides while editing.
+    expect(within(desktop).queryByRole('button', { name: /customize layout/i })).toBeNull();
   });
 
   it('desktop section cards expose the icon-rail scroll anchors', () => {
@@ -68,6 +74,18 @@ describe('DashboardView', () => {
     for (const id of ['zone-leadflow', 'zone-speed', 'zone-followup', 'zone-reputation', 'zone-calendar']) {
       expect(document.getElementById(id), `anchor #${id} missing`).not.toBeNull();
     }
+  });
+
+  it('mobile Customize enters reorder mode with per-card drag handles', () => {
+    render(<DashboardView session={session} leads={noLeads} data={emptyDash} />);
+    const mobile = screen.getByTestId('view-home');
+    fireEvent.click(within(mobile).getByRole('button', { name: /customize layout/i }));
+    // Re-query: the container re-renders into edit mode.
+    const editing = screen.getByTestId('view-home');
+    expect(within(editing).getByText(/drag a card by its handle/i)).toBeInTheDocument();
+    expect(within(editing).getByRole('button', { name: /done/i })).toBeInTheDocument();
+    // One drag handle per sortable home card (Hero + Ticker stay pinned).
+    expect(within(editing).getAllByRole('button', { name: /drag to reorder/i }).length).toBe(3);
   });
 
   it('renders the Mercury-style recovered chart as the dark hero card', () => {
