@@ -14,9 +14,13 @@ import { metaConfig, fetchInsights } from '@/lib/metrics/adsFetch';
 
 export const dynamic = 'force-dynamic';
 
-// Fallback only. Prefer META_JC_SESSION_ID env. This is the J&C pilot session,
-// already public in the dashboard URL, so it is not a secret.
-const DEFAULT_JC_SESSION = 'b7573135-d4ec-43bb-bf33-a1d365739784';
+// There is deliberately no hardcoded session fallback here.
+//
+// This route used to default to a `DEFAULT_JC_SESSION` constant commented as
+// "the J&C pilot session" whose UUID was in fact the public is_demo session.
+// With META_JC_SESSION_ID unset, every pull silently wrote a paying client's
+// ad data to a session that renders without authentication. Failing loudly is
+// strictly better than writing client data to the wrong session.
 
 function authorized(req: NextRequest): boolean {
   // Vercel Cron path: Authorization: Bearer <CRON_SECRET>
@@ -36,7 +40,10 @@ function authorized(req: NextRequest): boolean {
 }
 
 async function runRefresh(): Promise<{ upserted: number; leads: number; spend_cents: number }> {
-  const sessionId = process.env.META_JC_SESSION_ID || DEFAULT_JC_SESSION;
+  const sessionId = process.env.META_JC_SESSION_ID;
+  if (!sessionId) {
+    throw new Error('META_JC_SESSION_ID is not set; refusing to guess a target session');
+  }
   const cfg = metaConfig();
   const insights = await fetchInsights(cfg);
 

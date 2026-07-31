@@ -1,10 +1,26 @@
 import type { Brand } from "./research/website"
 
-export function brandToCssVars(brand: Brand): Record<string, string> {
+// Mirrors DEFAULT_COLORS in ./research/website. Duplicated rather than imported
+// because that module is server-only (cheerio/sharp); theme.ts is pulled into
+// client components, and importing a value from it would drag the whole
+// scraping stack into the browser bundle. The `Brand` import above is
+// type-only, so it erases at compile.
+const FALLBACK_COLORS = {
+  primary: "#1f2937",
+  bg: "#ffffff",
+  accent: "#2563eb",
+} as const
+
+// A session whose onboarding never reached the color-pick step stores `brand`
+// as `{}`, so `brand.colors` is undefined. Reading through it threw and took
+// the whole dash layout down with a 500 -- an incomplete brand should degrade
+// to neutral colors, not deny the client their dashboard.
+export function brandToCssVars(brand: Brand | null | undefined): Record<string, string> {
+  const colors = brand?.colors ?? FALLBACK_COLORS
   return {
-    "--mate-primary": brand.colors.primary,
-    "--mate-bg": brand.colors.bg,
-    "--mate-accent": brand.colors.accent,
+    "--mate-primary": colors.primary ?? FALLBACK_COLORS.primary,
+    "--mate-bg": colors.bg ?? FALLBACK_COLORS.bg,
+    "--mate-accent": colors.accent ?? FALLBACK_COLORS.accent,
   }
 }
 
