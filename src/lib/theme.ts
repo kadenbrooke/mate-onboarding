@@ -1,14 +1,18 @@
 import type { Brand } from "./research/website"
 
-// Mirrors DEFAULT_COLORS in ./research/website. Duplicated rather than imported
-// because that module is server-only (cheerio/sharp); theme.ts is pulled into
-// client components, and importing a value from it would drag the whole
-// scraping stack into the browser bundle. The `Brand` import above is
-// type-only, so it erases at compile.
+// House orange/cream scheme, matching the demo session's picked colors. A
+// client who has not reached the color-pick step in onboarding yet has no
+// brand of their own, so they get ours rather than an anonymous grey/blue.
+//
+// Deliberately NOT imported from ./research/website (whose DEFAULT_COLORS is
+// the neutral scraper fallback, a different concept): that module is
+// server-only (cheerio/sharp), and theme.ts is pulled into client components,
+// so a value import would drag the scraping stack into the browser bundle.
+// The `Brand` import above is type-only and erases at compile.
 const FALLBACK_COLORS = {
-  primary: "#1f2937",
-  bg: "#ffffff",
-  accent: "#2563eb",
+  primary: "#e14d1a",
+  bg: "#141414",
+  accent: "#ec805b",
 } as const
 
 // A session whose onboarding never reached the color-pick step stores `brand`

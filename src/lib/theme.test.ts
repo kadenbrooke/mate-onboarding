@@ -9,19 +9,20 @@ describe("brandToCssVars", () => {
   })
 
   // A session whose onboarding stopped before the color-pick step stores
-  // brand as {}, which used to throw and 500 the entire dash layout.
-  it("falls back to neutral colors when brand.colors is missing", () => {
+  // brand as {}, which used to throw and 500 the entire dash layout. It
+  // should fall back to the house orange/cream scheme, not a neutral grey.
+  it("falls back to house colors when brand.colors is missing", () => {
     const vars = brandToCssVars({} as never)
-    expect(vars["--mate-primary"]).toBe("#1f2937")
-    expect(vars["--mate-bg"]).toBe("#ffffff")
-    expect(vars["--mate-accent"]).toBe("#2563eb")
+    expect(vars["--mate-primary"]).toBe("#e14d1a")
+    expect(vars["--mate-bg"]).toBe("#141414")
+    expect(vars["--mate-accent"]).toBe("#ec805b")
   })
 
   it("falls back when brand itself is null or undefined", () => {
     for (const brand of [null, undefined]) {
       const vars = brandToCssVars(brand)
-      expect(vars["--mate-primary"]).toBe("#1f2937")
-      expect(vars["--mate-bg"]).toBe("#ffffff")
+      expect(vars["--mate-primary"]).toBe("#e14d1a")
+      expect(vars["--mate-bg"]).toBe("#141414")
     }
   })
 })
