@@ -1,33 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { fireEvent } from '@testing-library/react';
-import { SpeedZone } from './SpeedZone';
 import { RaceCard } from './RaceCard';
 import { DayClock } from './DayClock';
-import type { Lead } from '@/lib/metrics/leads';
+import { RescueRing } from './RescueRing';
+import { hourBuckets, peakBucketRange } from '@/lib/metrics/speed';
 
-const lead = (over: Partial<Lead>): Lead => ({
-  id: Math.random().toString(), name: 'A', phone: null, city: null, service: null,
-  source: 'missed_call', referrer_name: null, score: 70, status: 'open', quote_cents: null,
-  contacted: true, after_hours: true, first_reply_seconds: 28,
-  created_at: new Date().toISOString(), ...over,
-});
-
-describe('SpeedZone', () => {
-  it('renders race, streak, clock, rescue with computed stats', () => {
-    render(<SpeedZone leads={[lead({}), lead({ after_hours: false })]} events={[]} />);
-    expect(screen.getByText('REPLY TIME')).toBeInTheDocument();
-    expect(screen.getByText(/28\s?sec/i)).toBeInTheDocument();
-    expect(screen.getByText('THE STREAK')).toBeInTheDocument();
-    expect(screen.getByText('WHEN LEADS ARRIVE')).toBeInTheDocument();
-    expect(screen.getByText('MISSED CALLS RESCUED')).toBeInTheDocument();
-  });
-
-  it('renders empty-state gracefully with zero leads', () => {
-    render(<SpeedZone leads={[]} events={[]} />);
-    expect(screen.getByText('REPLY TIME')).toBeInTheDocument();
-  });
-});
+// SpeedZone (the bundled Race/Rescue/DayClock card) is gone (2026-07): Reply
+// Time moved to the Crew tab and the other two got reordered relative to
+// City, so DashboardView now composes these three cards individually
+// instead of as one fixed group. Each card is tested standalone below.
 
 describe('RaceCard', () => {
   it('shows warming-up copy when avgReplySeconds === 0', () => {
@@ -45,22 +26,51 @@ describe('RaceCard', () => {
   });
 });
 
-describe('DayClock (work-hours ring)', () => {
-  it('defaults center to the after-hours count (success metric)', () => {
-    render(<DayClock totalCount={10} afterHoursCount={4} />);
-    expect(screen.getByTestId('dayclock-center').textContent).toBe('4');
-    expect(screen.getByTestId('dayclock-center').getAttribute('fill')).toBe('#2e8f5a');
+describe('RescueRing (big-number card)', () => {
+  it('shows the rescued count as the headline stat', () => {
+    render(<RescueRing rescued={3} missedTotal={5} />);
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.getByText(/of 5 missed calls became text conversations/i)).toBeInTheDocument();
+  });
+});
+
+describe('hourBuckets / peakBucketRange', () => {
+  it('buckets 24 hourly counts into 8 three-hour windows', () => {
+    const hourCounts = new Array(24).fill(0);
+    hourCounts[9] = 2; hourCounts[10] = 3; hourCounts[11] = 1; // 9a-12p window
+    const buckets = hourBuckets(hourCounts);
+    expect(buckets).toHaveLength(8);
+    const morningWindow = buckets.find(b => b.startHour === 9);
+    expect(morningWindow?.count).toBe(6);
+    expect(morningWindow?.label).toBe('9a');
   });
 
-  it('hover/tap on the work-hours segment swaps its stat into the center, color-matched and sticky', () => {
-    render(<DayClock totalCount={10} afterHoursCount={4} />);
-    fireEvent.click(screen.getByTestId('dayclock-seg-during'));
-    const center = screen.getByTestId('dayclock-center');
-    expect(center.textContent).toBe('6');
-    // color-matched to the brand (work-hours) segment
-    expect(center.getAttribute('fill')).toContain('var(--brand-primary');
-    // sticky: stays until another segment is picked
-    fireEvent.mouseEnter(screen.getByTestId('dayclock-seg-after'));
-    expect(center.textContent).toBe('4');
+  it('identifies the busiest window as a label range', () => {
+    const hourCounts = new Array(24).fill(0);
+    hourCounts[18] = 4; hourCounts[19] = 5;
+    const buckets = hourBuckets(hourCounts);
+    expect(peakBucketRange(buckets)).toBe('6p-9p');
+  });
+
+  it('returns null with no leads at all', () => {
+    const buckets = hourBuckets(new Array(24).fill(0));
+    expect(peakBucketRange(buckets)).toBeNull();
+  });
+});
+
+describe('DayClock (bar chart)', () => {
+  it('renders one bar per bucket and highlights the busiest window', () => {
+    const hourCounts = new Array(24).fill(0);
+    hourCounts[9] = 5;
+    const buckets = hourBuckets(hourCounts);
+    render(<DayClock buckets={buckets} />);
+    expect(screen.getByText('9a-12p')).toBeInTheDocument();
+    expect(screen.getByText('busiest window')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^dayclock-bar-/)).toHaveLength(8);
+  });
+
+  it('shows a no-data state with zero leads', () => {
+    render(<DayClock buckets={hourBuckets(new Array(24).fill(0))} />);
+    expect(screen.getByText('no leads yet')).toBeInTheDocument();
   });
 });

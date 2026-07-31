@@ -1,5 +1,6 @@
 'use client';
 import { useState } from 'react';
+import Link from 'next/link';
 import { CaretRight } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
@@ -13,15 +14,19 @@ import { useDashEditing } from '@/lib/dashEditing';
 import { TrendCard } from './leadflow/TrendCard';
 import { HotLeads } from './leadflow/HotLeads';
 import { SourceDonut } from './leadflow/SourceDonut';
-import { ValueWheel } from './leadflow/ValueWheel';
+import { ServiceShareBar } from './leadflow/ServiceShareBar';
 import { AreaBars } from './leadflow/AreaBars';
 import { TwinRings } from './pipeline/TwinRings';
-import { SpeedZone } from './speed/SpeedZone';
+import { RaceCard } from './speed/RaceCard';
+import { RescueRing } from './speed/RescueRing';
+import { DayClock } from './speed/DayClock';
+import { speedStats, hourBuckets } from '@/lib/metrics/speed';
 import { Ticker } from './Ticker';
 import { BookedCalendar } from './calendar/BookedCalendar';
 import { FollowUpZone } from './followup/FollowUpZone';
 import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
+import { AgentActivity } from './ops/AgentActivity';
 import { AssistantView } from './assistant/AssistantView';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
@@ -38,7 +43,7 @@ import {
 /** Mobile row link styled as a white card: full-width 48px touch target. */
 function LinkCard({ href, label }: { href: string; label: string }) {
   return (
-    <a
+    <Link
       href={href}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -49,7 +54,7 @@ function LinkCard({ href, label }: { href: string; label: string }) {
     >
       {label}
       <CaretRight size={15} weight="bold" color={brandVar} aria-hidden />
-    </a>
+    </Link>
   );
 }
 
@@ -85,8 +90,19 @@ export function DashboardView({ session, leads, data }: {
   // Stub zone for features arriving in a future plan
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
 
-  // Speed zone
-  const speedZone = <SpeedZone leads={leads} events={data.events} />;
+  // Speed cards (2026-07: no longer one bundled "Speed to lead" group --
+  // Reply Time moved to Crew, Missed Calls Rescued + When Leads Arrive
+  // reordered relative to City on the Leads tab).
+  const missedCallEvents = data.events.filter(e => e.kind === 'missed_call').length;
+  const totalMissedCalls = missedCallEvents > 0 ? missedCallEvents : undefined;
+  const speed = speedStats(leads, totalMissedCalls);
+  const raceCard = <RaceCard avgReplySeconds={speed.avgReplySeconds} />;
+  const rescueCard = <RescueRing rescued={speed.rescued} missedTotal={speed.missedTotal} />;
+  const dayClockCard = <DayClock buckets={hourBuckets(speed.hourCounts)} />;
+  // Agent Activity (2026-07): pairs with Reply Time on the Agents tab --
+  // speed (Reply Time) + volume (this) is the CEO-glance pair, not a pile
+  // of extra agent stats.
+  const agentActivityCard = <AgentActivity events={data.events} />;
 
   // Lead-flow zone: trend on top, 2x2 stat grid below (quality gauge lives
   // on the HOT RIGHT NOW card since the 2026-07 merge).
@@ -96,7 +112,7 @@ export function DashboardView({ session, leads, data }: {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <HotLeads leads={leads} sessionId={session.id} />
         <SourceDonut leads={leads} />
-        <ValueWheel leads={leads} />
+        <ServiceShareBar leads={leads} />
         <AreaBars leads={leads} />
       </div>
     </div>
@@ -114,7 +130,12 @@ export function DashboardView({ session, leads, data }: {
       <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
     ) },
     { id: 'zone-speed', x: 0, y: 2, w: 6, node: (
-      <SectionCard title="Speed to lead">{speedZone}</SectionCard>
+      <SectionCard title="Speed to lead">
+        <div style={{ display: 'grid', gap: 10 }}>
+          {rescueCard}
+          {dayClockCard}
+        </div>
+      </SectionCard>
     ) },
     { id: 'zone-followup', x: 6, y: 2, w: 6, node: (
       <SectionCard title="Follow-up engine"><FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} /></SectionCard>
@@ -130,7 +151,11 @@ export function DashboardView({ session, leads, data }: {
     ) },
     { id: 'zone-operations', x: 6, y: 4, w: 6, node: (
       <SectionCard title="Operations">
-        <CrewRoster capabilities={data.capabilities} />
+        <div style={{ display: 'grid', gap: 10 }}>
+          <CrewRoster capabilities={data.capabilities} />
+          {raceCard}
+          {agentActivityCard}
+        </div>
       </SectionCard>
     ) },
   ];
@@ -145,18 +170,19 @@ export function DashboardView({ session, leads, data }: {
       { id: 'm-calendar', node: calendarZone },
     ],
     // Order (2026-07 design pass): Leads, Open full leads table, Source,
-    // Service. By Area + Speed to lead weren't part of that spec, so they
-    // stay appended at the end rather than being dropped. Lead Journey is
-    // pulled for now (2026-07): its Won/Open/Lost split now lives as the
-    // outcome strip inside the Leads card (TrendCard) instead -- see
-    // JourneyRiver.tsx, still in the tree in case it comes back.
+    // City, When Leads Arrive, Service, Missed Calls Rescued. Reply Time
+    // moved to the Crew tab. Lead Journey is pulled for now (2026-07): its
+    // Won/Open/Lost split now lives as the outcome strip inside the Leads
+    // card (TrendCard) instead -- see JourneyRiver.tsx, still in the tree
+    // in case it comes back.
     leads: [
       { id: 'm-trend', node: <TrendCard leads={leads} /> },
       { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" /> },
       { id: 'm-source', node: <SourceDonut leads={leads} /> },
-      { id: 'm-value', node: <ValueWheel leads={leads} /> },
       { id: 'm-area', node: <AreaBars leads={leads} /> },
-      { id: 'm-speed', node: speedZone },
+      { id: 'm-dayclock', node: dayClockCard },
+      { id: 'm-value', node: <ServiceShareBar leads={leads} /> },
+      { id: 'm-rescue', node: rescueCard },
     ],
     money: [
       { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
@@ -166,7 +192,9 @@ export function DashboardView({ session, leads, data }: {
     ],
     crew: [
       { id: 'm-crew', node: <CrewRoster capabilities={data.capabilities} /> },
-      { id: 'm-chatlink', node: <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" /> },
+      { id: 'm-race', node: raceCard },
+      { id: 'm-agent-activity', node: agentActivityCard },
+      { id: 'm-chatlink', node: <LinkCard href={`/dash/${session.id}/assistant`} label="Chat with Assistant" /> },
       { id: 'm-setup', node: setupStub },
     ],
   };

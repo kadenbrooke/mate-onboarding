@@ -11,14 +11,7 @@ import type { ClientEvent } from './events';
 // keeping customers happy." Money in, activity, speed, conversion.
 // ---------------------------------------------------------------------------
 
-export type MonthStat = {
-  value: number;
-  pct: number;
-  /** Which direction of change reads as "good." Response time is the one
-   *  metric here where going DOWN is the win, so its trend pill colors
-   *  opposite the raw sign. Defaults to 'up'. */
-  betterWhen?: 'up' | 'down';
-};
+export type MonthStat = { value: number; pct: number };
 
 export type MonthOverview = {
   monthLabel: string;
@@ -86,6 +79,6 @@ export function monthOverview(leads: Lead[], events: ClientEvent[], now = new Da
     jobsCompleted: { value: wonThisMonth.length, pct: pctChange(wonThisMonth.length, wonPrevMonth.length) },
     leadsAcquired: { value: thisMonth.length, pct: pctChange(thisMonth.length, prevMonth.length) },
     callsHandled: { value: callsThisMonth, pct: pctChange(callsThisMonth, callsPrevMonth) },
-    avgResponseSeconds: { value: respThisMonth, pct: pctChange(respThisMonth, respPrevMonth), betterWhen: 'down' },
+    avgResponseSeconds: { value: respThisMonth, pct: pctChange(respThisMonth, respPrevMonth) },
   };
 }

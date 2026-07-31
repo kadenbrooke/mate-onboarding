@@ -8,6 +8,7 @@
 
 import { Card } from '../Card';
 import { FONT_BODY, FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, CARD_FG, CARD_HAIRLINE } from '@/lib/theme';
+import { AGENT_LABELS } from '@/lib/metrics/colors';
 import type { DashCapability } from '../types';
 
 const UNLOCK_HINTS: Record<string, string> = {
@@ -94,6 +95,10 @@ function StatusPill({ live }: { live: boolean }) {
 function CrewRow({ cap }: { cap: DashCapability }) {
   const live = isLive(cap.status);
   const hint = live ? null : (UNLOCK_HINTS[cap.key] ?? 'unlocks soon');
+  // Plain-language name when the key matches one of the four agents (see
+  // AGENT_LABELS); falls back to whatever the backend sent for anything
+  // else (e.g. 'gbp_reviews'), so this never blanks out on unknown keys.
+  const displayLabel = AGENT_LABELS[cap.key] ?? cap.label;
   return (
     <div
       style={{
@@ -104,7 +109,7 @@ function CrewRow({ cap }: { cap: DashCapability }) {
         marginTop: 10,
       }}
     >
-      <CrewChip label={cap.label} live={live} />
+      <CrewChip label={displayLabel} live={live} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -115,7 +120,7 @@ function CrewRow({ cap }: { cap: DashCapability }) {
             lineHeight: '1.2',
           }}
         >
-          {cap.label}
+          {displayLabel}
         </div>
         {hint && (
           <div

@@ -115,10 +115,10 @@ describe('DashboardView', () => {
     expect(screen.getAllByTestId('recovered-delta').length).toBeGreaterThanOrEqual(1);
   });
 
-  it('mobile crew tab contains SETUP stub', () => {
+  it('mobile agents tab contains SETUP stub', () => {
     renderDash({ session, leads: noLeads, data: emptyDash });
-    // Navigate to crew tab where SETUP stub lives
-    fireEvent.click(screen.getByRole('button', { name: /crew/i }));
+    // Navigate to agents tab where SETUP stub lives
+    fireEvent.click(screen.getByRole('button', { name: /agents/i }));
     expect(screen.getByTestId('view-crew')).toBeInTheDocument();
     expect(screen.getAllByText('SETUP').length).toBeGreaterThanOrEqual(1);
   });
@@ -137,8 +137,8 @@ describe('DashboardView', () => {
     fireEvent.click(screen.getByRole('button', { name: /leads/i }));
     expect(screen.getByTestId('view-leads')).toBeInTheDocument();
 
-    // Switch to crew tab
-    fireEvent.click(screen.getByRole('button', { name: /crew/i }));
+    // Switch to agents tab
+    fireEvent.click(screen.getByRole('button', { name: /agents/i }));
     expect(screen.getByTestId('view-crew')).toBeInTheDocument();
   });
 

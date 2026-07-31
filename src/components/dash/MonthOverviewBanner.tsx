@@ -21,18 +21,19 @@ function fmtDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
-  return s ? `${m}m ${s}s` : `${m}m`;
+  // Non-breaking space: keeps "4m 32s" from wrapping the "s" onto its own
+  // line when the tile is narrow (mobile 2-col grid).
+  return s ? `${m}m ${s}s` : `${m}m`;
 }
 
-function TrendPill({ pct, betterWhen = 'up' }: { pct: number; betterWhen?: 'up' | 'down' }) {
+function TrendPill({ pct }: { pct: number }) {
   const up = pct >= 0;
-  const good = betterWhen === 'up' ? up : !up;
   const Arrow = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span style={{
       display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
       fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
-      background: good ? 'rgba(255,255,255,0.22)' : 'rgba(20,20,20,0.22)',
+      background: 'rgba(255,255,255,0.22)',
       borderRadius: 99, padding: '3px 8px',
     }}>
       <Arrow size={11} weight="bold" aria-hidden />
@@ -43,29 +44,31 @@ function TrendPill({ pct, betterWhen = 'up' }: { pct: number; betterWhen?: 'up' 
 
 function StatTile({ icon, label, big, sub, trend }: {
   icon: React.ReactNode; label: string; big: React.ReactNode; sub?: string;
-  trend?: { pct: number; betterWhen?: 'up' | 'down' };
+  trend?: { pct: number };
 }) {
   return (
     <div style={{
       minWidth: 0, background: 'rgba(255,255,255,0.14)', borderRadius: 14,
       padding: '12px 14px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 6 }}>
-        {/* Short, whole-word labels that WRAP instead of truncating: a
-            2-word eyebrow ("NEW LEADS") stays on one line on any screen
-            wide enough for the tile itself; anything longer wraps to a
-            second line rather than clipping mid-word. */}
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 10.5,
-          letterSpacing: 0.5, fontWeight: 600, fontFamily: FONT_BODY, opacity: 0.85,
-          lineHeight: 1.25, minWidth: 0,
-        }}>
-          <span aria-hidden style={{ display: 'inline-flex', flexShrink: 0, marginTop: 1 }}>{icon}</span>
-          <span>{label}</span>
-        </div>
-        {trend && <TrendPill pct={trend.pct} betterWhen={trend.betterWhen} />}
+      {/* Short, whole-word labels that WRAP instead of truncating: a
+          2-word eyebrow ("NEW LEADS") stays on one line on any screen
+          wide enough for the tile itself; anything longer wraps to a
+          second line rather than clipping mid-word. */}
+      <div style={{
+        display: 'flex', alignItems: 'flex-start', gap: 6, fontSize: 10.5,
+        letterSpacing: 0.5, fontWeight: 600, fontFamily: FONT_BODY, opacity: 0.85,
+        lineHeight: 1.25, minWidth: 0,
+      }}>
+        <span aria-hidden style={{ display: 'inline-flex', flexShrink: 0, marginTop: 1 }}>{icon}</span>
+        <span>{label}</span>
       </div>
-      <div style={{ fontSize: 24, marginTop: 8, lineHeight: 1, ...NUM_DISPLAY }}>{big}</div>
+      {/* Bottom row: big number lower-left, trend pill lower-right -- not
+          the header row, so it never crowds a two-line-wrapped label. */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
+        <div style={{ fontSize: 24, lineHeight: 1, ...NUM_DISPLAY }}>{big}</div>
+        {trend && <TrendPill pct={trend.pct} />}
+      </div>
       {sub && (
         <div style={{ fontSize: 10.5, fontFamily: FONT_BODY, marginTop: 4, opacity: 0.75 }}>{sub}</div>
       )}
@@ -132,7 +135,7 @@ export function MonthOverviewBanner({ overview, reputation, ads }: {
           icon={<Timer size={13} weight="bold" />}
           label="AVG RESPONSE"
           big={fmtDuration(overview.avgResponseSeconds.value)}
-          trend={{ pct: overview.avgResponseSeconds.pct, betterWhen: 'down' }}
+          trend={{ pct: overview.avgResponseSeconds.pct }}
         />
         <StatTile
           icon={<Star size={13} weight="fill" />}

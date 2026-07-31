@@ -16,7 +16,7 @@ describe('MobileNav', () => {
     it('renders all four tabs and fires onChange', () => {
       const onChange = vi.fn();
       render(<MobileNav view="home" onChange={onChange} />);
-      for (const label of ['Home', 'Leads', 'Money', 'Crew']) {
+      for (const label of ['Home', 'Leads', 'Money', 'Agents']) {
         expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
       }
       fireEvent.click(screen.getByRole('button', { name: 'Money' }));
@@ -51,11 +51,11 @@ describe('MobileNav', () => {
       expect(screen.getByRole('link', { name: /assistant/i })).toHaveAttribute('href', '/dash/s1/assistant');
     });
 
-    it('routes Home, Money, and Crew back to the dashboard root (no standalone route)', () => {
+    it('routes Home, Money, and Agents back to the dashboard root (no standalone route)', () => {
       render(<MobileNav sessionId="s1" />);
       expect(screen.getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/dash/s1');
       expect(screen.getByRole('link', { name: 'Money' })).toHaveAttribute('href', '/dash/s1');
-      expect(screen.getByRole('link', { name: 'Crew' })).toHaveAttribute('href', '/dash/s1');
+      expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute('href', '/dash/s1');
     });
 
     it('marks Leads active when on the leads table route', () => {

@@ -39,7 +39,7 @@ const TABS: { key: MobileView; label: string; icon: (active: boolean) => React.R
   { key: 'leads', label: 'Leads', icon: a => <ChartLineUp size={20} weight={a ? 'fill' : 'regular'} /> },
   { key: 'assistant', label: 'Assistant', icon: () => <Microphone size={24} weight="fill" /> },
   { key: 'money', label: 'Money', icon: a => <CurrencyDollar size={20} weight={a ? 'fill' : 'regular'} /> },
-  { key: 'crew', label: 'Crew', icon: a => <UsersThree size={20} weight={a ? 'fill' : 'regular'} /> },
+  { key: 'crew', label: 'Agents', icon: a => <UsersThree size={20} weight={a ? 'fill' : 'regular'} /> },
 ];
 
 function hrefFor(key: MobileView, sessionId: string): string {
