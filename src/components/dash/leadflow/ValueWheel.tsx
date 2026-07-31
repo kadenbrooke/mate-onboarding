@@ -15,7 +15,7 @@ export function ValueWheel({ leads }: { leads: Lead[] }) {
   const openLabel = moneyShort(openCents);
 
   return (
-    <Card label="BY SERVICE">
+    <Card label="SERVICE">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
         <svg
           viewBox="-70 -70 140 140"

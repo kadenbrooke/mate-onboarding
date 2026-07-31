@@ -14,7 +14,7 @@ export function AreaBars({ leads }: { leads: Lead[] }) {
   const max = areas.length > 0 ? areas[0].count : 1;
 
   return (
-    <Card label="BY AREA">
+    <Card label="CITY">
       {areas.length === 0 ? (
         <div style={{ fontSize: 11, color: CARD_MUTED, marginTop: 10, fontFamily: FONT_BODY }}>
           no area data yet

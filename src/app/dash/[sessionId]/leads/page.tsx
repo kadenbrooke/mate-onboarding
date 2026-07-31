@@ -6,6 +6,8 @@ import { LeadThread } from '@/components/dash/leads/LeadThread';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, CARD_SHADOW } from '@/lib/theme';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
+import { BackLink } from '@/components/dash/chrome/BackLink';
+import { MobileNav } from '@/components/dash/MobileNav';
 
 export default async function LeadsPage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
@@ -35,8 +37,10 @@ export default async function LeadsPage({ params, searchParams }: {
 
   return (
     <div>
-      {/* Top-bar pill nav owns the way back to the dashboard */}
-      <h1 style={{ fontSize: 18, margin: '12px 0' }}>Leads</h1>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '12px 0' }}>
+        <BackLink href={`/dash/${sessionId}`} />
+        <h1 style={{ fontSize: 18, margin: 0 }}>Leads</h1>
+      </div>
       {thread && (
         <div style={{ marginBottom: 12 }}>
           <LeadThread leadId={thread.leadId} sessionId={sessionId} handler={thread.handler} messages={thread.messages} />
@@ -45,6 +49,7 @@ export default async function LeadsPage({ params, searchParams }: {
       <div style={{ background: BG_CARD, borderRadius: 16, padding: 8, boxShadow: CARD_SHADOW }}>
         <LeadsTable leads={(leads ?? []) as Lead[]} sessionId={sessionId} spotlightId={spotlight ?? null} />
       </div>
+      <MobileNav sessionId={sessionId} />
     </div>
   );
 }

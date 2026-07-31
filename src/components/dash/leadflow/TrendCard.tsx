@@ -1,11 +1,40 @@
 'use client';
 import { useState, useEffect, useId } from 'react';
 import { Card } from '../Card';
-import { weekBars, monthBuckets, yearBuckets } from '@/lib/metrics/leads';
-import { brandVar, CARD_TRACK, CARD_MUTED, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
+import { weekBars, monthBuckets, yearBuckets, outcomesInWindow } from '@/lib/metrics/leads';
+import {
+  brandVar, CARD_TRACK, CARD_MUTED, NUM_DISPLAY, NUM_TABLE, FONT_BODY,
+  FREE_GREEN, LOST_BROWN,
+} from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
 type Range = 'WEEK' | 'MONTH' | 'YEAR';
+
+// Window length backing each range tab's outcome strip. WEEK/MONTH mirror
+// the chart's own bucketing (trailing 7 / 30 days); YEAR uses 52 weeks to
+// match yearBuckets below.
+const RANGE_DAYS: Record<Range, number> = { WEEK: 7, MONTH: 30, YEAR: 364 };
+
+function OutcomeStrip({ won, open, lost }: { won: number; open: number; lost: number }) {
+  const items: { label: string; count: number; color: string }[] = [
+    { label: 'won', count: won, color: FREE_GREEN },
+    { label: 'open', count: open, color: brandVar },
+    { label: 'lost', count: lost, color: LOST_BROWN },
+  ];
+  return (
+    <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
+      {items.map(it => (
+        <span key={it.label} style={{
+          display: 'inline-flex', alignItems: 'center', gap: 4,
+          border: `1.5px solid ${it.color}`, borderRadius: 999, padding: '3px 9px',
+          fontSize: 11, fontFamily: FONT_BODY, color: it.color,
+        }}>
+          <span style={{ ...NUM_TABLE, color: 'inherit', fontWeight: 700 }}>{it.count}</span> {it.label}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const BAR_AREA_H = 56; // px height of the bar plotting area
 
@@ -61,6 +90,7 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
     const diffMs = new Date().getTime() - d.getTime();
     return diffMs >= 0 && diffMs < 7 * 86400000;
   }).length;
+  const outcomes = outcomesInWindow(leads, RANGE_DAYS[range]);
 
   const chips: Range[] = ['WEEK', 'MONTH', 'YEAR'];
   const right = (
@@ -136,6 +166,10 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
     <Card label="LEADS" right={right}>
       {/* Standalone display stat: Geist 300 pnum per brand guide */}
       <div style={{ fontSize: 28, marginTop: 6, ...NUM_DISPLAY }}>{weekCount}</div>
+      {/* Won/open/lost for the selected range: lets you compare volume to
+          outcome in the same glance, without pulling in the full funnel
+          diagram below (that stays all-time; this is windowed). */}
+      <OutcomeStrip won={outcomes.won} open={outcomes.open} lost={outcomes.lost} />
       {chartBody}
     </Card>
   );

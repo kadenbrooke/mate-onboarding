@@ -13,7 +13,7 @@ export function SourceDonut({ leads }: { leads: Lead[] }) {
   const circ = 2 * Math.PI * radius;
 
   return (
-    <Card label="WHERE THEY CAME FROM">
+    <Card label="SOURCE">
       <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginTop: 12 }}>
         <svg width={100} height={100} viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
           <g transform="translate(50,50) rotate(-90)">

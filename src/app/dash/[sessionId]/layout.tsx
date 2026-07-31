@@ -7,6 +7,7 @@ import { brandToCssVars, BG_PAGE, TEXT_DARK } from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
 import { TopBar } from '@/components/dash/chrome/TopBar';
 import { IconRail } from '@/components/dash/chrome/IconRail';
+import { DashEditingProvider } from '@/lib/dashEditing';
 
 async function signOutAction() {
   'use server';
@@ -106,6 +107,10 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         .dash-shell { padding: 4px 12px calc(90px + env(safe-area-inset-bottom, 0px)); }
         /* Icon rail is desktop chrome; below 641px the bottom MobileNav owns nav. */
         @media (max-width: 640px) { .dash-rail { display: none !important; } }
+        /* MobileNav is mobile-only chrome everywhere it renders, including
+           standalone sub-pages (leads table, assistant) that aren't wrapped
+           by DashboardView's own copy of this rule. */
+        @media (min-width: 641px) { .dash-nav { display: none !important; } }
         /* Mid widths: shift content right so the fixed rail never overlaps it.
            !important because the base padding is set inline. */
         @media (min-width: 641px) and (max-width: 1260px) { .dash-shell { padding-left: 70px !important; } }
@@ -136,19 +141,21 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         }
       `}</style>
 
-      <TopBar
-        sessionId={sessionId}
-        businessName={businessName}
-        logoUrl={logoUrl}
-        openIncidents={openIncidents}
-        signedIn={signedIn}
-        signOutAction={signOutAction}
-      />
-      <IconRail />
+      <DashEditingProvider>
+        <TopBar
+          sessionId={sessionId}
+          businessName={businessName}
+          logoUrl={logoUrl}
+          openIncidents={openIncidents}
+          signedIn={signedIn}
+          signOutAction={signOutAction}
+        />
+        <IconRail />
 
-      <div className="dash-shell" style={{ maxWidth: 1480, margin: '0 auto' }}>
-        {children}
-      </div>
+        <div className="dash-shell" style={{ maxWidth: 1480, margin: '0 auto' }}>
+          {children}
+        </div>
+      </DashEditingProvider>
     </div>
   );
 }

@@ -107,6 +107,25 @@ export function yearBuckets(leads: Lead[], now = new Date()): number[] {
   return buckets;
 }
 
+/** Won/open/lost counts among leads created within the trailing `windowDays`.
+ *  Powers the Leads card's compact outcome strip: same time window as
+ *  whichever range tab (week/month/year) is selected, so the comparison is
+ *  apples-to-apples rather than mixing a windowed count against an all-time
+ *  funnel. */
+export function outcomesInWindow(leads: Lead[], windowDays: number, now = new Date()) {
+  const cutoff = now.getTime() - windowDays * 86400_000;
+  const inWindow = leads.filter(l => {
+    const t = new Date(l.created_at).getTime();
+    return t >= cutoff && t <= now.getTime();
+  });
+  return {
+    won: inWindow.filter(l => l.status === 'won').length,
+    open: inWindow.filter(l => l.status === 'open').length,
+    lost: inWindow.filter(l => l.status === 'lost').length,
+    total: inWindow.length,
+  };
+}
+
 export function scoreStats(leads: Lead[]) {
   const scored = leads.filter(l => l.score != null);
   // avg spans ALL scored leads (portfolio quality); hot is the action queue (open + uncontacted).
