@@ -78,12 +78,18 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
   // var(--brand-primary) or var(--mate-*) pick up the client color without
   // any client-side JS. brandToCssVars produces --mate-* vars; we also alias
   // --brand-primary so the brandVar constant in theme.ts resolves correctly.
-  const cssVars: React.CSSProperties = brand
-    ? ({
-        ...brandToCssVars(brand),
-        '--brand-primary': brand.colors.primary,
-      } as React.CSSProperties)
-    : {};
+  //
+  // The alias is derived FROM the brandToCssVars output rather than read off
+  // `brand` a second time. A session that never reached the color-pick step
+  // stores brand as `{}`, which is truthy, so the previous `brand ? ... : {}`
+  // check passed and then threw on `brand.colors.primary`, 500ing the whole
+  // dash layout for that client. Guarding brandToCssVars alone did not fix it,
+  // because this line bypassed the guard. One guarded read, not two.
+  const mateVars = brandToCssVars(brand);
+  const cssVars: React.CSSProperties = {
+    ...mateVars,
+    '--brand-primary': mateVars['--mate-primary'],
+  } as React.CSSProperties;
 
   return (
     <div
