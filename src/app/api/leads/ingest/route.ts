@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
 
-  let body: { session_id?: string; leads?: Record<string, unknown>[] };
+  let body: { session_id?: string; leads?: Record<string, unknown>[]; allow_demo?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -29,6 +29,36 @@ export async function POST(request: NextRequest) {
 
   if (!body.session_id || !Array.isArray(body.leads)) {
     return NextResponse.json({ error: 'session_id and leads[] required' }, { status: 400 });
+  }
+
+  const supabase = createServiceClient();
+
+  // An is_demo session renders without authentication, so anything written here
+  // is world-readable to anyone holding the URL. A caller-supplied session_id
+  // once pointed a real client's Meta lead backfill at the public demo, putting
+  // ~83 real names and phone numbers on an unauthed page for three months.
+  // Seeding the demo is legitimate, but it has to be stated outright.
+  const { data: target, error: lookupError } = await supabase
+    .from('onboarding_sessions')
+    .select('is_demo')
+    .eq('id', body.session_id)
+    .maybeSingle();
+
+  if (lookupError) {
+    return NextResponse.json({ error: lookupError.message }, { status: 500 });
+  }
+  if (!target) {
+    return NextResponse.json({ error: 'unknown session_id' }, { status: 404 });
+  }
+  if (target.is_demo && body.allow_demo !== true) {
+    return NextResponse.json(
+      {
+        error:
+          'refusing to write leads to an is_demo session (publicly readable). ' +
+          'Pass allow_demo: true if these are seeded/synthetic leads.',
+      },
+      { status: 400 },
+    );
   }
 
   const rows = body.leads.map((lead) => {

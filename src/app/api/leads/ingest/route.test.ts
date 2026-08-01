@@ -2,9 +2,22 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { NextRequest } from 'next/server';
 
 const insertMock = vi.fn().mockResolvedValue({ data: [{ id: 'x' }], error: null });
+
+// The route now looks the session up before inserting, so the mock has to
+// dispatch on table name: onboarding_sessions resolves the is_demo guard,
+// client_leads takes the insert.
+const sessionLookup = vi.fn().mockResolvedValue({ data: { is_demo: false }, error: null });
+
 vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => ({
-    from: () => ({ insert: (rows: unknown) => ({ select: () => insertMock(rows) }) }),
+    from: (table: string) => {
+      if (table === 'onboarding_sessions') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => sessionLookup() }) }),
+        };
+      }
+      return { insert: (rows: unknown) => ({ select: () => insertMock(rows) }) };
+    },
   }),
 }));
 
@@ -20,7 +33,12 @@ function req(body: unknown, token?: string): NextRequest {
 }
 
 describe('POST /api/leads/ingest', () => {
-  beforeEach(() => { process.env.LEADS_INGEST_TOKEN = 'tok'; insertMock.mockClear(); });
+  beforeEach(() => {
+    process.env.LEADS_INGEST_TOKEN = 'tok';
+    insertMock.mockClear();
+    sessionLookup.mockClear();
+    sessionLookup.mockResolvedValue({ data: { is_demo: false }, error: null });
+  });
 
   it('rejects missing/wrong token with 401', async () => {
     const res = await POST(req({ session_id: 'a', leads: [] }, 'wrong'));
@@ -56,6 +74,37 @@ describe('POST /api/leads/ingest', () => {
   it('rejects absent token header with 401', async () => {
     const res = await POST(req({ session_id: 'a', leads: [] }));
     expect(res.status).toBe(401);
+  });
+
+  it('refuses to write real leads to an is_demo session', async () => {
+    sessionLookup.mockResolvedValue({ data: { is_demo: true }, error: null });
+    const res = await POST(req({
+      session_id: '11111111-1111-1111-1111-111111111111',
+      leads: [{ name: 'Real Person', phone: '+18015551234' }],
+    }, 'tok'));
+    expect(res.status).toBe(400);
+    expect(insertMock).not.toHaveBeenCalled();
+  });
+
+  it('allows seeding an is_demo session when allow_demo is set', async () => {
+    sessionLookup.mockResolvedValue({ data: { is_demo: true }, error: null });
+    const res = await POST(req({
+      session_id: '11111111-1111-1111-1111-111111111111',
+      leads: [{ name: 'Todd R.', source: 'missed_call' }],
+      allow_demo: true,
+    }, 'tok'));
+    expect(res.status).toBe(200);
+    expect(insertMock).toHaveBeenCalled();
+  });
+
+  it('returns 404 for an unknown session_id', async () => {
+    sessionLookup.mockResolvedValue({ data: null, error: null });
+    const res = await POST(req({
+      session_id: '99999999-9999-9999-9999-999999999999',
+      leads: [{ name: 'A' }],
+    }, 'tok'));
+    expect(res.status).toBe(404);
+    expect(insertMock).not.toHaveBeenCalled();
   });
 
   it('returns 500 with db error message on insert failure', async () => {
