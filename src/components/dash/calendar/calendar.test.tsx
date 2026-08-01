@@ -4,7 +4,13 @@ import { BookedCalendar } from './BookedCalendar';
 import type { Appointment } from '@/lib/metrics/calendar';
 
 const appt = (dayOffset: number): Appointment => {
-  const d = new Date(); d.setDate(d.getDate() + dayOffset); d.setHours(17, 0, 0, 0);
+  const d = new Date();
+  // Clamp to the current calendar month: BookedCalendar only counts
+  // same-month appointments, so an unclamped offset near month-end (e.g.
+  // "+1 day" on the 31st) silently rolls into next month and undercounts.
+  const daysLeftInMonth = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate() - d.getDate();
+  d.setDate(d.getDate() + Math.min(dayOffset, daysLeftInMonth));
+  d.setHours(17, 0, 0, 0);
   return { id: Math.random().toString(), customer_name: 'Mike R.', service: 'Driveway',
     price_cents: 400000, starts_at: d.toISOString() };
 };

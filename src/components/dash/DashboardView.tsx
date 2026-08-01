@@ -1,33 +1,39 @@
 'use client';
 import { useState } from 'react';
-import { CaretRight, SquaresFour } from '@phosphor-icons/react';
+import Link from 'next/link';
+import { CaretRight } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
 import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/recovered';
 import { Card, SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
+import { MonthOverviewBanner } from './MonthOverviewBanner';
+import { monthOverview } from '@/lib/metrics/monthOverview';
 import { MobileNav, type MobileView } from './MobileNav';
+import { useDashEditing } from '@/lib/dashEditing';
 import { TrendCard } from './leadflow/TrendCard';
 import { HotLeads } from './leadflow/HotLeads';
 import { SourceDonut } from './leadflow/SourceDonut';
-import { ValueWheel } from './leadflow/ValueWheel';
+import { ServiceShareBar } from './leadflow/ServiceShareBar';
 import { AreaBars } from './leadflow/AreaBars';
 import { TwinRings } from './pipeline/TwinRings';
-import { SpeedZone } from './speed/SpeedZone';
-import { JourneyRiver } from './journey/JourneyRiver';
+import { RaceCard } from './speed/RaceCard';
+import { RescueRing } from './speed/RescueRing';
+import { DayClock } from './speed/DayClock';
+import { speedStats, hourBuckets } from '@/lib/metrics/speed';
 import { Ticker } from './Ticker';
 import { BookedCalendar } from './calendar/BookedCalendar';
 import { FollowUpZone } from './followup/FollowUpZone';
 import { ReputationZone } from './reputation/ReputationZone';
 import { CrewRoster } from './ops/CrewRoster';
-import { SystemPulse } from './ops/SystemPulse';
+import { AgentActivity } from './ops/AgentActivity';
 import { AssistantView } from './assistant/AssistantView';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
 import { SortableStack, type StackItem } from './SortableStack';
 import type { DashData } from './types';
 import {
-  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, BORDER_SOFT, brandVar,
+  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
 } from '@/lib/theme';
 
 // Light-theme layout (2026-07 redesign): each zone is a large light-grey
@@ -37,7 +43,7 @@ import {
 /** Mobile row link styled as a white card: full-width 48px touch target. */
 function LinkCard({ href, label }: { href: string; label: string }) {
   return (
-    <a
+    <Link
       href={href}
       style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -48,7 +54,7 @@ function LinkCard({ href, label }: { href: string; label: string }) {
     >
       {label}
       <CaretRight size={15} weight="bold" color={brandVar} aria-hidden />
-    </a>
+    </Link>
   );
 }
 
@@ -56,7 +62,7 @@ export function DashboardView({ session, leads, data }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
 }) {
   const [view, setView] = useState<MobileView>('home');
-  const [editing, setEditing] = useState(false);
+  const { editing, setEditing } = useDashEditing();
   // Tab switch resets scroll: landing mid-scroll on a shorter view strands
   // the user below the fold. try/catch: jsdom has no scrollTo implementation.
   const switchView = (v: MobileView) => {
@@ -67,6 +73,7 @@ export function DashboardView({ session, leads, data }: {
   const series = heroSeries(leads, data.events, { minutesPerAction: 5 });
   // Daily cumulative series + WoW dollar delta for the Mercury-style dark card
   const recovered = { points: recoveredDailySeries(leads), deltaCents: recoveredWowDeltaCents(leads) };
+  const overview = monthOverview(leads, data.events);
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;
@@ -83,8 +90,19 @@ export function DashboardView({ session, leads, data }: {
   // Stub zone for features arriving in a future plan
   const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
 
-  // Speed zone
-  const speedZone = <SpeedZone leads={leads} events={data.events} />;
+  // Speed cards (2026-07: no longer one bundled "Speed to lead" group --
+  // Reply Time moved to Crew, Missed Calls Rescued + When Leads Arrive
+  // reordered relative to City on the Leads tab).
+  const missedCallEvents = data.events.filter(e => e.kind === 'missed_call').length;
+  const totalMissedCalls = missedCallEvents > 0 ? missedCallEvents : undefined;
+  const speed = speedStats(leads, totalMissedCalls);
+  const raceCard = <RaceCard avgReplySeconds={speed.avgReplySeconds} />;
+  const rescueCard = <RescueRing rescued={speed.rescued} missedTotal={speed.missedTotal} />;
+  const dayClockCard = <DayClock buckets={hourBuckets(speed.hourCounts)} />;
+  // Agent Activity (2026-07): pairs with Reply Time on the Agents tab --
+  // speed (Reply Time) + volume (this) is the CEO-glance pair, not a pile
+  // of extra agent stats.
+  const agentActivityCard = <AgentActivity events={data.events} />;
 
   // Lead-flow zone: trend on top, 2x2 stat grid below (quality gauge lives
   // on the HOT RIGHT NOW card since the 2026-07 merge).
@@ -94,7 +112,7 @@ export function DashboardView({ session, leads, data }: {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <HotLeads leads={leads} sessionId={session.id} />
         <SourceDonut leads={leads} />
-        <ValueWheel leads={leads} />
+        <ServiceShareBar leads={leads} />
         <AreaBars leads={leads} />
       </div>
     </div>
@@ -111,11 +129,13 @@ export function DashboardView({ session, leads, data }: {
     { id: 'zone-leadflow', x: 0, y: 1, w: 6, node: (
       <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
     ) },
-    { id: 'zone-journey', x: 6, y: 1, w: 6, node: (
-      <SectionCard title="Lead journey"><JourneyRiver leads={leads} showLabel={false} /></SectionCard>
-    ) },
     { id: 'zone-speed', x: 0, y: 2, w: 6, node: (
-      <SectionCard title="Speed to lead">{speedZone}</SectionCard>
+      <SectionCard title="Speed to lead">
+        <div style={{ display: 'grid', gap: 10 }}>
+          {rescueCard}
+          {dayClockCard}
+        </div>
+      </SectionCard>
     ) },
     { id: 'zone-followup', x: 6, y: 2, w: 6, node: (
       <SectionCard title="Follow-up engine"><FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} /></SectionCard>
@@ -131,9 +151,10 @@ export function DashboardView({ session, leads, data }: {
     ) },
     { id: 'zone-operations', x: 6, y: 4, w: 6, node: (
       <SectionCard title="Operations">
-        <div style={{ display: 'grid', gridTemplateColumns: '1.3fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gap: 10 }}>
           <CrewRoster capabilities={data.capabilities} />
-          <SystemPulse incidents={data.incidents} />
+          {raceCard}
+          {agentActivityCard}
         </div>
       </SectionCard>
     ) },
@@ -147,16 +168,21 @@ export function DashboardView({ session, leads, data }: {
     home: [
       { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} /> },
       { id: 'm-calendar', node: calendarZone },
-      { id: 'm-pulse', node: <SystemPulse incidents={data.incidents} /> },
     ],
+    // Order (2026-07 design pass): Leads, Open full leads table, Source,
+    // City, When Leads Arrive, Service, Missed Calls Rescued. Reply Time
+    // moved to the Crew tab. Lead Journey is pulled for now (2026-07): its
+    // Won/Open/Lost split now lives as the outcome strip inside the Leads
+    // card (TrendCard) instead -- see JourneyRiver.tsx, still in the tree
+    // in case it comes back.
     leads: [
       { id: 'm-trend', node: <TrendCard leads={leads} /> },
-      { id: 'm-journey', node: <JourneyRiver leads={leads} /> },
       { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" /> },
       { id: 'm-source', node: <SourceDonut leads={leads} /> },
-      { id: 'm-value', node: <ValueWheel leads={leads} /> },
       { id: 'm-area', node: <AreaBars leads={leads} /> },
-      { id: 'm-speed', node: speedZone },
+      { id: 'm-dayclock', node: dayClockCard },
+      { id: 'm-value', node: <ServiceShareBar leads={leads} /> },
+      { id: 'm-rescue', node: rescueCard },
     ],
     money: [
       { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
@@ -166,9 +192,10 @@ export function DashboardView({ session, leads, data }: {
     ],
     crew: [
       { id: 'm-crew', node: <CrewRoster capabilities={data.capabilities} /> },
-      { id: 'm-chatlink', node: <LinkCard href={`/portal?session=${session.id}`} label="Chat with Mate" /> },
+      { id: 'm-race', node: raceCard },
+      { id: 'm-agent-activity', node: agentActivityCard },
+      { id: 'm-chatlink', node: <LinkCard href={`/dash/${session.id}/assistant`} label="Chat with Assistant" /> },
       { id: 'm-setup', node: setupStub },
-      { id: 'm-pulse2', node: <SystemPulse incidents={data.incidents} /> },
     ],
   };
 
@@ -186,9 +213,9 @@ export function DashboardView({ session, leads, data }: {
           full-width on top; heights measured at runtime). Zone `id`s ride the
           grid cells so the IconRail scroll anchors still resolve. */}
       <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
+        <MonthOverviewBanner overview={overview} reputation={data.reputation} ads={data.ads} />
         <HeroStrip {...hero} series={series} recovered={recovered} />
         <Ticker events={data.events} />
-        {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
         <MovableDashGrid
           sessionId={session.id}
           cards={movableCards}
@@ -212,11 +239,11 @@ export function DashboardView({ session, leads, data }: {
           <>
             {view === 'home' && (
               <>
+                <MonthOverviewBanner overview={overview} reputation={data.reputation} ads={data.ads} />
                 <HeroStrip {...hero} series={series} recovered={recovered} />
                 <Ticker events={data.events} />
               </>
             )}
-            {!editing && <CustomizeBtn onClick={() => setEditing(true)} />}
             <SortableStack
               key={view}
               sessionId={session.id}
@@ -236,23 +263,4 @@ export function DashboardView({ session, leads, data }: {
 
 function Dim({ note }: { note?: string }) {
   return <div style={{ opacity: 0.45, fontSize: 12, marginTop: 10 }}>{note ?? 'coming online'}</div>;
-}
-
-/** Right-aligned "Customize layout" entry that flips the dashboard into edit mode. */
-function CustomizeBtn({ onClick }: { onClick: () => void }) {
-  return (
-    <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-      <button
-        type="button"
-        onClick={onClick}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6, height: 30, padding: '0 12px',
-          borderRadius: 999, border: `1px solid ${BORDER_SOFT}`, background: BG_CARD,
-          color: TEXT_DARK, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-        }}
-      >
-        <SquaresFour size={14} weight="bold" color={brandVar} aria-hidden /> Customize layout
-      </button>
-    </div>
-  );
 }

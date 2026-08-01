@@ -1,15 +1,19 @@
 import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { CrewRoster } from './CrewRoster';
-import { SystemPulse } from './SystemPulse';
+import { AgentActivity } from './AgentActivity';
 
 describe('CrewRoster', () => {
-  it('renders live and locked agents', () => {
+  it('renders a plain-language name for known agent keys, overriding whatever label the backend sent', () => {
     render(<CrewRoster capabilities={[
       { key: 'first_responder', label: 'First Responder', status: 'live' },
       { key: 'gbp_reviews', label: 'Reputation Builder', status: 'under_construction' },
     ]} />);
-    expect(screen.getByText('First Responder')).toBeInTheDocument();
+    // Known key: AGENT_LABELS wins over the raw backend label.
+    expect(screen.getByText('Lead Response')).toBeInTheDocument();
+    expect(screen.queryByText('First Responder')).toBeNull();
+    // Unknown key: falls back to whatever label was provided.
+    expect(screen.getByText('Reputation Builder')).toBeInTheDocument();
     expect(screen.getByText('● LIVE')).toBeInTheDocument();
     expect(screen.getByText('LOCKED')).toBeInTheDocument();
   });
@@ -19,25 +23,24 @@ describe('CrewRoster', () => {
   });
 });
 
-describe('SystemPulse', () => {
-  it('green state when no incidents', () => {
-    render(<SystemPulse incidents={[]} />);
-    expect(screen.getByText('ALL SYSTEMS GO')).toBeInTheDocument();
+describe('AgentActivity', () => {
+  it('ranks agents by action count within the last 30 days', () => {
+    const now = new Date().toISOString();
+    render(<AgentActivity events={[
+      { id: '1', agent: 'first_responder', kind: 'x', message: '', created_at: now },
+      { id: '2', agent: 'first_responder', kind: 'x', message: '', created_at: now },
+      { id: '3', agent: 'reactivator', kind: 'x', message: '', created_at: now },
+    ]} />);
+    expect(screen.getByText('AGENT ACTIVITY')).toBeInTheDocument();
+    // Plain-language names (match automateutah.com), kept short so they
+    // don't clip in the bar chart's fixed-width label column.
+    expect(screen.getByText('Lead Response')).toBeInTheDocument();
+    expect(screen.getByText('Win-Back')).toBeInTheDocument();
+    expect(screen.getByTestId('agent-bar-first_responder')).toBeInTheDocument();
   });
-  it('critical state with stopwatch when critical incident open', () => {
-    render(<SystemPulse incidents={[{
-      id: 'i1', severity: 'critical', message: 'Incoming texts not being answered',
-      started_at: new Date(Date.now() - 60_000).toISOString(), resolved_at: null,
-    }]} />);
-    expect(screen.getByText('CRITICAL')).toBeInTheDocument();
-    expect(screen.getByText(/your support team was notified/i)).toBeInTheDocument();
-    expect(screen.getByTestId('downtime')).toBeInTheDocument();
-  });
-  it('warning state', () => {
-    render(<SystemPulse incidents={[{
-      id: 'i2', severity: 'warning', message: 'Text credit balance low',
-      started_at: new Date().toISOString(), resolved_at: null,
-    }]} />);
-    expect(screen.getByText('NEEDS ATTENTION')).toBeInTheDocument();
+
+  it('renders an empty state with no agent events', () => {
+    render(<AgentActivity events={[]} />);
+    expect(screen.getByText(/no agent actions yet/i)).toBeInTheDocument();
   });
 });

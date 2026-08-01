@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { SquaresFour, UsersThree, ChatCircle, Bell, SignOut } from '@phosphor-icons/react';
 import { activeNavKey, businessInitials, type DashNavKey } from '@/lib/dashChrome';
+import { useDashEditing } from '@/lib/dashEditing';
 import { BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, TEXT_MUTED, brandVar } from '@/lib/theme';
 
 // Dash chrome top bar (InvestIQ reference): logo chip far left, pill nav
@@ -56,6 +57,7 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
 }) {
   const pathname = usePathname() ?? '';
   const active: DashNavKey = activeNavKey(pathname);
+  const { editing, setEditing } = useDashEditing();
 
   const navItems: { key: DashNavKey; href: string; label: string; icon: React.ReactNode }[] = [
     {
@@ -113,8 +115,24 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
         ))}
       </nav>
 
-      {/* Right chips: bell with open-incident badge + client initials avatar */}
+      {/* Right chips: Customize (dashboard route only) + bell w/ incident badge + client initials avatar */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        {active === 'dashboard' && (
+          <button
+            type="button"
+            onClick={() => setEditing(!editing)}
+            aria-pressed={editing}
+            aria-label={editing ? 'Exit customize layout' : 'Customize layout'}
+            title={editing ? 'Exit customize layout' : 'Customize layout'}
+            style={{
+              ...CHIP, border: 'none', cursor: 'pointer',
+              background: editing ? brandVar : BG_CARD,
+              color: editing ? '#fff' : TEXT_DARK,
+            }}
+          >
+            <SquaresFour size={17} weight={editing ? 'fill' : 'regular'} aria-hidden />
+          </button>
+        )}
         <span style={{ ...CHIP, position: 'relative', color: TEXT_DARK }} aria-label={`${openIncidents} open incidents`}>
           <Bell size={17} weight="regular" aria-hidden />
           {openIncidents > 0 && (

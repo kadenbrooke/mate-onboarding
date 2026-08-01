@@ -1,13 +1,19 @@
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { AssistantView } from '@/components/dash/assistant/AssistantView';
+import { BackLink } from '@/components/dash/chrome/BackLink';
+import { MobileNav } from '@/components/dash/MobileNav';
 
 export default async function AssistantPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId } = await params;
   await requireDashAccess(sessionId);
   return (
     <div>
-      <h1 style={{ fontSize: 18, margin: '12px 0' }}>Assistant</h1>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, margin: '12px 0' }}>
+        <BackLink href={`/dash/${sessionId}`} />
+        <h1 style={{ fontSize: 18, margin: 0 }}>Assistant</h1>
+      </div>
       <AssistantView sessionId={sessionId} />
+      <MobileNav sessionId={sessionId} />
     </div>
   );
 }

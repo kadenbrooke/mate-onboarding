@@ -6,9 +6,9 @@ import {
 const INDUSTRY_AVG_MINUTES = 47;
 const FIRST_RESPONDER_STAT = 78;
 
-// 3-way reply-time comparison: your agent now vs you before vs industry avg.
-// Light redesign: big reply-time number up top, three clean rounded lanes on
-// beige tracks below (bar length proportional to reply time, so shorter = better).
+// Response-time comparison: your agent now vs industry avg. Light redesign:
+// big response-time number up top, rounded lanes on beige tracks below
+// (bar length proportional to response time, so shorter = better).
 
 function Lane({ label, fillPct, fillColor, value, valueColor, note }: {
   label: string;
@@ -51,8 +51,8 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
   const multiple = Math.max(1, Math.round(industrySeconds / Math.max(avgReplySeconds, 1)));
 
   return (
-    <Card label="REPLY TIME">
-      {/* Big reply-time stat */}
+    <Card label="RESPONSE TIME">
+      {/* Big response-time stat */}
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
         {warming ? (
           <span style={{ fontSize: 13, color: CARD_MUTED, fontFamily: FONT_BODY }}>
@@ -61,7 +61,7 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
         ) : (
           <>
             <span style={{ ...NUM_DISPLAY, fontSize: 32, lineHeight: 1 }}>{avgReplySeconds}</span>
-            <span style={{ fontSize: 13, color: CARD_MUTED, fontFamily: FONT_BODY }}>sec avg reply</span>
+            <span style={{ fontSize: 13, color: CARD_MUTED, fontFamily: FONT_BODY }}>sec avg response</span>
           </>
         )}
       </div>
@@ -73,11 +73,6 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
           value={warming ? undefined : `${avgReplySeconds} sec`}
           valueColor={brandVar}
           note={warming ? 'no replies yet' : undefined}
-        />
-        <Lane
-          label="YOU, BEFORE THE AGENT"
-          fillPct={null}
-          note="add your old reply time in Setup"
         />
         <Lane
           label="INDUSTRY AVERAGE"
