@@ -57,8 +57,9 @@ the whole Meta integration is single-tenant, wired to one client at the
 environment level.
 
 So the Ad zone unlocks when `ad_metrics` rows appear for the session, and its
-MISSING INFO card carries no button. The copy asks the client to contact us
-rather than offering a connection that does not exist.
+MISSING INFO card carries no primary button. It shows a secondary "Contact us"
+action instead: "Your ad account isn't linked yet. We do this for you, so get in
+touch and we'll wire it up."
 
 This is deliberate. A "Connect Meta" button that silently does nothing would be
 the same class of error as the mislabeled `DEFAULT_JC_SESSION` constant that put
@@ -68,23 +69,48 @@ scoped as follow-up work, not part of this build.
 
 ## The MISSING INFO card
 
-A locked zone renders **no invented numbers** — no blurred sample figures, no
+A locked zone renders **no invented numbers**: no blurred sample figures, no
 skeleton bars implying data. This dashboard just had a real incident caused by
 real and synthetic data being indistinguishable; locked zones will not
 reintroduce that ambiguity in visual form.
 
 The card contains, top to bottom:
 
-1. `MISSING INFO` in large red type. The loudest element on the dashboard, by
-   intent.
+1. `MISSING INFO`, stacked on two lines, ~31px, weight 800, in alert red. The
+   loudest element on the dashboard, by intent.
 2. The zone name.
 3. One line naming exactly what is missing, in the client's language:
-   "We need your Google account to show your calendar."
+   "We need your Google account to show your booked jobs."
 4. A primary action button, when one exists.
 
-Red is outside the brand palette (orange `#e14d1a`, cream `#ede6e6`, dark
-`#141414`). It is used here as a functional alert color and must not leak into
-any non-alert surface. It is defined once as a token, not inlined per card.
+The card itself is red-tinted rather than neutral, so the whole zone reads as an
+alert and not merely as a card containing red text:
+
+```
+background:   color-mix(in srgb, {red} 7%,  {BG_SECTION})
+border-color: color-mix(in srgb, {red} 28%, transparent)
+```
+
+A fully red card was considered and rejected: four of them at once turns a
+half-configured dashboard into a wall of red, which punishes a client who is
+mid-setup rather than directing them.
+
+The alert red is `SCORE_RED` (`#c0392b`), which already exists in `theme.ts`
+driving the lead-score traffic light. No new color enters the palette. Reuse the
+existing token; do not inline the hex.
+
+### Copy
+
+| Zone | Reason line | Action |
+| --- | --- | --- |
+| Calendar | We need your Google account to show your booked jobs. | Connect Google |
+| Reputation | We need your Google account to pull your reviews. | Connect Google |
+| Follow-up engine | Your assistant is switched off, so nothing is following up yet. | Turn on assistant |
+| Operations | Add the phone number a real person should be reached at. | Add phone number |
+| Ad performance | Your ad account isn't linked yet. We do this for you, so get in touch and we'll wire it up. | Contact us (secondary) |
+
+The in-app character is "your assistant", never the product name. Mate is the
+name of the app, not of the agent inside it.
 
 ## Where the lock lives
 
@@ -98,7 +124,7 @@ locked?: { reason: string; cta?: { label: string; href: string } }
 ```
 
 When `locked` is present, `SectionCard` renders the MISSING INFO card in place of
-its children. Children are not rendered at all — not hidden with CSS. A locked
+its children. Children are not rendered at all, not hidden with CSS. A locked
 zone must not ship data to the browser, or the lock is decorative and the
 numbers are one devtools inspection away.
 
@@ -130,7 +156,7 @@ export function zoneLocks(input: {
 }): Record<string, ZoneLock | null>
 ```
 
-Pure, no Supabase import, unit tested in isolation — matching the existing
+Pure, no Supabase import, unit tested in isolation, matching the existing
 convention in `src/lib/portal/capabilities.ts`. `page.tsx` gathers the four
 inputs it already fetches and passes the result into `DashboardView`.
 
@@ -168,7 +194,7 @@ explicit session id and will refuse to run against a session it was not given.
   **asserts children are absent from the tree when locked**, which is the test
   that keeps the lock from decaying into a CSS overlay.
 - Checklist: correct count, and no response-time metric present.
-- Existing dashboard tests must pass unchanged — an unlocked dashboard is
+- Existing dashboard tests must pass unchanged. An unlocked dashboard is
   unaffected by this work.
 
 ## Out of scope
