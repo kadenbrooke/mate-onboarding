@@ -4,6 +4,10 @@ export type Lead = {
   source: 'missed_call' | 'texted_in' | 'web_form' | 'referral' | 'revived' | 'unknown';
   referrer_name: string | null; score: number | null;
   status: 'open' | 'won' | 'lost'; quote_cents: number | null;
+  // Who is driving the conversation: Mate's agent ('agent') or the client ('human').
+  // Optional + nullable because legacy/demo rows may predate the column or omit it;
+  // the UI treats null/absent as 'agent' (see normalizeHandler).
+  handler?: 'agent' | 'human' | null;
   contacted: boolean; after_hours: boolean; first_reply_seconds: number | null;
   created_at: string;
 };
