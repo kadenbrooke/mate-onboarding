@@ -1,29 +1,41 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { MagnifyingGlass } from '@phosphor-icons/react';
+import { useRouter } from 'next/navigation';
+import { MagnifyingGlass, CaretRight } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import {
-  FREE_GREEN, LOST_BROWN, BORDER_SOFT, TEXT_MUTED, TEXT_DARK, BG_CARD,
+  FREE_GREEN, LOST_BROWN, BORDER_SOFT, TEXT_MUTED, TEXT_DARK, TEXT_FAINT, BG_CARD,
   NUM_TABLE, NUM_DISPLAY, FONT_BODY, scoreColor,
 } from '@/lib/theme';
 import {
   searchLeads, applySort, cycleSort, SORT_CHIPS, type SortEntry,
 } from './leadsControls';
+import { DriverPill } from './DriverPill';
+import { normalizeHandler, toggleHandler, type HandlerState } from './driverToggle';
 
 const dollars = (cents: number | null) => cents == null ? '' : `$${Math.round(cents / 100).toLocaleString()}`;
 
 const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, transparent)';
 
-// Desktop: 7-column table. Mobile (<=640px): the table crushed unreadably at
-// 390px, so leads render as stacked card rows with 40px WON/LOST buttons.
-// Both variants render and CSS toggles display; state (optimistic status) is
-// shared so switching breakpoints never desyncs.
+// Desktop: 8-column table (SCORE NAME SERVICE CITY SOURCE QUOTE DRIVER STATUS)
+// plus a trailing chevron. Mobile (<=640px): the table crushed unreadably at
+// 390px, so leads render as stacked card rows with 40px WON/LOST buttons and the
+// Driver pill inline. Both variants render and CSS toggles display; state
+// (optimistic status + handler) is shared so switching breakpoints never desyncs.
+//
+// A row (or the trailing chevron) opens the lead's conversation thread via the
+// ?spotlight= param -- the same navigation HotLeads uses -- so the full thread
+// and its Take-over control are reachable straight from the table.
 
 export function LeadsTable({ leads, sessionId, spotlightId }: {
   leads: Lead[]; sessionId: string; spotlightId: string | null;
 }) {
+  const router = useRouter();
   const [rows, setRows] = useState(leads);
   const [query, setQuery] = useState('');
+  // Per-lead driver in-flight + error state (keyed by lead id).
+  const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
+  const [driverErr, setDriverErr] = useState<Record<string, string | null>>({});
   // Default sort: open leads first (open>won>lost), then highest score first.
   const [sort, setSort] = useState<SortEntry[]>([
     { key: 'status', dir: 'asc' },
@@ -50,6 +62,23 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
       method: 'PATCH', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ status, session_id: sessionId }),
     });
+  }
+
+  function openThread(id: string) {
+    router.push(`/dash/${sessionId}/leads?spotlight=${id}`);
+  }
+
+  async function toggleDriver(id: string) {
+    if (driverBusy[id]) return; // guard against overlapping PATCHes
+    const current: HandlerState = normalizeHandler(rows.find(l => l.id === id)?.handler);
+    setDriverBusy(b => ({ ...b, [id]: true }));
+    setDriverErr(e => ({ ...e, [id]: null }));
+    await toggleHandler({
+      leadId: id, sessionId, current,
+      apply: (h) => setRows(r => r.map(l => l.id === id ? { ...l, handler: h } : l)),
+      onError: (msg) => setDriverErr(e => ({ ...e, [id]: msg })),
+    });
+    setDriverBusy(b => ({ ...b, [id]: false }));
   }
 
   return (
@@ -102,6 +131,12 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
       <style>{`
         @media (max-width: 640px) { .leads-desktop { display: none !important; } }
         @media (min-width: 641px) { .leads-mobile { display: none !important; } }
+        .leads-row { cursor: pointer; }
+        .leads-row:hover { background: rgba(20,20,20,0.025); }
+        .lead-open { cursor: pointer; }
+        .driver-pill:focus-visible, .lead-open:focus-visible {
+          outline: 2px solid rgba(20,20,20,0.55); outline-offset: 2px; border-radius: 99px;
+        }
       `}</style>
 
       {/* Desktop table */}
@@ -109,13 +144,16 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
         <thead>
           <tr style={{ textAlign: 'left', opacity: .5, fontSize: 10, letterSpacing: 1, fontFamily: FONT_BODY }}>
             <th style={{ padding: 8 }}>SCORE</th><th>NAME</th><th>SERVICE</th><th>CITY</th>
-            <th>SOURCE</th><th>QUOTE</th><th>STATUS</th>
+            <th>SOURCE</th><th>QUOTE</th><th>DRIVER</th><th>STATUS</th><th aria-hidden></th>
           </tr>
         </thead>
         <tbody>
           {visible.map(l => (
             <tr key={l.id} data-testid={`lead-row-${l.id}`} data-status={l.status}
+              data-handler={normalizeHandler(l.handler)}
               data-spotlight={l.id === spotlightId ? 'true' : 'false'}
+              className="leads-row"
+              onClick={() => openThread(l.id)}
               ref={l.id === spotlightId ? spotRef : undefined}
               style={{
                 borderTop: `1px solid ${BORDER_SOFT}`,
@@ -127,11 +165,21 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>{l.source.replaceAll('_', ' ')}</td>
               <td>{dollars(l.quote_cents)}</td>
               <td>
+                <DriverPill
+                  handler={normalizeHandler(l.handler)}
+                  name={l.name}
+                  busy={driverBusy[l.id]}
+                  error={driverErr[l.id]}
+                  onToggle={() => toggleDriver(l.id)}
+                  testId={`driver-pill-${l.id}`}
+                />
+              </td>
+              <td>
                 {l.status === 'open' ? (
                   <span style={{ display: 'flex', gap: 4 }}>
-                    <button type="button" onClick={() => mark(l.id, 'won')} aria-label={`won ${l.name}`}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'won'); }} aria-label={`won ${l.name}`}
                       style={{ background: 'transparent', border: `1px solid ${FREE_GREEN}`, borderRadius: 99, color: FREE_GREEN, fontSize: 10, padding: '3px 9px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>WON</button>
-                    <button type="button" onClick={() => mark(l.id, 'lost')} aria-label={`lost ${l.name}`}
+                    <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'lost'); }} aria-label={`lost ${l.name}`}
                       style={{ background: 'transparent', border: `1px solid ${LOST_BROWN}`, borderRadius: 99, color: LOST_BROWN, fontSize: 10, padding: '3px 9px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>LOST</button>
                   </span>
                 ) : (
@@ -141,6 +189,15 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                     background: l.status === 'won' ? FREE_GREEN : LOST_BROWN,
                   }}>{l.status.toUpperCase()}</span>
                 )}
+              </td>
+              {/* Trailing chevron: keyboard-accessible affordance to open the thread */}
+              <td style={{ textAlign: 'right', paddingRight: 6 }}>
+                <button type="button" className="lead-open"
+                  onClick={(e) => { e.stopPropagation(); openThread(l.id); }}
+                  aria-label={`Open conversation with ${l.name?.trim() || 'this lead'}`}
+                  style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: TEXT_FAINT, display: 'inline-flex', padding: 4 }}>
+                  <CaretRight size={14} weight="bold" aria-hidden />
+                </button>
               </td>
             </tr>
           ))}
@@ -154,7 +211,10 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
             key={l.id}
             data-testid={`lead-card-${l.id}`}
             data-status={l.status}
+            data-handler={normalizeHandler(l.handler)}
             data-spotlight={l.id === spotlightId ? 'true' : 'false'}
+            className="leads-row"
+            onClick={() => openThread(l.id)}
             ref={l.id === spotlightId ? spotCardRef : undefined}
             style={{
               display: 'flex', alignItems: 'center', gap: 12,
@@ -189,13 +249,24 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                   {l.source.replaceAll('_', ' ')}
                 </span>
               </div>
+              {/* Driver pill on its own line so it stays tappable without crowding the meta row */}
+              <div style={{ marginTop: 6 }}>
+                <DriverPill
+                  handler={normalizeHandler(l.handler)}
+                  name={l.name}
+                  busy={driverBusy[l.id]}
+                  error={driverErr[l.id]}
+                  onToggle={() => toggleDriver(l.id)}
+                  testId={`driver-pill-card-${l.id}`}
+                />
+              </div>
             </div>
 
             {l.status === 'open' ? (
               <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <button type="button" onClick={() => mark(l.id, 'won')} aria-label={`mark won ${l.name}`}
+                <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'won'); }} aria-label={`mark won ${l.name}`}
                   style={{ background: 'transparent', border: `1px solid ${FREE_GREEN}`, borderRadius: 99, color: FREE_GREEN, fontSize: 11, minHeight: 40, padding: '0 14px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>WON</button>
-                <button type="button" onClick={() => mark(l.id, 'lost')} aria-label={`mark lost ${l.name}`}
+                <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'lost'); }} aria-label={`mark lost ${l.name}`}
                   style={{ background: 'transparent', border: `1px solid ${LOST_BROWN}`, borderRadius: 99, color: LOST_BROWN, fontSize: 11, minHeight: 40, padding: '0 14px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>LOST</button>
               </span>
             ) : (

@@ -72,6 +72,13 @@ export function scoreColor(score: number): string {
 
 export const brandVar = 'var(--brand-primary, #e14d1a)';
 
+/** Driver / handler semantics on the leads table.
+ *  Green = Mate's agent is auto-handling; amber = a human (the client) has taken over.
+ *  Deliberately semantic (reuses the success green), NOT brand orange -- this is a
+ *  white-label surface and must carry no Auto Mate branding. */
+export const AGENT_GREEN = FREE_GREEN;
+export const HUMAN_AMBER = '#b3701c';
+
 // ---------------------------------------------------------------------------
 // Per-card light/dark theming (round-4 founder pass).
 // Card containers (Card, RecoveredCard, HeroCard) set the --card-* custom
