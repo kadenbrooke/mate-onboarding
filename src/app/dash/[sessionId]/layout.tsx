@@ -8,6 +8,7 @@ import type { Brand } from '@/lib/research/website';
 import { TopBar } from '@/components/dash/chrome/TopBar';
 import { IconRail } from '@/components/dash/chrome/IconRail';
 import { DashEditingProvider } from '@/lib/dashEditing';
+import { resolveSessionId } from '@/lib/portal/demo';
 
 async function signOutAction() {
   'use server';
@@ -22,7 +23,10 @@ interface DashLayoutProps {
 }
 
 export default async function DashLayout({ children, params }: DashLayoutProps) {
-  const { sessionId } = await params;
+  const { sessionId: rawSessionId } = await params;
+  // "demo" alias -> real demo UUID so the brand/incident reads and the TopBar
+  // links resolve to the same public session as /dash/<uuid>.
+  const sessionId = resolveSessionId(rawSessionId);
 
   // Fetch session brand + client identity + open incident count. Fail-open:
   // missing data falls back to Auto Mate defaults (black logo, zero badge).

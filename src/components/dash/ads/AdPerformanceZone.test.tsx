@@ -12,6 +12,7 @@ const jcTotals: AdTotals = {
   clicks: 439,
   date_pulled: '2026-07-29',
   campaigns: [{
+    platform: 'meta',
     campaign_id: '120246899643110407',
     campaign_name: 'New J&C Leads Campaign',
     spend_cents: 60523,
@@ -19,6 +20,25 @@ const jcTotals: AdTotals = {
     clicks: 439,
     leads: 22,
     cpl_cents: 2751,
+  }],
+  platforms: [{
+    platform: 'meta',
+    spend_cents: 60523,
+    impressions: 31546,
+    clicks: 439,
+    leads: 22,
+    cpl_cents: 2751,
+    date_pulled: '2026-07-29',
+    campaigns: [{
+      platform: 'meta',
+      campaign_id: '120246899643110407',
+      campaign_name: 'New J&C Leads Campaign',
+      spend_cents: 60523,
+      impressions: 31546,
+      clicks: 439,
+      leads: 22,
+      cpl_cents: 2751,
+    }],
   }],
 };
 

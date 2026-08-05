@@ -5,10 +5,13 @@ import type { DashCapability } from '@/components/dash/types';
 import { DashboardView } from '@/components/dash/DashboardView';
 import type { DashData } from '@/components/dash/types';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
+import { resolveSessionId } from '@/lib/portal/demo';
 import { adTotals, type AdMetricRow } from '@/lib/metrics/ads';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
-  const { sessionId } = await params;
+  const { sessionId: rawSessionId } = await params;
+  // "demo" alias -> real demo UUID for all DB reads below (uuid column).
+  const sessionId = resolveSessionId(rawSessionId);
   await requireDashAccess(sessionId);
   const supabase = createServiceClient();
 
@@ -94,20 +97,27 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .select('id', { count: 'exact', head: true })
       .eq('session_id', sessionId)
       .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
-    // Ad Performance zone: latest daily snapshot. Ordered date desc; we keep
-    // only the rows sharing the most-recent date_pulled (one per campaign).
+    // Ad Performance zone: latest daily snapshot per platform (Meta + Google
+    // share this one card). Ordered date desc so the newest rows come first.
     supabase
       .from('ad_metrics')
-      .select('session_id, campaign_id, campaign_name, spend_cents, impressions, clicks, leads, cpl_cents, date_pulled, raw')
+      .select('session_id, platform, campaign_id, campaign_name, spend_cents, impressions, clicks, leads, cpl_cents, date_pulled, raw')
       .eq('session_id', sessionId)
       .order('date_pulled', { ascending: false })
-      .limit(50),
+      .limit(100),
   ]);
 
-  // Collapse ad_metrics to the latest snapshot then compute zone totals.
+  // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
+  // totals. Resolving one global latest date would silently drop a platform
+  // whenever the two refreshes land on different days (independent schedules,
+  // and a failed Google pull leaves yesterday's row as its newest).
   const allAdRows = (adMetricsResult.data ?? []) as AdMetricRow[];
-  const latestDate = allAdRows.length ? allAdRows[0].date_pulled : null;
-  const latestAdRows = latestDate ? allAdRows.filter((r) => r.date_pulled === latestDate) : [];
+  const newestPerPlatform = new Map<string, string>();
+  for (const r of allAdRows) {
+    const seen = newestPerPlatform.get(r.platform);
+    if (!seen || r.date_pulled > seen) newestPerPlatform.set(r.platform, r.date_pulled);
+  }
+  const latestAdRows = allAdRows.filter((r) => newestPerPlatform.get(r.platform) === r.date_pulled);
   const ads = latestAdRows.length ? adTotals(latestAdRows) : null;
 
   // Map client_capabilities rows: capability_key -> key
