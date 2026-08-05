@@ -6,6 +6,7 @@ import { LeadThread } from '@/components/dash/leads/LeadThread';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, CARD_SHADOW } from '@/lib/theme';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
+import { resolveSessionId } from '@/lib/portal/demo';
 import { BackLink } from '@/components/dash/chrome/BackLink';
 import { MobileNav } from '@/components/dash/MobileNav';
 
@@ -13,7 +14,9 @@ export default async function LeadsPage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
   searchParams: Promise<{ spotlight?: string }>;
 }) {
-  const { sessionId } = await params;
+  const { sessionId: rawSessionId } = await params;
+  // "demo" alias -> real demo UUID for all DB reads below (uuid column).
+  const sessionId = resolveSessionId(rawSessionId);
   await requireDashAccess(sessionId);
   const { spotlight } = await searchParams;
   const supabase = createServiceClient();

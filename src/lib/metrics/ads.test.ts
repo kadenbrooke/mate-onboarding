@@ -1,8 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import {
   mapInsightsToRows,
+  mapGoogleRowsToRows,
   adTotals,
   type MetaInsightsResponse,
+  type MetaInsightRow,
+  type GoogleAdsResponse,
   type AdMetricRow,
 } from './ads';
 
@@ -57,7 +60,9 @@ describe('mapInsightsToRows', () => {
 
   it('preserves the full campaign object in raw for audit', () => {
     const [r] = mapInsightsToRows(REAL_PAYLOAD, 'sess-1', '2026-07-29');
-    expect(r.raw.cpc).toBe('1.378656');
+    // raw is a union (Meta | Google) now that both platforms share the row
+    // shape; narrow to the Meta side for this Meta-only assertion.
+    expect((r.raw as MetaInsightRow).cpc).toBe('1.378656');
   });
 
   it('prefers lead_grouped, falls back to leadgen_grouped then lead', () => {
@@ -121,8 +126,8 @@ describe('adTotals', () => {
 
   it('blends CPL across multiple campaigns using grand totals', () => {
     const rows: AdMetricRow[] = [
-      { session_id: 's', campaign_id: 'a', campaign_name: 'A', spend_cents: 10000, impressions: 100, clicks: 10, leads: 4, cpl_cents: 2500, date_pulled: '2026-07-29', raw: {} },
-      { session_id: 's', campaign_id: 'b', campaign_name: 'B', spend_cents: 6000, impressions: 60, clicks: 6, leads: 1, cpl_cents: 6000, date_pulled: '2026-07-29', raw: {} },
+      { session_id: 's', platform: 'meta', campaign_id: 'a', campaign_name: 'A', spend_cents: 10000, impressions: 100, clicks: 10, leads: 4, cpl_cents: 2500, date_pulled: '2026-07-29', raw: {} },
+      { session_id: 's', platform: 'meta', campaign_id: 'b', campaign_name: 'B', spend_cents: 6000, impressions: 60, clicks: 6, leads: 1, cpl_cents: 6000, date_pulled: '2026-07-29', raw: {} },
     ];
     const t = adTotals(rows);
     expect(t.spend_cents).toBe(16000);
@@ -137,6 +142,84 @@ describe('adTotals', () => {
     expect(t.leads).toBe(0);
     expect(t.cpl_cents).toBe(0);
     expect(t.campaigns).toHaveLength(0);
+    expect(t.platforms).toHaveLength(0);
     expect(t.date_pulled).toBeNull();
+  });
+});
+
+// Numbers taken from J&C's real Google Ads account 195-691-5350, Overview for
+// Jul 1-30 2026: $680.53 cost, 117 clicks, 3,889 impressions, 3 leads.
+const REAL_GOOGLE: GoogleAdsResponse = {
+  results: [
+    {
+      campaign: { id: '22334455', name: 'Asphalt Campaign - 07/26' },
+      metrics: { costMicros: '680530000', impressions: '3889', clicks: '117', conversions: 3 },
+    },
+  ],
+};
+
+describe('mapGoogleRowsToRows', () => {
+  it("maps J&C's real Google payload, converting micros to cents", () => {
+    const [r] = mapGoogleRowsToRows(REAL_GOOGLE, 'sess-1', '2026-07-31');
+    expect(r.platform).toBe('google');
+    expect(r.campaign_id).toBe('22334455');
+    expect(r.campaign_name).toBe('Asphalt Campaign - 07/26');
+    expect(r.spend_cents).toBe(68053); // 680530000 micros / 10000 = $680.53
+    expect(r.impressions).toBe(3889);
+    expect(r.clicks).toBe(117);
+    expect(r.leads).toBe(3);
+    expect(r.cpl_cents).toBe(22684); // round(68053 / 3) = $226.84
+  });
+
+  it('rounds fractional conversions and never divides by zero', () => {
+    const frac: GoogleAdsResponse = {
+      results: [{ campaign: { id: 'c1' }, metrics: { costMicros: '50000000', conversions: 0.4 } }],
+    };
+    const [r] = mapGoogleRowsToRows(frac, 's', '2026-07-31');
+    expect(r.leads).toBe(0); // 0.4 rounds down -- do not claim a lead
+    expect(r.cpl_cents).toBe(0);
+    expect(r.spend_cents).toBe(5000);
+  });
+
+  it('skips rows with no campaign id and tolerates an empty payload', () => {
+    expect(mapGoogleRowsToRows({ results: [{ metrics: { costMicros: '1' } }] }, 's', 'd')).toHaveLength(0);
+    expect(mapGoogleRowsToRows({}, 's', 'd')).toHaveLength(0);
+  });
+});
+
+describe('adTotals across Meta and Google on one card', () => {
+  const bothPlatforms = (): AdMetricRow[] => [
+    ...mapInsightsToRows(REAL_PAYLOAD, 'sess-1', '2026-07-31'),
+    ...mapGoogleRowsToRows(REAL_GOOGLE, 'sess-1', '2026-07-31'),
+  ];
+
+  it('blends spend and leads across BOTH platforms', () => {
+    const t = adTotals(bothPlatforms());
+    expect(t.spend_cents).toBe(60523 + 68053); // $1,285.76
+    expect(t.leads).toBe(22 + 3);
+    // blended = 128576 / 25 = 5143 cents = $51.43
+    expect(t.cpl_cents).toBe(5143);
+  });
+
+  it('splits per platform, ordered by spend desc, with each CPL intact', () => {
+    const t = adTotals(bothPlatforms());
+    expect(t.platforms.map((p) => p.platform)).toEqual(['google', 'meta']); // google outspent meta
+    const meta = t.platforms.find((p) => p.platform === 'meta')!;
+    const google = t.platforms.find((p) => p.platform === 'google')!;
+    expect(meta.cpl_cents).toBe(2751); // $27.51
+    expect(google.cpl_cents).toBe(22684); // $226.84 -- 8x more expensive
+    expect(meta.campaigns).toHaveLength(1);
+    expect(google.campaigns).toHaveLength(1);
+  });
+
+  it('reports the OLDEST pull date so the card never overstates freshness', () => {
+    const rows = [
+      ...mapInsightsToRows(REAL_PAYLOAD, 'sess-1', '2026-07-29'), // meta a day stale
+      ...mapGoogleRowsToRows(REAL_GOOGLE, 'sess-1', '2026-07-31'),
+    ];
+    const t = adTotals(rows);
+    expect(t.date_pulled).toBe('2026-07-29');
+    expect(t.platforms.find((p) => p.platform === 'meta')!.date_pulled).toBe('2026-07-29');
+    expect(t.platforms.find((p) => p.platform === 'google')!.date_pulled).toBe('2026-07-31');
   });
 });

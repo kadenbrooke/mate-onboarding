@@ -5,8 +5,12 @@ import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { resolveDashAccess, type DashAccess } from "./dash-access";
+import { resolveSessionId } from "./demo";
 
-export async function requireDashAccess(sessionId: string): Promise<DashAccess> {
+export async function requireDashAccess(rawSessionId: string): Promise<DashAccess> {
+  // Map the "demo" alias to the real demo UUID before any DB read / redirect,
+  // so /dash/demo is gated exactly like /dash/<demo-uuid> (public, is_demo).
+  const sessionId = resolveSessionId(rawSessionId);
   const service = createServiceClient();
   const { data: session } = await service
     .from("onboarding_sessions")

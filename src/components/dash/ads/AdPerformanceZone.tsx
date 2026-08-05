@@ -3,22 +3,39 @@ import { useState } from 'react';
 import { Card } from '../Card';
 import { ringSegments } from '@/lib/metrics/ring';
 import { moneyShort } from '@/lib/metrics/format';
-import type { AdTotals } from '@/lib/metrics/ads';
+import type { AdTotals, AdPlatform } from '@/lib/metrics/ads';
 import {
   brandVar, FREE_GREEN, CARD_TRACK, CARD_MUTED, CARD_HAIRLINE, CARD_INSET,
   NUM_DISPLAY, FONT_BODY, FONT_HEAD, FONT_NUM,
 } from '@/lib/theme';
 
-// Ad Performance zone -- Meta ad spend + cost-per-lead for the client.
+// Ad Performance zone -- ALL paid spend, Meta and Google, on ONE card.
 // Headline metric is COST PER LEAD (what J&C actually cares about: what each
 // lead costs them). A center-swap ring (the locked Mate ring standard) shows
-// per-campaign spend; tapping the center cycles SPEND / LEADS / CPL.
+// where the money goes; tapping the center cycles SPEND / LEADS / CPL.
+//
+// The ring segments by PLATFORM once more than one is live, and by campaign
+// while only one is. That is deliberate: with two platforms the first question
+// is "which channel buys leads cheaper", and per-campaign detail still sits
+// right below in the breakdown.
 
 type Center = 'cpl' | 'spend' | 'leads';
 
-// Multi-campaign ring palette: brand orange leads, then a warm supporting
-// ramp. Single-campaign (J&C today) just uses orange.
+// Multi-segment ring palette: brand orange leads, then a warm supporting
+// ramp. Single-segment just uses orange.
 const SPEND_RAMP = ['var(--brand-primary, #e14d1a)', '#c98a4a', '#8a6a50', '#a3603f', '#6f5340'];
+
+// Platform colors stay inside the brand ramp on purpose -- Meta blue and
+// Google's four-color mark would drag the client's dashboard off-brand.
+const PLATFORM_COLOR: Record<AdPlatform, string> = {
+  meta: 'var(--brand-primary, #e14d1a)',
+  google: '#c98a4a',
+};
+
+const PLATFORM_LABEL: Record<AdPlatform, string> = {
+  meta: 'META',
+  google: 'GOOGLE',
+};
 
 const CENTER_LABEL: Record<Center, string> = {
   cpl: 'PER LEAD',
@@ -45,12 +62,20 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
 
   const radius = 48;
   const C = 2 * Math.PI * radius;
-  // Ring proportion = share of spend per campaign (where the money goes).
+
+  // Segment by platform once both are live, by campaign while only one is.
+  const multiPlatform = ads.platforms.length > 1;
+  const segSource = multiPlatform
+    ? ads.platforms.map((p) => ({ key: p.platform, value: p.spend_cents, color: PLATFORM_COLOR[p.platform] }))
+    : ads.campaigns.map((c, i) => ({ key: c.campaign_id, value: c.spend_cents, color: SPEND_RAMP[i % SPEND_RAMP.length] }));
+
+  // Ring proportion = share of spend (where the money goes).
   const segs = ringSegments(
-    ads.campaigns.map((c) => ({ key: c.campaign_id, value: c.spend_cents })),
+    segSource.map((s) => ({ key: s.key, value: s.value })),
     radius,
-    ads.campaigns.length > 1 ? 3 : 0,
+    segSource.length > 1 ? 3 : 0,
   );
+  const segColor = new Map(segSource.map((s) => [s.key, s.color]));
 
   const centerValue =
     center === 'cpl' ? moneyShort(ads.cpl_cents)
@@ -71,9 +96,9 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
                 data-testid={`ad-seg-${s.key}`}
                 r={radius}
                 fill="none"
-                stroke={SPEND_RAMP[i % SPEND_RAMP.length]}
+                stroke={segColor.get(s.key) ?? SPEND_RAMP[i % SPEND_RAMP.length]}
                 strokeWidth={11}
-                strokeLinecap={ads.campaigns.length > 1 ? 'round' : 'butt'}
+                strokeLinecap={segSource.length > 1 ? 'round' : 'butt'}
                 strokeDasharray={`${s.dash} ${C}`}
                 strokeDashoffset={s.offset}
               />
@@ -126,6 +151,47 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
         </div>
       </div>
 
+      {/* Per-platform comparison. Only meaningful with two platforms running,
+          and it is the whole point of putting them on one card: which channel
+          actually buys leads cheaper. */}
+      {multiPlatform && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{
+            fontSize: 10, letterSpacing: 1.5, color: CARD_MUTED,
+            fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 8,
+          }}>
+            BY PLATFORM
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            {ads.platforms.map((p) => (
+              <div
+                key={p.platform}
+                data-testid={`ad-platform-${p.platform}`}
+                style={{
+                  display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 10, alignItems: 'center',
+                  padding: '9px 11px', borderRadius: 10, background: CARD_INSET,
+                }}
+              >
+                <span style={{
+                  width: 8, height: 8, borderRadius: 2, background: PLATFORM_COLOR[p.platform],
+                }} />
+                <span style={{
+                  fontSize: 11, letterSpacing: 1.2, fontWeight: 600,
+                  fontFamily: FONT_BODY, color: 'var(--card-fg, #141414)',
+                }}>
+                  {PLATFORM_LABEL[p.platform]}
+                </span>
+                <span style={{ display: 'flex', gap: 12, alignItems: 'baseline', whiteSpace: 'nowrap' }}>
+                  <Stat value={moneyShort(p.spend_cents)} unit="spent" />
+                  <Stat value={String(p.leads)} unit="leads" color={FREE_GREEN} />
+                  <Stat value={moneyShort(p.cpl_cents)} unit="/lead" color={brandVar} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Per-campaign breakdown */}
       <div style={{ marginTop: 14 }}>
         <div style={{
@@ -137,7 +203,7 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
         <div style={{ display: 'grid', gap: 6 }}>
           {ads.campaigns.map((c, i) => (
             <div
-              key={c.campaign_id}
+              key={`${c.platform}-${c.campaign_id}`}
               data-testid={`ad-campaign-${c.campaign_id}`}
               style={{
                 display: 'grid', gridTemplateColumns: '10px 1fr auto', gap: 10, alignItems: 'center',
@@ -146,13 +212,26 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
             >
               <span style={{
                 width: 8, height: 8, borderRadius: 2,
-                background: SPEND_RAMP[i % SPEND_RAMP.length],
+                background: multiPlatform ? PLATFORM_COLOR[c.platform] : SPEND_RAMP[i % SPEND_RAMP.length],
               }} />
               <span style={{
                 fontSize: 12, fontFamily: FONT_BODY, color: 'var(--card-fg, #141414)',
                 overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                display: 'flex', alignItems: 'baseline', gap: 6, minWidth: 0,
               }}>
-                {c.campaign_name}
+                {/* Platform tag disambiguates same-named campaigns across
+                    platforms; hidden while only one platform is live. */}
+                {multiPlatform && (
+                  <span style={{
+                    fontSize: 8.5, letterSpacing: 0.8, fontWeight: 600, flexShrink: 0,
+                    color: PLATFORM_COLOR[c.platform],
+                  }}>
+                    {PLATFORM_LABEL[c.platform]}
+                  </span>
+                )}
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {c.campaign_name}
+                </span>
               </span>
               <span style={{ display: 'flex', gap: 12, alignItems: 'baseline', whiteSpace: 'nowrap' }}>
                 <Stat value={moneyShort(c.spend_cents)} unit="spent" />
