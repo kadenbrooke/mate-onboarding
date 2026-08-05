@@ -31,4 +31,19 @@ describe('POST /api/agent/postcall', () => {
     expect(res.status).toBe(200);
     expect(sendSms).toHaveBeenCalledWith('+18019414398', expect.stringContaining('What next?'));
   });
+
+  it('routes a quote-menu reply (choice 1) through the quote path', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'pc1', lead_id: null, kind: 'quote', jc_conversation_id: 'conv1' }, error: null });
+    const res = await post('action=operator_reply&k=tok', { session_id: 's1', text: '1' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, kind: 'quote' });
+  });
+
+  it('logs notes on a quote-menu reply with notes (choice 2)', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'pc1', lead_id: null, kind: 'quote', jc_conversation_id: 'conv1' }, error: null });
+    single.mockResolvedValueOnce({ data: { notes: null }, error: null });
+    const res = await post('action=operator_reply&k=tok', { session_id: 's1', text: '2 wants to think about the price' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ kind: 'quote' });
+  });
 });
