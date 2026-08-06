@@ -15,10 +15,11 @@ import type { Lead } from '@/lib/metrics/leads';
 
 // The Leads card shows lead volume over the selected calendar period. The
 // three standard chips are calendar-to-date (this week Su..Sa, this month,
-// this year); CUSTOM opens a date-range picker for any span. The headline
-// number, caption, outcome strip, and chart all follow the same selection, and
-// the chart marks themselves are hover/tap-scrubbable (like the RECOVERED
-// card) so a client can read any single day's or period's value.
+// this year); CUSTOM opens a date-range picker for any span. The chips switch
+// on CLICK only (no hover-select). The headline number, caption, outcome strip,
+// and chart all follow the same selection, and only the chart marks themselves
+// are hover/tap-scrubbable (like the RECOVERED card) so a client can read any
+// single day's or period's value.
 
 type Chip = PeriodRange | 'CUSTOM';
 type ChartMode = 'bars' | 'line';
@@ -272,7 +273,6 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
             aria-label={c}
             className="dash-tap"
             onClick={() => setChip(c)}
-            onMouseEnter={() => setChip(c)}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 3,
               fontSize: 10,

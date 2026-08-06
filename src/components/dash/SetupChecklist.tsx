@@ -12,11 +12,16 @@ import { GATED_ZONES, ZONE_LABELS, type ZoneId, type ZoneLock } from '@/lib/dash
  * closed, and response speed is excluded outright because the owner does not
  * control it.
  */
-export function SetupChecklist({ locks }: { locks: Record<ZoneId, ZoneLock | null> }) {
+export function SetupChecklist({ locks, showLabel = true }: {
+  locks: Record<ZoneId, ZoneLock | null>;
+  // Desktop wraps this in a titled SectionCard, so it suppresses its own label
+  // to avoid a double "SETUP" heading (same pattern as the other zone widgets).
+  showLabel?: boolean;
+}) {
   const connected = GATED_ZONES.filter((id) => locks[id] === null).length;
 
   return (
-    <Card label="SETUP">
+    <Card label={showLabel ? 'SETUP' : undefined}>
       <div style={{
         fontFamily: FONT_BODY, fontSize: 12.5, fontWeight: 700,
         color: CARD_FG, marginTop: 8,

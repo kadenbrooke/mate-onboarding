@@ -44,15 +44,22 @@ describe('TrendCard', () => {
     }
   });
 
-  it('offers four period chips including CUSTOM, and hover selects a chip', () => {
+  it('offers four period chips including CUSTOM, switching on click', () => {
     render(<TrendCard leads={[lead({})]} />);
     for (const name of ['WEEK', 'MONTH', 'YEAR', 'CUSTOM']) {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
-    // Hover-select (mirrors the ad-performance chips): hovering YEAR switches
-    // the chart to the sparkline without a click.
-    fireEvent.mouseEnter(screen.getByRole('button', { name: 'YEAR' }));
+    // Click switches WEEK (bars) -> YEAR (sparkline).
+    fireEvent.click(screen.getByRole('button', { name: 'YEAR' }));
     expect(screen.getByTestId('trend-spark')).toBeInTheDocument();
+  });
+
+  it('does NOT switch the period on chip hover (click-only)', () => {
+    render(<TrendCard leads={[lead({})]} />);
+    // Default WEEK renders bars. Hovering YEAR must NOT switch to the sparkline.
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'YEAR' }));
+    expect(screen.getByTestId('trend-bars')).toBeInTheDocument();
+    expect(screen.queryByTestId('trend-spark')).toBeNull();
   });
 
   it('CUSTOM reveals a start/end date-range picker', () => {

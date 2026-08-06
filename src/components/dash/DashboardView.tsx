@@ -178,6 +178,12 @@ export function DashboardView({ session, leads, data, locks }: {
         </div>
       </SectionCard>
     ) },
+    // Setup checklist: always visible (never gated -- it is the thing that tells
+    // the client what to unlock). Full-width row at the bottom of the grid. Its
+    // own label is suppressed since the SectionCard title carries it.
+    { id: 'zone-setup', x: 0, y: 5, w: 12, node: (
+      <SectionCard title="Setup"><SetupChecklist locks={locks} showLabel={false} /></SectionCard>
+    ) },
   ];
 
   // Mobile view stacks. Each non-assistant tab is a reorderable list

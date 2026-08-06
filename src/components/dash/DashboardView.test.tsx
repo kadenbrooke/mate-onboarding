@@ -85,11 +85,16 @@ describe('DashboardView', () => {
     // Off by default: Customize entry shown (now in the header harness), edit toolbar absent.
     expect(screen.getByRole('button', { name: /customize layout/i })).toBeInTheDocument();
     expect(within(desktop).queryByRole('button', { name: /done/i })).toBeNull();
-    // Every movable zone appears exactly once in the desktop grid.
+    // Every movable zone's SectionCard heading appears exactly once in the
+    // desktop grid. Matched by heading role, not raw text, because the setup
+    // checklist legitimately lists gated zone names (Calendar, Reputation,
+    // Follow-up engine, Operations) as its checklist items too.
     const zones = ['Calendar', 'Lead flow', 'Speed to lead', 'Pipeline', 'Follow-up engine', 'Reputation', 'Operations'];
     for (const zone of zones) {
-      expect(within(desktop).getAllByText(zone).length, `zone "${zone}" should appear exactly once`).toBe(1);
+      expect(within(desktop).getAllByRole('heading', { name: zone }).length, `zone "${zone}" heading should appear exactly once`).toBe(1);
     }
+    // The always-visible setup checklist is present on desktop too.
+    expect(within(desktop).getByRole('heading', { name: 'Setup' })).toBeInTheDocument();
   });
 
   it('entering Customize mode reveals Reset + Done controls', () => {
