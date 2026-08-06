@@ -8,6 +8,7 @@ import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { adTotals, type AdMetricRow } from '@/lib/metrics/ads';
 import { zoneLocks } from '@/lib/dash/locks';
+import { gateLockedZoneData } from '@/lib/dash/gate';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
@@ -140,7 +141,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     status: String(row.status),
   }));
 
-  const data: DashData = {
+  const rawData: DashData = {
     events: eventsResult.data ?? [],
     appointments: appointmentsResult.data ?? [],
     reactivation: reactivationResult.data ?? null,
@@ -152,6 +153,11 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     weekActionCount: weekActionCountResult.count ?? 0,
     ads,
   };
+
+  // Withhold every locked zone's data from the client payload. Card.tsx never
+  // MOUNTS locked children, but without this the rows would still ride along in
+  // the RSC/Flight payload embedded in the HTML. Locked zone == no data shipped.
+  const data = gateLockedZoneData(rawData, locks);
 
   return (
     <DashboardView

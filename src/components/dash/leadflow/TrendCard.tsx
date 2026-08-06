@@ -319,12 +319,22 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
     return <ScrubLine key={`line-${chip}-${customStart}-${customEnd}`} series={series} labels={labels} />;
   })();
 
+  // The headline, caption, and outcome strip are all derived from `now`, so
+  // they differ between the UTC server render and the client's local timezone.
+  // Gate them behind `mounted` (as the chart already is) so SSR and the first
+  // client render agree -- otherwise a "3" can flip to "2" on hydrate with a
+  // React mismatch warning. Placeholders keep visibility hidden to hold layout,
+  // and render identically on server and first client paint.
   return (
     <Card label="LEADS" right={right}>
       {/* Standalone display stat: Geist 300 pnum per brand guide. Follows the
           selected calendar period (or custom range). */}
-      <div style={{ fontSize: 28, marginTop: 6, ...NUM_DISPLAY }}>{headline}</div>
-      <div style={{ fontSize: 11, color: CARD_MUTED, fontFamily: FONT_BODY, marginTop: 1 }}>{caption}</div>
+      <div style={{ fontSize: 28, marginTop: 6, ...NUM_DISPLAY, visibility: mounted ? 'visible' : 'hidden' }}>
+        {mounted ? headline : 0}
+      </div>
+      <div style={{ fontSize: 11, color: CARD_MUTED, fontFamily: FONT_BODY, marginTop: 1, visibility: mounted ? 'visible' : 'hidden' }}>
+        {mounted ? caption : ' '}
+      </div>
 
       {chip === 'CUSTOM' && mounted && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
@@ -350,8 +360,16 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
       )}
 
       {/* Won/open/lost for the selected period: volume vs outcome in one glance,
-          without pulling in the all-time funnel below. */}
-      <OutcomeStrip won={outcomes.won} open={outcomes.open} lost={outcomes.lost} />
+          without pulling in the all-time funnel below. Kept behind `mounted`
+          for the same timezone-parity reason as the headline; hidden zeros hold
+          its height so nothing jumps on hydrate. */}
+      <div style={{ visibility: mounted ? 'visible' : 'hidden' }}>
+        <OutcomeStrip
+          won={mounted ? outcomes.won : 0}
+          open={mounted ? outcomes.open : 0}
+          lost={mounted ? outcomes.lost : 0}
+        />
+      </div>
       {chartBody}
     </Card>
   );

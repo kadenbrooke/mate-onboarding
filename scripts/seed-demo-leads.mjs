@@ -26,15 +26,18 @@ if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
   process.exit(1);
 }
 
-// Hard blocklist for the destructive --locked reset: never mutate the
-// prospect-facing demo (b7573135) or the real J&C production session
-// (61400e73). The walkthrough demo must be its own separate is_demo session.
+// Hard blocklist that fires on EVERY run (plain seed AND --locked), before any
+// network call: never write to the prospect-facing demo (b7573135) or the real
+// J&C production session (61400e73). A plain seed would splash 40 synthetic
+// leads onto a live page where fake and real leads are indistinguishable --
+// the exact incident this dashboard already had. The walkthrough demo must be
+// its own separate is_demo session.
 const PROTECTED_SESSIONS = new Set([
   'b7573135-d4ec-43bb-bf33-a1d365739784', // prospect demo
   '61400e73-0570-4167-88d9-d3a69650b15b', // real J&C
 ]);
-if (locked && PROTECTED_SESSIONS.has(sessionId.toLowerCase())) {
-  console.error(`refusing to run --locked against protected session ${sessionId}`);
+if (PROTECTED_SESSIONS.has(sessionId.toLowerCase())) {
+  console.error(`refusing to run against protected session ${sessionId} (real J&C / prospect demo)`);
   process.exit(1);
 }
 

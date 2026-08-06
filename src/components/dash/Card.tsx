@@ -17,8 +17,14 @@ import type { ZoneCta } from '@/lib/dash/locks';
  *
  * `locked` gates the zone: when set, the card renders the red MISSING INFO body
  * in place of its children. Children are NOT rendered at all (not hidden with
- * CSS) so a locked zone never ships its real numbers to the browser -- a CSS
- * overlay would leave them one devtools inspection away.
+ * CSS) so a locked zone's markup never reaches the DOM -- a CSS overlay would
+ * leave the numbers one devtools inspection away.
+ *
+ * This DOM withholding is only HALF the guarantee: the zone's underlying data
+ * is also stripped server-side by gateLockedZoneData (src/lib/dash/gate.ts)
+ * before it is handed to this client tree, so a locked zone contributes nothing
+ * to the RSC/Flight payload either. Withholding here without that gate would
+ * still ship the rows in the page HTML.
  */
 export type SectionLock = {
   zoneLabel: string;
