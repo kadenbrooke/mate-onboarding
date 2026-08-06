@@ -1,13 +1,16 @@
 import type { Lead } from '@/lib/metrics/leads';
+import { normalizeHandler } from './driverToggle';
 
-export type SortKey = 'location' | 'score' | 'status' | 'quote';
+export type SortKey = 'location' | 'score' | 'status' | 'quote' | 'captured' | 'driver';
 export type SortDir = 'asc' | 'desc';
 export interface SortEntry { key: SortKey; dir: SortDir }
 
 /** First-click direction per chip. Founder intent: score & quote high->low,
- *  status open>won>lost (asc rank), location A->Z. */
+ *  status open>won>lost (asc rank), location A->Z, captured newest->oldest,
+ *  driver agent->human (A->Z). */
 export const DEFAULT_DIR: Record<SortKey, SortDir> = {
   location: 'asc', score: 'desc', status: 'asc', quote: 'desc',
+  captured: 'desc', driver: 'asc',
 };
 
 const STATUS_RANK: Record<Lead['status'], number> = { open: 0, won: 1, lost: 2 };
@@ -36,12 +39,26 @@ export function cycleSort(state: SortEntry[], key: SortKey): SortEntry[] {
   return state.filter(e => e.key !== key);
 }
 
+/** created_at as epoch ms; null/absent/invalid become -1 (mirrors the score/quote
+ *  `?? -1` idiom) so they read as oldest -> land last under the default desc
+ *  (newest-first) direction, and never produce NaN in the comparator. */
+function capturedMs(l: Lead): number {
+  if (!l.created_at) return -1;
+  const t = new Date(l.created_at).getTime();
+  return Number.isNaN(t) ? -1 : t;
+}
+
 function compareBy(key: SortKey, a: Lead, b: Lead): number {
   switch (key) {
     case 'location': return (a.city ?? '').localeCompare(b.city ?? '');
     case 'score':    return (a.score ?? -1) - (b.score ?? -1);
     case 'quote':    return (a.quote_cents ?? -1) - (b.quote_cents ?? -1);
     case 'status':   return STATUS_RANK[a.status] - STATUS_RANK[b.status];
+    case 'captured': return capturedMs(a) - capturedMs(b);
+    // Sort by the DRIVER column's displayed value (agent/human), so null/legacy
+    // handlers normalize to 'agent' and group with real agents instead of
+    // dangling as a separate empty bucket. 'agent' < 'human' ascending.
+    case 'driver':   return normalizeHandler(a.handler).localeCompare(normalizeHandler(b.handler));
   }
 }
 
@@ -62,4 +79,6 @@ export const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: 'score', label: 'Score' },
   { key: 'status', label: 'Status' },
   { key: 'quote', label: 'Quote' },
+  { key: 'captured', label: 'Date captured' },
+  { key: 'driver', label: 'Driver' },
 ];

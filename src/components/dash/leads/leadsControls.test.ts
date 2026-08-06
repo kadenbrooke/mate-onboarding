@@ -7,6 +7,7 @@ const mk = (o: Partial<Lead>): Lead => ({
   name: o.name ?? null, city: o.city ?? null, service: o.service ?? null,
   phone: o.phone ?? null, source: o.source ?? 'unknown', referrer_name: null,
   score: o.score ?? null, status: o.status ?? 'open', quote_cents: o.quote_cents ?? null,
+  handler: o.handler ?? null,
   contacted: false, after_hours: false, first_reply_seconds: null,
   created_at: o.created_at ?? '2026-07-01T00:00:00Z',
 });
@@ -35,6 +36,8 @@ describe('cycleSort (3-state: off -> default dir -> flipped -> off)', () => {
     expect(cycleSort([], 'location')).toEqual([{ key: 'location', dir: 'asc' }]);
     expect(cycleSort([], 'status')).toEqual([{ key: 'status', dir: 'asc' }]);
     expect(cycleSort([], 'quote')).toEqual([{ key: 'quote', dir: 'desc' }]);
+    expect(cycleSort([], 'captured')).toEqual([{ key: 'captured', dir: 'desc' }]);
+    expect(cycleSort([], 'driver')).toEqual([{ key: 'driver', dir: 'asc' }]);
   });
   it('flips direction on second click', () => {
     expect(cycleSort([{ key: 'score', dir: 'desc' }], 'score')).toEqual([{ key: 'score', dir: 'asc' }]);
@@ -77,6 +80,33 @@ describe('applySort (compound, priority = activation order)', () => {
     ];
     expect(applySort(leads, [{ key: 'status', dir: 'asc' }, { key: 'score', dir: 'desc' }]).map(l => l.id))
       .toEqual(['open-hi', 'open-lo', 'won']);
+  });
+  it('captured desc (default) puts newest first; null created_at last', () => {
+    const nullCap = { ...mk({ id: 'na' }), created_at: null as unknown as string };
+    const leads = [
+      mk({ id: 'old', created_at: '2026-01-01T00:00:00Z' }),
+      mk({ id: 'new', created_at: '2026-08-01T00:00:00Z' }),
+      nullCap,
+    ];
+    expect(applySort(leads, [{ key: 'captured', dir: 'desc' }]).map(l => l.id)).toEqual(['new', 'old', 'na']);
+  });
+  it('captured asc puts oldest first', () => {
+    const leads = [
+      mk({ id: 'new', created_at: '2026-08-01T00:00:00Z' }),
+      mk({ id: 'old', created_at: '2026-01-01T00:00:00Z' }),
+    ];
+    expect(applySort(leads, [{ key: 'captured', dir: 'asc' }]).map(l => l.id)).toEqual(['old', 'new']);
+  });
+  it('driver asc orders agent before human; null handler groups with agent', () => {
+    const leads = [
+      mk({ id: 'human', handler: 'human' }),
+      mk({ id: 'agent', handler: 'agent' }),
+      mk({ id: 'legacy', handler: null }),
+    ];
+    // legacy (null) normalizes to agent, so the two agents lead and human trails.
+    const ids = applySort(leads, [{ key: 'driver', dir: 'asc' }]).map(l => l.id);
+    expect(ids[2]).toBe('human');
+    expect(ids.slice(0, 2).sort()).toEqual(['agent', 'legacy']);
   });
   it('does not mutate the input array', () => {
     const leads = [mk({ id: 'a', score: 1 }), mk({ id: 'b', score: 2 })];
