@@ -14,10 +14,14 @@ import { DriverPill } from './DriverPill';
 import { normalizeHandler, toggleHandler, type HandlerState } from './driverToggle';
 
 const dollars = (cents: number | null) => cents == null ? '' : `$${Math.round(cents / 100).toLocaleString()}`;
+// Compact captured date, e.g. "Aug 5" -- matches RecoveredCard's short-date style.
+// Null/absent (legacy/demo rows) render as an em-free dash.
+const captured = (iso: string | null | undefined) =>
+  iso == null ? '-' : new Date(iso).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 
 const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, transparent)';
 
-// Desktop: 8-column table (SCORE NAME SERVICE CITY SOURCE QUOTE DRIVER STATUS)
+// Desktop: 9-column table (SCORE NAME SERVICE CITY SOURCE QUOTE DRIVER CAPTURED STATUS)
 // plus a trailing chevron. Mobile (<=640px): the table crushed unreadably at
 // 390px, so leads render as stacked card rows with 40px WON/LOST buttons and the
 // Driver pill inline. Both variants render and CSS toggles display; state
@@ -144,7 +148,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
         <thead>
           <tr style={{ textAlign: 'left', opacity: .5, fontSize: 10, letterSpacing: 1, fontFamily: FONT_BODY }}>
             <th style={{ padding: 8 }}>SCORE</th><th>NAME</th><th>SERVICE</th><th>CITY</th>
-            <th>SOURCE</th><th>QUOTE</th><th>DRIVER</th><th>STATUS</th><th aria-hidden></th>
+            <th>SOURCE</th><th>QUOTE</th><th>DRIVER</th><th>CAPTURED</th><th>STATUS</th><th aria-hidden></th>
           </tr>
         </thead>
         <tbody>
@@ -174,6 +178,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                   testId={`driver-pill-${l.id}`}
                 />
               </td>
+              <td style={{ color: TEXT_MUTED, whiteSpace: 'nowrap' }}>{captured(l.created_at)}</td>
               <td>
                 {l.status === 'open' ? (
                   <span style={{ display: 'flex', gap: 4 }}>
@@ -248,6 +253,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                 <span style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>
                   {l.source.replaceAll('_', ' ')}
                 </span>
+                {l.created_at && <>{' · '}{captured(l.created_at)}</>}
               </div>
               {/* Driver pill on its own line so it stays tappable without crowding the meta row */}
               <div style={{ marginTop: 6 }}>
