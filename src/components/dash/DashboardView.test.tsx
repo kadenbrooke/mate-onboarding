@@ -3,9 +3,18 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { DashboardView } from './DashboardView';
 import { DashEditingProvider, useDashEditing } from '@/lib/dashEditing';
 import type { DashData } from './types';
+import { zoneLocks } from '@/lib/dash/locks';
 
 const noLeads: never[] = [];
 const session = { id: 's1', mate_name: 'J&C Asphalt' };
+
+// Everything connected: existing assertions test the fully-unlocked dashboard,
+// which is what these tests were written against. Lock-specific behaviour is
+// covered in Card.test.tsx and locks.test.ts.
+const UNLOCKED = zoneLocks({
+  sessionId: 's1', collected: { google_connected: true }, agentEnabled: true,
+  operatorPhone: '+18015551234', adsPresent: true,
+});
 
 const emptyDash: DashData = {
   events: [],
@@ -33,11 +42,14 @@ function CustomizeHarness() {
   );
 }
 
-function renderDash(props: React.ComponentProps<typeof DashboardView>) {
+function renderDash(
+  props: Omit<React.ComponentProps<typeof DashboardView>, 'locks'>
+    & Partial<Pick<React.ComponentProps<typeof DashboardView>, 'locks'>>,
+) {
   return render(
     <DashEditingProvider>
       <CustomizeHarness />
-      <DashboardView {...props} />
+      <DashboardView locks={UNLOCKED} {...props} />
     </DashEditingProvider>,
   );
 }

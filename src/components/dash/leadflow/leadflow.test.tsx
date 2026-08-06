@@ -36,6 +36,41 @@ describe('TrendCard', () => {
     const zero = Array.from(bars).find(b => b.getAttribute('data-count') === '0') as HTMLElement | undefined;
     if (zero) expect(parseFloat(zero.style.height)).toBeGreaterThanOrEqual(4);
   });
+
+  it('labels the week bars Su..Sa (Sunday-start calendar week)', () => {
+    render(<TrendCard leads={[lead({})]} />);
+    for (const day of ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']) {
+      expect(screen.getByTestId(`trend-bar-${day}`)).toBeInTheDocument();
+    }
+  });
+
+  it('offers four period chips including CUSTOM, and hover selects a chip', () => {
+    render(<TrendCard leads={[lead({})]} />);
+    for (const name of ['WEEK', 'MONTH', 'YEAR', 'CUSTOM']) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+    // Hover-select (mirrors the ad-performance chips): hovering YEAR switches
+    // the chart to the sparkline without a click.
+    fireEvent.mouseEnter(screen.getByRole('button', { name: 'YEAR' }));
+    expect(screen.getByTestId('trend-spark')).toBeInTheDocument();
+  });
+
+  it('CUSTOM reveals a start/end date-range picker', () => {
+    render(<TrendCard leads={[lead({})]} />);
+    fireEvent.click(screen.getByRole('button', { name: 'CUSTOM' }));
+    expect(screen.getByLabelText('Start date')).toBeInTheDocument();
+    expect(screen.getByLabelText('End date')).toBeInTheDocument();
+  });
+
+  it('headline caption follows the selected period', () => {
+    render(<TrendCard leads={[lead({})]} />);
+    // Default WEEK.
+    expect(screen.getByText('this week')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'MONTH' }));
+    expect(screen.getByText('this month')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'YEAR' }));
+    expect(screen.getByText('this year')).toBeInTheDocument();
+  });
 });
 
 describe('HotLeads (with merged quality gauge)', () => {
