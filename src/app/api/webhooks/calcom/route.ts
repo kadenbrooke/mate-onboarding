@@ -36,13 +36,14 @@ export async function POST(request: Request) {
   const supabase = createServiceClient();
 
   // Match by phone first (the reliable key the FR collects), then email as a fallback.
-  // The FR keys conversations on `from_number` (E.164) — cal.com's normalized
-  // attendee phone must compare against that column, not a non-existent `phone`.
-  let row: { id: string; status: string | null; calcom_booking_uid: string | null } | null = null;
+  // jc_sms_conversations has NO synthetic `id` column -- `from_number` (E.164) is the
+  // table's natural key (matches the on_conflict target the FR/form-lead n8n upserts
+  // use). cal.com's normalized attendee phone must compare against that column.
+  let row: { from_number: string; status: string | null; calcom_booking_uid: string | null } | null = null;
   if (phone) {
     const { data } = await supabase
       .from('jc_sms_conversations')
-      .select('id, status, calcom_booking_uid')
+      .select('from_number, status, calcom_booking_uid')
       .eq('from_number', phone)
       .maybeSingle();
     row = data ?? null;
@@ -51,7 +52,7 @@ export async function POST(request: Request) {
     try {
       const { data } = await supabase
         .from('jc_sms_conversations')
-        .select('id, status, calcom_booking_uid')
+        .select('from_number, status, calcom_booking_uid')
         .eq('email', email)
         .maybeSingle();
       row = data ?? null;
@@ -70,7 +71,7 @@ export async function POST(request: Request) {
   }
 
   const patch = buildBookingPatch(row.status, payload, new Date());
-  const { error } = await supabase.from('jc_sms_conversations').update(patch).eq('id', row.id);
+  const { error } = await supabase.from('jc_sms_conversations').update(patch).eq('from_number', row.from_number);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
   return NextResponse.json({ ok: true, matched: true, status: patch.status });

@@ -2,7 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHmac } from 'crypto';
 
 const maybeSingle = vi.fn();
-const update = vi.fn(() => ({ eq: () => Promise.resolve({ error: null }) }));
+const updateEq = vi.fn(() => Promise.resolve({ error: null }));
+const update = vi.fn(() => ({ eq: updateEq }));
 function tableStub() {
   return {
     select: () => ({ eq: () => ({ maybeSingle }) }),
@@ -18,6 +19,7 @@ beforeEach(() => {
   process.env.CALCOM_WEBHOOK_SECRET = secret;
   maybeSingle.mockReset();
   update.mockClear();
+  updateEq.mockClear();
 });
 
 function req(bodyObj: unknown, sign = true) {
@@ -41,16 +43,20 @@ describe('POST /api/webhooks/calcom', () => {
     expect(res.status).toBe(401);
   });
 
-  it('books a matched quote appointment and exits the drip', async () => {
-    maybeSingle.mockResolvedValueOnce({ data: { id: 'conv1', status: 'engaged', calcom_booking_uid: null }, error: null });
+  it('books a matched quote appointment, exits the drip, and updates by from_number (table has no id column)', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { from_number: '+18015551234', status: 'engaged', calcom_booking_uid: null }, error: null });
     const res = await POST(req(booking()));
     const json = await res.json();
     expect(json).toMatchObject({ ok: true, matched: true, status: 'quote_booked' });
     expect(update).toHaveBeenCalledWith(expect.objectContaining({ status: 'quote_booked', campaign: 'none', next_drip_due_at: null }));
+    // Regression guard: jc_sms_conversations has no `id` column -- from_number is the
+    // key. A prior version keyed the update on a nonexistent `id` and silently no-op'd
+    // (Postgres 42703), so the webhook never actually updated anything in production.
+    expect(updateEq).toHaveBeenCalledWith('from_number', '+18015551234');
   });
 
   it('is idempotent on a repeated cal.com uid', async () => {
-    maybeSingle.mockResolvedValueOnce({ data: { id: 'conv1', status: 'quote_booked', calcom_booking_uid: 'bk_1' }, error: null });
+    maybeSingle.mockResolvedValueOnce({ data: { from_number: '+18015551234', status: 'quote_booked', calcom_booking_uid: 'bk_1' }, error: null });
     const res = await POST(req(booking()));
     const json = await res.json();
     expect(json).toMatchObject({ deduped: true });
