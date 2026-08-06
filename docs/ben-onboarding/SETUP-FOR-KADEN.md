@@ -54,14 +54,14 @@ Settings → Collaborators → add Ben with **Write** (not Admin). Write lets hi
 ## 5. Vercel
 
 - New Vercel project connected to this repo.
-- Production branch = `main` → main auto-deploys to prod (replaces manual `vercel --prod`).
-- Preview deploys on every PR are on by default → Ben's preview links come for free.
+- **Prod deploys are MANUAL and stay that way**: `vercel --prod` from the repo root, run deliberately after review. Do NOT enable Vercel git-integration auto-deploy on `main` — every prod deploy is a manual, reviewed step (policy, not a gap).
+- Because git-integration is intentionally off, per-PR preview URLs are NOT automatic. If Ben needs a preview for a PR, generate it manually (`vercel` without `--prod`) and share the link.
 - Move env vars from the old project (they are NOT in the repo). Ben never sees them.
 - Point `mate.auto-mate.business` at the new project.
 
 ## 6. Sanity check before handing off
 
-- Open a throwaway PR that tweaks a color. Confirm: CI runs, preview URL appears, you can merge, prod updates. Then delete it.
+- Open a throwaway PR that tweaks a color. Confirm: CI runs, you can merge. (Prod does NOT update on merge — it's a manual `vercel --prod`. Run it once to confirm the deploy works, then delete the PR.)
 - Confirm a direct push to `main` is rejected.
 
 Once these are in place, Ben can work entirely in plain English and the worst case is a red check on a PR you never merge.
