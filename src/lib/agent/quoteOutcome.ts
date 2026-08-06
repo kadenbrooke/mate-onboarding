@@ -64,7 +64,9 @@ export async function applyQuoteOutcome(
   }
 
   if (Object.keys(patch).length > 0) {
-    await supabase.from('jc_sms_conversations').update(patch).eq('id', conversationId);
+    // jc_sms_conversations has no `id`; its natural key is from_number (text).
+    // conversationId carries that from_number end-to-end (see runQuoteMenuScan).
+    await supabase.from('jc_sms_conversations').update(patch).eq('from_number', conversationId);
   }
   if (notes && logNote) {
     await logNote(notes);
@@ -98,24 +100,26 @@ export async function runQuoteMenuScan(
   const nowIso = now().toISOString();
 
   // 1. Newly-due quote appointments -> open a menu.
+  // jc_sms_conversations has no `id`; its natural key is from_number (text), so we
+  // select and carry from_number as the conversation identifier throughout.
   const { data: due } = await supabase
     .from('jc_sms_conversations')
-    .select('id')
+    .select('from_number')
     .eq('status', 'quote_booked')
     .lte('quote_appt_end_at', nowIso);
   let opened = 0;
-  for (const conv of (due ?? []) as Array<{ id: string }>) {
+  for (const conv of (due ?? []) as Array<{ from_number: string }>) {
     const { data: existing } = await supabase
       .from('lead_postcall')
       .select('id')
-      .eq('jc_conversation_id', conv.id)
+      .eq('jc_conversation_id', conv.from_number)
       .eq('kind', 'quote')
       .eq('status', 'awaiting')
       .maybeSingle();
     if (existing) continue;
     await supabase.from('lead_postcall').insert({
       session_id: sessionId,
-      jc_conversation_id: conv.id,
+      jc_conversation_id: conv.from_number,
       kind: 'quote',
       status: 'awaiting',
     });

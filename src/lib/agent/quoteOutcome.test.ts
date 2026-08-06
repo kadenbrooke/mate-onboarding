@@ -98,13 +98,15 @@ describe('runQuoteMenuScan', () => {
   it('opens a menu for a due quote with no existing open menu', async () => {
     const sendSms = vi.fn(async () => ({ ok: true }));
     const { supabase, inserts } = makeScanSupabase({
-      jc_sms_conversations: [{ data: [{ id: 'conv1' }] }],
+      jc_sms_conversations: [{ data: [{ from_number: '+18015551234' }] }],
       lead_postcall: [{ data: null }, { data: [] }], // existence check (none), then reask scan (none)
     });
     const r = await runQuoteMenuScan({ ...base, supabase: supabase as never, sendSms, withinWindow: true });
     expect(r).toMatchObject({ opened: 1, reasked: 0, deferred: false });
     expect(sendSms).toHaveBeenCalledWith('+18019414398', expect.stringContaining('How did the meeting go?'));
-    expect(inserts[0]).toMatchObject({ table: 'lead_postcall', v: { kind: 'quote', jc_conversation_id: 'conv1', session_id: 's1' } });
+    // jc_conversation_id must carry the conversation's from_number (its natural key),
+    // not an `id` (jc_sms_conversations has no id column).
+    expect(inserts[0]).toMatchObject({ table: 'lead_postcall', v: { kind: 'quote', jc_conversation_id: '+18015551234', session_id: 's1' } });
   });
 
   it('re-sends one due choice-4 re-ask and clears it', async () => {
@@ -116,5 +118,68 @@ describe('runQuoteMenuScan', () => {
     const r = await runQuoteMenuScan({ ...base, supabase: supabase as never, sendSms, withinWindow: true });
     expect(r).toMatchObject({ opened: 0, reasked: 1 });
     expect(sendSms).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression guard: exercise the REAL column names against jc_sms_conversations.
+//
+// The prior bug read/wrote a non-existent `jc_sms_conversations.id` column, which
+// PostgREST rejects with HTTP 400 / 42703 at runtime. The other unit tests here use
+// arg-ignoring stubs, so they stayed green while the live route was broken. These
+// tests record the exact column strings passed to .select()/.eq() and fail if `id`
+// is ever reintroduced for jc_sms_conversations. `from_number` is that table's
+// natural key (it has no `id` column in the live schema).
+// ---------------------------------------------------------------------------
+
+/** Records every .select()/.eq() column string per table, replaying queued data. */
+function makeRecordingSupabase(script: Record<string, Array<{ data: unknown }>>) {
+  const queues: Record<string, Array<{ data: unknown }>> = { ...script };
+  const selects: Array<{ table: string; col: string }> = [];
+  const eqs: Array<{ table: string; col: string }> = [];
+  function builder(table: string): Record<string, unknown> {
+    const b: Record<string, unknown> = {};
+    Object.assign(b, {
+      select: (col: string) => { selects.push({ table, col }); return b; },
+      eq: (col: string) => { eqs.push({ table, col }); return b; },
+      lte: () => b,
+      not: () => b,
+      insert: () => Promise.resolve({ error: null }),
+      update: () => b,
+      maybeSingle: () => Promise.resolve((queues[table] ?? []).shift() ?? { data: null }),
+      then: (res: (x: unknown) => unknown, rej: (e: unknown) => unknown) =>
+        Promise.resolve((queues[table] ?? []).shift() ?? { data: [] }).then(res, rej),
+    });
+    return b;
+  }
+  return { supabase: { from: (t: string) => builder(t) }, selects, eqs };
+}
+
+describe('jc_sms_conversations real-column guard', () => {
+  const now = () => new Date('2026-08-04T18:00:00.000Z');
+
+  it('runQuoteMenuScan selects from_number (never id) from jc_sms_conversations', async () => {
+    const sendSms = vi.fn(async () => ({ ok: true }));
+    const { supabase, selects } = makeRecordingSupabase({
+      jc_sms_conversations: [{ data: [{ from_number: '+18015551234' }] }],
+      lead_postcall: [{ data: null }, { data: [] }],
+    });
+    await runQuoteMenuScan({
+      sessionId: 's1', operatorPhone: '+18019414398', now,
+      supabase: supabase as never, sendSms, withinWindow: true,
+    });
+    const convSelects = selects.filter((s) => s.table === 'jc_sms_conversations');
+    expect(convSelects.length).toBeGreaterThan(0);
+    expect(convSelects.map((s) => s.col)).toContain('from_number');
+    expect(convSelects.map((s) => s.col)).not.toContain('id');
+  });
+
+  it('applyQuoteOutcome updates jc_sms_conversations by from_number (never id)', async () => {
+    const { supabase, eqs } = makeRecordingSupabase({});
+    await applyQuoteOutcome('1', null, { conversationId: '+18015551234', supabase: supabase as never, now });
+    const convEqs = eqs.filter((e) => e.table === 'jc_sms_conversations');
+    expect(convEqs.length).toBeGreaterThan(0);
+    expect(convEqs.map((e) => e.col)).toContain('from_number');
+    expect(convEqs.map((e) => e.col)).not.toContain('id');
   });
 });
