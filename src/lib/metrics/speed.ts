@@ -46,7 +46,9 @@ export function speedStats(leads: Lead[], totalMissedCalls?: number) {
     : unanswered.length
       ? Math.min(...unanswered.map(l => dayAge(l.created_at)))
       : Math.max(...leads.map(l => dayAge(l.created_at)));
-  const rescued = leads.filter(l => l.source === 'missed_call').length;
+  // 'call' covers the answered-call-notify-operator path; 'missed_call' is the
+  // pre-2026-08-05 name for the same bucket, kept for any still-unmigrated rows.
+  const rescued = leads.filter(l => l.source === 'call' || l.source === 'missed_call').length;
   return {
     avgReplySeconds, afterHoursCount, hourCounts, streakDays,
     rescued, missedTotal: Math.max(totalMissedCalls ?? rescued, rescued),

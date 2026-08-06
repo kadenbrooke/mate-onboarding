@@ -1,7 +1,11 @@
 export type Lead = {
   id: string; name: string | null; city: string | null; service: string | null;
   phone: string | null;
-  source: 'missed_call' | 'texted_in' | 'web_form' | 'referral' | 'revived' | 'unknown';
+  // Closed taxonomy going forward: meta | call | text | referral | google (2026-08-05).
+  // Legacy values (missed_call, meta_ads, unknown) were renamed/removed table-wide;
+  // texted_in/web_form/revived are kept only because live demo-session rows still use
+  // them (out of scope to migrate -- see reference_mate_jc_data_exposure_incident).
+  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'unknown';
   referrer_name: string | null; score: number | null;
   status: 'open' | 'won' | 'lost'; quote_cents: number | null;
   // Who is driving the conversation: Mate's agent ('agent') or the client ('human').

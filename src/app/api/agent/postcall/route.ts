@@ -24,8 +24,14 @@ export async function POST(request: Request) {
     let { data: lead } = await supabase.from('client_leads')
       .select('id, session_id, phone').eq('session_id', body.session_id).eq('phone', body.caller).maybeSingle();
     if (!lead) {
+      // This branch only reaches an INSERT on the answered-call path (voice workflow's
+      // "If Answered Call" -> "Fire Postcall Menu"; a genuinely missed/no-answer call
+      // never gets here, see JC Asphalt First Responder workflow). handler:'human' is
+      // correct (a human picked up); source used to say 'missed_call' which was a
+      // mislabel of this exact branch -- fixed to 'call' per the source taxonomy
+      // (meta/call/text/referral/google).
       const ins = await supabase.from('client_leads')
-        .insert({ session_id: body.session_id, phone: body.caller, source: 'missed_call', handler: 'human' })
+        .insert({ session_id: body.session_id, phone: body.caller, source: 'call', handler: 'human' })
         .select('id, session_id, phone').single();
       lead = ins.data;
     }

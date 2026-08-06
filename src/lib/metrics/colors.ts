@@ -21,20 +21,31 @@ export const SERVICE_RAMP = [
 
 // Categorical lead-source palette -- one distinct hue per source so segments
 // are tellable apart on the light theme (shared by SourceDonut + JourneyRiver).
+// meta/call/text/referral/google are the closed taxonomy going forward (2026-08-05);
+// missed_call/texted_in/web_form/revived/unknown are kept for legacy + still-live
+// demo-session rows (see leads.ts Lead.source comment).
 export const SOURCE_COLORS: Record<string, string> = {
+  meta: '#e1774d',
+  call: 'var(--brand-primary, #e14d1a)',
+  text: '#3b76c4',
+  referral: '#2e8f5a',
+  google: '#8a5a42',
   missed_call: 'var(--brand-primary, #e14d1a)',
   texted_in: '#3b76c4',
   web_form: '#7d5bbe',
-  referral: '#2e8f5a',
   revived: '#1f9490',
   unknown: '#a89e91',
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
+  meta: 'Meta Ads',
+  call: 'Call',
+  text: 'Text',
+  referral: 'Referral',
+  google: 'Google',
   missed_call: 'Missed call',
   texted_in: 'Texted in',
   web_form: 'Web form',
-  referral: 'Referral',
   revived: 'Revived',
   unknown: 'Other',
 };

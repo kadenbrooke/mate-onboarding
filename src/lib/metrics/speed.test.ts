@@ -37,9 +37,9 @@ describe('speedStats', () => {
     expect(out.streakDays).toBe(30);
   });
 
-  it('rescue: missed_call leads counted as rescued of total missed calls (rescued + unrescued events)', () => {
+  it('rescue: call leads counted as rescued of total missed calls (rescued + unrescued events)', () => {
     const out = speedStats(
-      [lead({ source: 'missed_call' }), lead({ source: 'missed_call' }), lead({ source: 'texted_in' })],
+      [lead({ source: 'call' }), lead({ source: 'call' }), lead({ source: 'texted_in' })],
       4, // totalMissedCalls (from events; 2 rescued + 2 lost)
     );
     expect(out.rescued).toBe(2);
@@ -47,7 +47,12 @@ describe('speedStats', () => {
   });
 
   it('missedTotal defaults to rescued count when no event total supplied', () => {
-    const out = speedStats([lead({ source: 'missed_call' })]);
+    const out = speedStats([lead({ source: 'call' })]);
     expect(out.missedTotal).toBe(1);
+  });
+
+  it('rescue: legacy missed_call value still counts (pre-2026-08-05 rows)', () => {
+    const out = speedStats([lead({ source: 'missed_call' })]);
+    expect(out.rescued).toBe(1);
   });
 });
