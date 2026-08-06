@@ -15,6 +15,15 @@ export const DEFAULT_DIR: Record<SortKey, SortDir> = {
 
 const STATUS_RANK: Record<Lead['status'], number> = { open: 0, won: 1, lost: 2 };
 
+/** Toggle semantics for the WON/LOST outcome control. Clicking the option that
+ *  is already selected clears the outcome back to the neutral 'open' state (the
+ *  schema's no-outcome value); clicking the other option switches to it.
+ *  'open' is the same neutral value the status API and DB column already use --
+ *  no new column, no new sentinel. */
+export function nextStatus(current: Lead['status'], clicked: 'won' | 'lost'): Lead['status'] {
+  return current === clicked ? 'open' : clicked;
+}
+
 /** Substring match across the human-facing columns. */
 export function searchLeads(leads: Lead[], query: string): Lead[] {
   const q = query.trim().toLowerCase();

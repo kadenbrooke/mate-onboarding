@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Lead } from '@/lib/metrics/leads';
-import { searchLeads, cycleSort, applySort, type SortEntry } from './leadsControls';
+import { searchLeads, cycleSort, applySort, nextStatus, type SortEntry } from './leadsControls';
 
 const mk = (o: Partial<Lead>): Lead => ({
   id: o.id ?? Math.random().toString(36).slice(2),
@@ -113,5 +113,22 @@ describe('applySort (compound, priority = activation order)', () => {
     const before = leads.map(l => l.id);
     applySort(leads, [{ key: 'score', dir: 'desc' }]);
     expect(leads.map(l => l.id)).toEqual(before);
+  });
+});
+
+describe('nextStatus (WON/LOST toggle -> deselect to open)', () => {
+  it('selects an outcome from the neutral open state', () => {
+    expect(nextStatus('open', 'won')).toBe('won');
+    expect(nextStatus('open', 'lost')).toBe('lost');
+  });
+
+  it('clears back to open when the already-selected outcome is clicked again', () => {
+    expect(nextStatus('won', 'won')).toBe('open');
+    expect(nextStatus('lost', 'lost')).toBe('open');
+  });
+
+  it('switches directly between outcomes', () => {
+    expect(nextStatus('won', 'lost')).toBe('lost');
+    expect(nextStatus('lost', 'won')).toBe('won');
   });
 });

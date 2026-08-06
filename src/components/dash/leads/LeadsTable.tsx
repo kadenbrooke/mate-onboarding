@@ -8,10 +8,30 @@ import {
   NUM_TABLE, NUM_DISPLAY, FONT_BODY, scoreColor,
 } from '@/lib/theme';
 import {
-  searchLeads, applySort, cycleSort, SORT_CHIPS, type SortEntry,
+  searchLeads, applySort, cycleSort, nextStatus, SORT_CHIPS, type SortEntry,
 } from './leadsControls';
 import { DriverPill } from './DriverPill';
 import { normalizeHandler, toggleHandler, type HandlerState } from './driverToggle';
+
+// Outcome toggle button styling. The selected option is filled (it is also the
+// status indicator now that WON/LOST are always both shown); the unselected one
+// is an outline. Clicking the selected option clears back to 'open'.
+function outcomeBtnStyle(kind: 'won' | 'lost', active: boolean, variant: 'desktop' | 'mobile'): React.CSSProperties {
+  const base = kind === 'won' ? FREE_GREEN : LOST_BROWN;
+  const size: React.CSSProperties = variant === 'desktop'
+    ? { fontSize: 10, padding: '3px 9px' }
+    : { fontSize: 11, minHeight: 40, padding: '0 14px' };
+  return {
+    background: active ? base : 'transparent',
+    border: `1px solid ${base}`,
+    borderRadius: 99,
+    color: active ? '#fff' : base,
+    fontFamily: FONT_BODY,
+    fontWeight: active ? 700 : 600,
+    cursor: 'pointer',
+    ...size,
+  };
+}
 
 const dollars = (cents: number | null) => cents == null ? '' : `$${Math.round(cents / 100).toLocaleString()}`;
 // Compact captured date, e.g. "Aug 5" -- matches RecoveredCard's short-date style.
@@ -180,20 +200,19 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               </td>
               <td style={{ color: TEXT_MUTED, whiteSpace: 'nowrap' }}>{captured(l.created_at)}</td>
               <td>
-                {l.status === 'open' ? (
-                  <span style={{ display: 'flex', gap: 4 }}>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'won'); }} aria-label={`won ${l.name}`}
-                      style={{ background: 'transparent', border: `1px solid ${FREE_GREEN}`, borderRadius: 99, color: FREE_GREEN, fontSize: 10, padding: '3px 9px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>WON</button>
-                    <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'lost'); }} aria-label={`lost ${l.name}`}
-                      style={{ background: 'transparent', border: `1px solid ${LOST_BROWN}`, borderRadius: 99, color: LOST_BROWN, fontSize: 10, padding: '3px 9px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>LOST</button>
-                  </span>
-                ) : (
-                  <span style={{
-                    display: 'inline-block', borderRadius: 99, padding: '3px 10px',
-                    fontSize: 10, fontWeight: 700, fontFamily: FONT_BODY, color: '#fff',
-                    background: l.status === 'won' ? FREE_GREEN : LOST_BROWN,
-                  }}>{l.status.toUpperCase()}</span>
-                )}
+                {/* Always-visible WON|LOST toggle: the active option is filled
+                    (doubles as the status indicator); clicking the active option
+                    clears the outcome back to 'open'. */}
+                <span style={{ display: 'flex', gap: 4 }}>
+                  <button type="button"
+                    onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'won')); }}
+                    aria-label={`won ${l.name}`} aria-pressed={l.status === 'won'}
+                    style={outcomeBtnStyle('won', l.status === 'won', 'desktop')}>WON</button>
+                  <button type="button"
+                    onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'lost')); }}
+                    aria-label={`lost ${l.name}`} aria-pressed={l.status === 'lost'}
+                    style={outcomeBtnStyle('lost', l.status === 'lost', 'desktop')}>LOST</button>
+                </span>
               </td>
               {/* Trailing chevron: keyboard-accessible affordance to open the thread */}
               <td style={{ textAlign: 'right', paddingRight: 6 }}>
@@ -268,20 +287,18 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               </div>
             </div>
 
-            {l.status === 'open' ? (
-              <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'won'); }} aria-label={`mark won ${l.name}`}
-                  style={{ background: 'transparent', border: `1px solid ${FREE_GREEN}`, borderRadius: 99, color: FREE_GREEN, fontSize: 11, minHeight: 40, padding: '0 14px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>WON</button>
-                <button type="button" onClick={(e) => { e.stopPropagation(); mark(l.id, 'lost'); }} aria-label={`mark lost ${l.name}`}
-                  style={{ background: 'transparent', border: `1px solid ${LOST_BROWN}`, borderRadius: 99, color: LOST_BROWN, fontSize: 11, minHeight: 40, padding: '0 14px', fontFamily: FONT_BODY, fontWeight: 600, cursor: 'pointer' }}>LOST</button>
-              </span>
-            ) : (
-              <span style={{
-                flexShrink: 0, display: 'inline-block', borderRadius: 99, padding: '4px 12px',
-                fontSize: 11, fontWeight: 700, fontFamily: FONT_BODY, color: '#fff',
-                background: l.status === 'won' ? FREE_GREEN : LOST_BROWN,
-              }}>{l.status.toUpperCase()}</span>
-            )}
+            {/* Always-visible WON|LOST toggle (mobile). Same deselect-to-open
+                semantics as the desktop table. */}
+            <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'won')); }}
+                aria-label={`mark won ${l.name}`} aria-pressed={l.status === 'won'}
+                style={outcomeBtnStyle('won', l.status === 'won', 'mobile')}>WON</button>
+              <button type="button"
+                onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'lost')); }}
+                aria-label={`mark lost ${l.name}`} aria-pressed={l.status === 'lost'}
+                style={outcomeBtnStyle('lost', l.status === 'lost', 'mobile')}>LOST</button>
+            </span>
           </div>
         ))}
       </div>

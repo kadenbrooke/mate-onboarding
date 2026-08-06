@@ -33,6 +33,46 @@ describe('LeadsTable', () => {
     // Now resolve to finish clean
     resolveFetch({ ok: true, json: async () => ({ ok: true }) } as unknown as Response);
   });
+
+  it('shows the WON/LOST toggle even for an already-decided lead, with the outcome pressed', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable leads={[lead({ status: 'won' })]} sessionId="s1" spotlightId={null} />);
+    // Both controls remain reachable (no static badge that hides the buttons).
+    expect(screen.getByRole('button', { name: 'won Mike R.', pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'lost Mike R.', pressed: false })).toBeInTheDocument();
+  });
+
+  it('clicking the already-selected WON deselects it back to open (neutral) and PATCHes status=open', () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    global.fetch = fetchMock as typeof fetch;
+    render(<LeadsTable leads={[lead({ status: 'won' })]} sessionId="s1" spotlightId={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'won Mike R.' }));
+    // Optimistic: row clears to the neutral open state.
+    expect(screen.getByTestId('lead-row-l1')).toHaveAttribute('data-status', 'open');
+    expect(fetchMock).toHaveBeenCalledWith('/api/leads/l1/status', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'open', session_id: 's1' }),
+    }));
+  });
+
+  it('clicking the other outcome switches directly (won -> lost)', () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    global.fetch = fetchMock as typeof fetch;
+    render(<LeadsTable leads={[lead({ status: 'won' })]} sessionId="s1" spotlightId={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'lost Mike R.' }));
+    expect(screen.getByTestId('lead-row-l1')).toHaveAttribute('data-status', 'lost');
+    expect(fetchMock).toHaveBeenCalledWith('/api/leads/l1/status', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ status: 'lost', session_id: 's1' }),
+    }));
+  });
+
+  it('deselecting a lead does not navigate the row', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable leads={[lead({ status: 'won' })]} sessionId="s1" spotlightId={null} />);
+    fireEvent.click(screen.getByRole('button', { name: 'won Mike R.' }));
+    expect(pushMock).not.toHaveBeenCalled();
+  });
 });
 
 describe('LeadsTable mobile card list', () => {
