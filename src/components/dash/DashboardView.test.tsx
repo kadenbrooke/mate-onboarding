@@ -3,9 +3,18 @@ import { render, screen, fireEvent, within } from '@testing-library/react';
 import { DashboardView } from './DashboardView';
 import { DashEditingProvider, useDashEditing } from '@/lib/dashEditing';
 import type { DashData } from './types';
+import { zoneLocks } from '@/lib/dash/locks';
 
 const noLeads: never[] = [];
 const session = { id: 's1', mate_name: 'J&C Asphalt' };
+
+// Everything connected: existing assertions test the fully-unlocked dashboard,
+// which is what these tests were written against. Lock-specific behaviour is
+// covered in Card.test.tsx and locks.test.ts.
+const UNLOCKED = zoneLocks({
+  sessionId: 's1', collected: { google_connected: true }, agentEnabled: true,
+  operatorPhone: '+18015551234', adsPresent: true,
+});
 
 const emptyDash: DashData = {
   events: [],
@@ -33,11 +42,14 @@ function CustomizeHarness() {
   );
 }
 
-function renderDash(props: React.ComponentProps<typeof DashboardView>) {
+function renderDash(
+  props: Omit<React.ComponentProps<typeof DashboardView>, 'locks'>
+    & Partial<Pick<React.ComponentProps<typeof DashboardView>, 'locks'>>,
+) {
   return render(
     <DashEditingProvider>
       <CustomizeHarness />
-      <DashboardView {...props} />
+      <DashboardView locks={UNLOCKED} {...props} />
     </DashEditingProvider>,
   );
 }
@@ -73,11 +85,16 @@ describe('DashboardView', () => {
     // Off by default: Customize entry shown (now in the header harness), edit toolbar absent.
     expect(screen.getByRole('button', { name: /customize layout/i })).toBeInTheDocument();
     expect(within(desktop).queryByRole('button', { name: /done/i })).toBeNull();
-    // Every movable zone appears exactly once in the desktop grid.
+    // Every movable zone's SectionCard heading appears exactly once in the
+    // desktop grid. Matched by heading role, not raw text, because the setup
+    // checklist legitimately lists gated zone names (Calendar, Reputation,
+    // Follow-up engine, Operations) as its checklist items too.
     const zones = ['Calendar', 'Lead flow', 'Speed to lead', 'Pipeline', 'Follow-up engine', 'Reputation', 'Operations'];
     for (const zone of zones) {
-      expect(within(desktop).getAllByText(zone).length, `zone "${zone}" should appear exactly once`).toBe(1);
+      expect(within(desktop).getAllByRole('heading', { name: zone }).length, `zone "${zone}" heading should appear exactly once`).toBe(1);
     }
+    // The always-visible setup checklist is present on desktop too.
+    expect(within(desktop).getByRole('heading', { name: 'Setup' })).toBeInTheDocument();
   });
 
   it('entering Customize mode reveals Reset + Done controls', () => {

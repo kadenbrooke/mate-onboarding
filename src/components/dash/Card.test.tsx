@@ -65,4 +65,46 @@ describe('SectionCard', () => {
     render(<SectionCard><span>bare</span></SectionCard>);
     expect(screen.getByText('bare')).toBeInTheDocument();
   });
+
+  it('renders the MISSING INFO body when locked', () => {
+    render(
+      <SectionCard title="Calendar" locked={{ zoneLabel: 'Calendar', reason: 'Connect Google first.' }}>
+        <p>real content</p>
+      </SectionCard>,
+    );
+    expect(screen.getByText(/MISSING/)).toBeInTheDocument();
+    expect(screen.getByText('Connect Google first.')).toBeInTheDocument();
+  });
+
+  it('does not render children into the tree at all when locked (data-exposure guard)', () => {
+    const { container } = render(
+      <SectionCard title="Calendar" locked={{ zoneLabel: 'Calendar', reason: 'r' }}>
+        <p data-testid="secret">$18,400 recovered</p>
+      </SectionCard>,
+    );
+    expect(screen.queryByTestId('secret')).toBeNull();
+    expect(container.textContent).not.toContain('18,400');
+  });
+
+  it('keeps its id so the icon rail can still scroll to a locked zone', () => {
+    const { container } = render(
+      <SectionCard id="zone-calendar" title="Calendar" locked={{ zoneLabel: 'Calendar', reason: 'r' }}>
+        <p>x</p>
+      </SectionCard>,
+    );
+    expect(container.querySelector('#zone-calendar')).toBeTruthy();
+  });
+
+  it('renders the cta link when the lock carries one', () => {
+    render(
+      <SectionCard
+        title="Calendar"
+        locked={{ zoneLabel: 'Calendar', reason: 'r', cta: { label: 'Connect Google', href: '/api/connect/google?sessionId=s1' } }}
+      >
+        <p>x</p>
+      </SectionCard>,
+    );
+    expect(screen.getByRole('link', { name: 'Connect Google' }).getAttribute('href'))
+      .toBe('/api/connect/google?sessionId=s1');
+  });
 });

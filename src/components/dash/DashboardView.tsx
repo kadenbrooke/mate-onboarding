@@ -1,11 +1,11 @@
 'use client';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { CaretRight } from '@phosphor-icons/react';
 import type { Lead } from '@/lib/metrics/leads';
 import { heroStats, heroSeries } from '@/lib/metrics/hero';
 import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/recovered';
-import { Card, SectionCard } from './Card';
+import { SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MonthOverviewBanner } from './MonthOverviewBanner';
 import { monthOverview } from '@/lib/metrics/monthOverview';
@@ -31,7 +31,10 @@ import { AssistantView } from './assistant/AssistantView';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
 import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
 import { SortableStack, type StackItem } from './SortableStack';
+import { SetupChecklist } from './SetupChecklist';
 import type { DashData } from './types';
+import { ZONE_LABELS, type ZoneId, type ZoneLock } from '@/lib/dash/locks';
+import type { SectionLock } from './Card';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
 } from '@/lib/theme';
@@ -58,10 +61,26 @@ function LinkCard({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function DashboardView({ session, leads, data }: {
+export function DashboardView({ session, leads, data, locks }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
+  locks: Record<ZoneId, ZoneLock | null>;
 }) {
   const [view, setView] = useState<MobileView>('home');
+  // Turns a computed lock into the prop SectionCard expects, or undefined when
+  // the zone is unlocked. The view never evaluates gates: it receives locks
+  // already computed in page.tsx, keeping the gate logic in one place.
+  const lockFor = (id: ZoneId): SectionLock | undefined => {
+    const lock = locks[id];
+    return lock ? { zoneLabel: ZONE_LABELS[id], reason: lock.reason, cta: lock.cta } : undefined;
+  };
+  // Mobile zones render as bare cards on the canvas, not inside a SectionCard.
+  // When one is locked, wrap it so the MISSING INFO card shows AND its children
+  // never mount -- the same data-exposure guard the desktop grid gets. When
+  // unlocked, return the raw node so the existing mobile layout is unchanged.
+  const mobileZone = (id: ZoneId, title: string, node: ReactNode): ReactNode => {
+    const lock = lockFor(id);
+    return lock ? <SectionCard title={title} locked={lock}>{node}</SectionCard> : node;
+  };
   const { editing, setEditing } = useDashEditing();
   // Tab switch resets scroll: landing mid-scroll on a shorter view strands
   // the user below the fold. try/catch: jsdom has no scrollTo implementation.
@@ -87,8 +106,9 @@ export function DashboardView({ session, leads, data }: {
   // Ad Performance zone (Meta spend + cost-per-lead)
   const adPerformanceZone = <AdPerformanceZone ads={data.ads} />;
 
-  // Stub zone for features arriving in a future plan
-  const setupStub = <Card label="SETUP"><Dim note="unlock checklist arrives with the next build" /></Card>;
+  // Setup completion checklist: counts connected gated zones. Replaces the
+  // former placeholder stub.
+  const setupCard = <SetupChecklist locks={locks} />;
 
   // Speed cards (2026-07: no longer one bundled "Speed to lead" group --
   // Reply Time moved to Crew, Missed Calls Rescued + When Leads Arrive
@@ -124,7 +144,7 @@ export function DashboardView({ session, leads, data }: {
   // remain the IconRail scroll anchors.
   const movableCards: MovableCard[] = [
     { id: 'zone-calendar', x: 0, y: 0, w: 12, node: (
-      <SectionCard title="Calendar"><BookedCalendar appointments={data.appointments} showLabel={false} wide /></SectionCard>
+      <SectionCard title="Calendar" locked={lockFor('zone-calendar')}><BookedCalendar appointments={data.appointments} showLabel={false} wide /></SectionCard>
     ) },
     { id: 'zone-leadflow', x: 0, y: 1, w: 6, node: (
       <SectionCard title="Lead flow">{leadFlowZone}</SectionCard>
@@ -138,25 +158,31 @@ export function DashboardView({ session, leads, data }: {
       </SectionCard>
     ) },
     { id: 'zone-followup', x: 6, y: 2, w: 6, node: (
-      <SectionCard title="Follow-up engine"><FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} /></SectionCard>
+      <SectionCard title="Follow-up engine" locked={lockFor('zone-followup')}><FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} /></SectionCard>
     ) },
     { id: 'zone-pipeline', x: 0, y: 3, w: 6, node: (
       <SectionCard title="Pipeline"><TwinRings leads={leads} showLabel={false} /></SectionCard>
     ) },
     { id: 'zone-reputation', x: 6, y: 3, w: 6, node: (
-      <SectionCard title="Reputation"><ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} /></SectionCard>
+      <SectionCard title="Reputation" locked={lockFor('zone-reputation')}><ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} /></SectionCard>
     ) },
     { id: 'zone-ads', x: 0, y: 4, w: 6, node: (
-      <SectionCard title="Ad performance"><AdPerformanceZone ads={data.ads} showLabel={false} /></SectionCard>
+      <SectionCard title="Ad performance" locked={lockFor('zone-ads')}><AdPerformanceZone ads={data.ads} showLabel={false} /></SectionCard>
     ) },
     { id: 'zone-operations', x: 6, y: 4, w: 6, node: (
-      <SectionCard title="Operations">
+      <SectionCard title="Operations" locked={lockFor('zone-operations')}>
         <div style={{ display: 'grid', gap: 10 }}>
           <CrewRoster capabilities={data.capabilities} />
           {raceCard}
           {agentActivityCard}
         </div>
       </SectionCard>
+    ) },
+    // Setup checklist: always visible (never gated -- it is the thing that tells
+    // the client what to unlock). Full-width row at the bottom of the grid. Its
+    // own label is suppressed since the SectionCard title carries it.
+    { id: 'zone-setup', x: 0, y: 5, w: 12, node: (
+      <SectionCard title="Setup"><SetupChecklist locks={locks} showLabel={false} /></SectionCard>
     ) },
   ];
 
@@ -167,7 +193,7 @@ export function DashboardView({ session, leads, data }: {
   const mobileStacks: Record<Exclude<MobileView, 'assistant'>, StackItem[]> = {
     home: [
       { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} /> },
-      { id: 'm-calendar', node: calendarZone },
+      { id: 'm-calendar', node: mobileZone('zone-calendar', 'Calendar', calendarZone) },
     ],
     // Order (2026-07 design pass): Leads, Open full leads table, Source,
     // City, When Leads Arrive, Service, Missed Calls Rescued. Reply Time
@@ -186,16 +212,16 @@ export function DashboardView({ session, leads, data }: {
     ],
     money: [
       { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
-      { id: 'm-ads', node: adPerformanceZone },
-      { id: 'm-followup', node: followUpZone },
-      { id: 'm-reputation', node: reputationZone },
+      { id: 'm-ads', node: mobileZone('zone-ads', 'Ad performance', adPerformanceZone) },
+      { id: 'm-followup', node: mobileZone('zone-followup', 'Follow-up engine', followUpZone) },
+      { id: 'm-reputation', node: mobileZone('zone-reputation', 'Reputation', reputationZone) },
     ],
     crew: [
       { id: 'm-crew', node: <CrewRoster capabilities={data.capabilities} /> },
       { id: 'm-race', node: raceCard },
       { id: 'm-agent-activity', node: agentActivityCard },
       { id: 'm-chatlink', node: <LinkCard href={`/dash/${session.id}/assistant`} label="Chat with Assistant" /> },
-      { id: 'm-setup', node: setupStub },
+      { id: 'm-setup', node: setupCard },
     ],
   };
 
@@ -259,8 +285,4 @@ export function DashboardView({ session, leads, data }: {
       <MobileNav view={view} onChange={switchView} />
     </main>
   );
-}
-
-function Dim({ note }: { note?: string }) {
-  return <div style={{ opacity: 0.45, fontSize: 12, marginTop: 10 }}>{note ?? 'coming online'}</div>;
 }

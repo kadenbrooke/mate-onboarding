@@ -18,10 +18,15 @@ export type Lead = {
 
 const FREE_SOURCES = new Set(['referral', 'revived']);
 
+/** The visible period tabs on the Leads card. Calendar-to-date, not trailing. */
+export type Range = 'WEEK' | 'MONTH' | 'YEAR';
+
 function startOfWeek(now = new Date()): Date {
-  const day = (now.getDay() + 6) % 7; // Mon = 0
-  const monday = new Date(now); monday.setHours(0, 0, 0, 0); monday.setDate(now.getDate() - day);
-  return monday;
+  // Sunday start: getDay() returns 0 for Sunday, so subtracting it lands on
+  // this week's Sunday.
+  const sunday = new Date(now); sunday.setHours(0, 0, 0, 0);
+  sunday.setDate(now.getDate() - now.getDay());
+  return sunday;
 }
 
 function localDayKey(d: Date): number {
@@ -29,16 +34,18 @@ function localDayKey(d: Date): number {
 }
 
 export function weekBars(leads: Lead[], now = new Date()) {
-  // Local-calendar week, Monday start. Runs in the browser so "week" means the
-  // client's local week; server prerender may briefly show UTC buckets (charts
-  // mount-gate to avoid hydration mismatch).
-  const monday = startOfWeek(now);
+  // Static calendar week, Sunday -> Saturday. NOT a trailing window: the bars
+  // always span this week's Sunday through Saturday regardless of the weekday.
+  // Runs in the browser so "week" means the client's local week; server
+  // prerender may briefly show UTC buckets (charts mount-gate to avoid a
+  // hydration mismatch).
+  const sunday = startOfWeek(now);
   const dayKeys: number[] = [];
   for (let i = 0; i < 7; i++) {
-    const d = new Date(monday); d.setDate(monday.getDate() + i);
+    const d = new Date(sunday); d.setDate(sunday.getDate() + i);
     dayKeys.push(localDayKey(d));
   }
-  const bars = ['Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su'].map(day => ({ day, count: 0 }));
+  const bars = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(day => ({ day, count: 0 }));
   for (const l of leads) {
     const idx = dayKeys.indexOf(localDayKey(new Date(l.created_at)));
     if (idx !== -1) bars[idx].count++;
@@ -94,44 +101,156 @@ export function areaRanking(leads: Lead[]) {
 }
 
 export function monthBuckets(leads: Lead[], now = new Date()): number[] {
-  const buckets = Array(30).fill(0);
+  // Calendar month to date: one bucket per day from the 1st of this month
+  // through today (index 0 = the 1st, last index = today). NOT a trailing 30.
+  const y = now.getFullYear();
+  const m = now.getMonth();
+  const days = now.getDate();
+  const buckets = Array(days).fill(0);
   for (const l of leads) {
     const d = new Date(l.created_at);
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffDays >= 0 && diffDays < 30) buckets[29 - diffDays]++;
+    if (d.getFullYear() === y && d.getMonth() === m) {
+      const day = d.getDate();
+      if (day >= 1 && day <= days) buckets[day - 1]++;
+    }
   }
   return buckets;
 }
 
 export function yearBuckets(leads: Lead[], now = new Date()): number[] {
-  const buckets = Array(52).fill(0);
+  // Calendar year to date: one bucket per month from January through the
+  // current month (index 0 = January, last index = this month). NOT a
+  // trailing 52 weeks.
+  const y = now.getFullYear();
+  const months = now.getMonth() + 1;
+  const buckets = Array(months).fill(0);
   for (const l of leads) {
     const d = new Date(l.created_at);
-    const diffMs = now.getTime() - d.getTime();
-    const diffWeeks = Math.floor(diffMs / (7 * 86400000));
-    if (diffWeeks >= 0 && diffWeeks < 52) buckets[51 - diffWeeks]++;
+    if (d.getFullYear() === y) {
+      const mo = d.getMonth();
+      if (mo >= 0 && mo < months) buckets[mo]++;
+    }
   }
   return buckets;
 }
 
-/** Won/open/lost counts among leads created within the trailing `windowDays`.
- *  Powers the Leads card's compact outcome strip: same time window as
- *  whichever range tab (week/month/year) is selected, so the comparison is
- *  apples-to-apples rather than mixing a windowed count against an all-time
- *  funnel. */
-export function outcomesInWindow(leads: Lead[], windowDays: number, now = new Date()) {
-  const cutoff = now.getTime() - windowDays * 86400_000;
-  const inWindow = leads.filter(l => {
+/** Start of the calendar period a range tab represents. */
+export function periodStart(range: Range, now = new Date()): Date {
+  if (range === 'WEEK') return startOfWeek(now);
+  if (range === 'MONTH') return new Date(now.getFullYear(), now.getMonth(), 1);
+  return new Date(now.getFullYear(), 0, 1);
+}
+
+/** Leads created within the current calendar period (inclusive of both ends).
+ *  WEEK = this Sun..Sat week, MONTH = this calendar month, YEAR = this
+ *  calendar year. Used by the headline count and the outcome strip so both
+ *  match the chart. */
+export function leadsInPeriod(leads: Lead[], range: Range, now = new Date()): Lead[] {
+  const start = periodStart(range, now).getTime();
+  const end = now.getTime();
+  return leads.filter(l => {
     const t = new Date(l.created_at).getTime();
-    return t >= cutoff && t <= now.getTime();
+    return t >= start && t <= end;
   });
+}
+
+/** Leads created within an explicit [start, end] range, inclusive of both
+ *  endpoints (endpoints are day-anchored, so `end` covers its whole day). */
+export function leadsInRange(leads: Lead[], startISO: string, endISO: string): Lead[] {
+  const start = new Date(startISO); start.setHours(0, 0, 0, 0);
+  const end = new Date(endISO); end.setHours(23, 59, 59, 999);
+  const s = start.getTime();
+  const e = end.getTime();
+  if (Number.isNaN(s) || Number.isNaN(e) || e < s) return [];
+  return leads.filter(l => {
+    const t = new Date(l.created_at).getTime();
+    return t >= s && t <= e;
+  });
+}
+
+/** Adaptive buckets for a custom [start, end] range so the chart stays
+ *  readable at any span: daily for <= 31 days, weekly for <= 366 days,
+ *  monthly beyond that. Returns aligned counts + short labels. */
+export function customBuckets(leads: Lead[], startISO: string, endISO: string):
+  { counts: number[]; labels: string[] } {
+  const start = new Date(startISO); start.setHours(0, 0, 0, 0);
+  const end = new Date(endISO); end.setHours(0, 0, 0, 0);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+    return { counts: [], labels: [] };
+  }
+  const spanDays = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1;
+  const inRange = leadsInRange(leads, startISO, endISO);
+
+  const dayLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const monthLabel = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+
+  if (spanDays <= 31) {
+    const counts = Array(spanDays).fill(0);
+    const labels: string[] = [];
+    for (let i = 0; i < spanDays; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + i);
+      labels.push(dayLabel(d));
+    }
+    for (const l of inRange) {
+      const d = new Date(l.created_at); d.setHours(0, 0, 0, 0);
+      const idx = Math.floor((d.getTime() - start.getTime()) / 86400000);
+      if (idx >= 0 && idx < spanDays) counts[idx]++;
+    }
+    return { counts, labels };
+  }
+
+  if (spanDays <= 366) {
+    const weeks = Math.ceil(spanDays / 7);
+    const counts = Array(weeks).fill(0);
+    const labels: string[] = [];
+    for (let i = 0; i < weeks; i++) {
+      const d = new Date(start); d.setDate(start.getDate() + i * 7);
+      labels.push(dayLabel(d));
+    }
+    for (const l of inRange) {
+      const d = new Date(l.created_at); d.setHours(0, 0, 0, 0);
+      const idx = Math.floor((d.getTime() - start.getTime()) / (7 * 86400000));
+      if (idx >= 0 && idx < weeks) counts[idx]++;
+    }
+    return { counts, labels };
+  }
+
+  // Monthly buckets across the span.
+  const months: { y: number; m: number }[] = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const last = new Date(end.getFullYear(), end.getMonth(), 1);
+  while (cursor <= last) {
+    months.push({ y: cursor.getFullYear(), m: cursor.getMonth() });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  const counts = Array(months.length).fill(0);
+  const labels = months.map(({ y, m }) => monthLabel(new Date(y, m, 1)));
+  for (const l of inRange) {
+    const d = new Date(l.created_at);
+    const idx = months.findIndex(({ y, m }) => d.getFullYear() === y && d.getMonth() === m);
+    if (idx !== -1) counts[idx]++;
+  }
+  return { counts, labels };
+}
+
+function tallyOutcomes(rows: Lead[]) {
   return {
-    won: inWindow.filter(l => l.status === 'won').length,
-    open: inWindow.filter(l => l.status === 'open').length,
-    lost: inWindow.filter(l => l.status === 'lost').length,
-    total: inWindow.length,
+    won: rows.filter(l => l.status === 'won').length,
+    open: rows.filter(l => l.status === 'open').length,
+    lost: rows.filter(l => l.status === 'lost').length,
+    total: rows.length,
   };
+}
+
+/** Won/open/lost counts among leads created within the selected calendar
+ *  period, so the outcome strip matches the headline count and the chart. */
+export function outcomesInPeriod(leads: Lead[], range: Range, now = new Date()) {
+  return tallyOutcomes(leadsInPeriod(leads, range, now));
+}
+
+/** Won/open/lost counts among leads created within an explicit [start, end]. */
+export function outcomesInRange(leads: Lead[], startISO: string, endISO: string) {
+  return tallyOutcomes(leadsInRange(leads, startISO, endISO));
 }
 
 export function scoreStats(leads: Lead[]) {

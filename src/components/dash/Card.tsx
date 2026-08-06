@@ -2,9 +2,11 @@
 import type { ReactNode } from 'react';
 import {
   FONT_BODY, BG_SECTION, BORDER_SOFT, CARD_SHADOW, TEXT_MUTED,
-  CARD_BG, CARD_FG, CARD_MUTED,
+  CARD_BG, CARD_FG, CARD_MUTED, SCORE_RED,
 } from '@/lib/theme';
 import { useCardTheme, CardModeStar, themeKeyFromLabel } from './cardTheme';
+import { MissingInfo } from './MissingInfo';
+import type { ZoneCta } from '@/lib/dash/locks';
 
 /**
  * SectionCard -- large light-grey rounded card that groups one dashboard zone.
@@ -12,14 +14,41 @@ import { useCardTheme, CardModeStar, themeKeyFromLabel } from './cardTheme';
  * Every section carries a short eyebrow label (11px DM Sans semibold), same
  * treatment as the white Card labels so the page reads as one system.
  * `id` doubles as the icon-rail scroll anchor.
+ *
+ * `locked` gates the zone: when set, the card renders the red MISSING INFO body
+ * in place of its children. Children are NOT rendered at all (not hidden with
+ * CSS) so a locked zone's markup never reaches the DOM -- a CSS overlay would
+ * leave the numbers one devtools inspection away.
+ *
+ * This DOM withholding is only HALF the guarantee: the zone's underlying data
+ * is also stripped server-side by gateLockedZoneData (src/lib/dash/gate.ts)
+ * before it is handed to this client tree, so a locked zone contributes nothing
+ * to the RSC/Flight payload either. Withholding here without that gate would
+ * still ship the rows in the page HTML.
  */
-export function SectionCard({ title, right, children, style, id }: {
+export type SectionLock = {
+  zoneLabel: string;
+  reason: string;
+  cta?: ZoneCta;
+};
+
+export function SectionCard({ title, right, children, style, id, locked }: {
   title?: string; right?: ReactNode; children: ReactNode; style?: React.CSSProperties; id?: string;
+  locked?: SectionLock;
 }) {
+  // Variant C: the whole card is tinted so the zone reads as an alert, not as a
+  // card that happens to contain red text. Reuses SCORE_RED via color-mix; no
+  // new colour enters the palette.
+  const lockedStyle: React.CSSProperties = locked ? {
+    background: `color-mix(in srgb, ${SCORE_RED} 7%, ${BG_SECTION})`,
+    border: `1px solid color-mix(in srgb, ${SCORE_RED} 28%, transparent)`,
+  } : {};
+
   return (
     <section id={id} style={{
       background: BG_SECTION, borderRadius: 24, padding: 16,
-      border: `1px solid ${BORDER_SOFT}`, scrollMarginTop: 12, ...style,
+      border: `1px solid ${BORDER_SOFT}`, scrollMarginTop: 12,
+      ...lockedStyle, ...style,
     }}>
       {(title || right) && (
         <div style={{
@@ -32,10 +61,14 @@ export function SectionCard({ title, right, children, style, id }: {
                 fontFamily: FONT_BODY, fontWeight: 600, textTransform: 'uppercase',
               }}>{title}</h2>
             : <span />}
-          {right}
+          {locked ? null : right}
         </div>
       )}
-      {children}
+      {/* Children are not rendered at all when locked, never merely hidden: a
+          CSS overlay would still ship the real numbers to the browser. */}
+      {locked
+        ? <MissingInfo zoneLabel={locked.zoneLabel} reason={locked.reason} cta={locked.cta} />
+        : children}
     </section>
   );
 }

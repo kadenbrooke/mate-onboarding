@@ -1,19 +1,62 @@
 // scripts/seed-demo-leads.mjs
 // Seeds ~40 believable leads for one session so every widget renders.
-// Usage: node scripts/seed-demo-leads.mjs <session_id> [--skip-leads]
+// Usage: node scripts/seed-demo-leads.mjs <session_id> [--skip-leads] [--locked]
 //   --skip-leads  skip the client_leads insert (avoids piling duplicate leads onto an existing demo session)
+//   --locked      reset the session so every gated zone is locked, for walking
+//                 the unlock flow end to end. Leads are still seeded (unless
+//                 --skip-leads), so the always-live zones render and the
+//                 contrast between live and locked is visible.
 import { createClient } from '@supabase/supabase-js';
 
 const args = process.argv.slice(2);
 const sessionId = args.find(a => !a.startsWith('--'));
 const skipLeads = args.includes('--skip-leads');
+const locked = args.includes('--locked');
 
 if (!sessionId) {
-  console.error('usage: node scripts/seed-demo-leads.mjs <session_id> [--skip-leads]');
+  console.error('usage: node scripts/seed-demo-leads.mjs <session_id> [--skip-leads] [--locked]');
+  process.exit(1);
+}
+
+// The session id must always be passed explicitly. A default would let a reset
+// land on the wrong session, which is the same class of mistake that put a
+// client's real leads on a public page.
+if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
+  console.error(`refusing to run: "${sessionId}" is not a session uuid`);
+  process.exit(1);
+}
+
+// Hard blocklist that fires on EVERY run (plain seed AND --locked), before any
+// network call: never write to the prospect-facing demo (b7573135) or the real
+// J&C production session (61400e73). A plain seed would splash 40 synthetic
+// leads onto a live page where fake and real leads are indistinguishable --
+// the exact incident this dashboard already had. The walkthrough demo must be
+// its own separate is_demo session.
+const PROTECTED_SESSIONS = new Set([
+  'b7573135-d4ec-43bb-bf33-a1d365739784', // prospect demo
+  '61400e73-0570-4167-88d9-d3a69650b15b', // real J&C
+]);
+if (PROTECTED_SESSIONS.has(sessionId.toLowerCase())) {
+  console.error(`refusing to run against protected session ${sessionId} (real J&C / prospect demo)`);
   process.exit(1);
 }
 
 const supabase = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SECRET_KEY);
+
+if (locked) {
+  // Clear every gate signal: no google_connected, agent off, no operator phone,
+  // and remove any ad_metrics rows so the ads zone gates on data absence.
+  const { error } = await supabase
+    .from('onboarding_sessions')
+    .update({ collected: {}, agent_enabled: false, operator_phone: null })
+    .eq('id', sessionId);
+  if (error) { console.error('lock reset failed', error); process.exit(1); }
+
+  const { error: adErr } = await supabase.from('ad_metrics').delete().eq('session_id', sessionId);
+  if (adErr) { console.error('ad_metrics clear failed', adErr); process.exit(1); }
+
+  console.log(`locked session ${sessionId}: google/agent/phone cleared, ad_metrics removed`);
+}
 
 async function insertOrDie(table, rows) {
   const { error } = await supabase.from(table).insert(rows);

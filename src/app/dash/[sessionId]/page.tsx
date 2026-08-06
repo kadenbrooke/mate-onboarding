@@ -7,6 +7,8 @@ import type { DashData } from '@/components/dash/types';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { adTotals, type AdMetricRow } from '@/lib/metrics/ads';
+import { zoneLocks } from '@/lib/dash/locks';
+import { gateLockedZoneData } from '@/lib/dash/gate';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
@@ -18,7 +20,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   // Load session - also fetch contact_id so we can join client_capabilities
   const { data: session } = await supabase
     .from('onboarding_sessions')
-    .select('id, mate_name, contact_id')
+    .select('id, mate_name, contact_id, collected, agent_enabled, operator_phone')
     .eq('id', sessionId)
     .single();
   if (!session) notFound();
@@ -120,6 +122,17 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   const latestAdRows = allAdRows.filter((r) => newestPerPlatform.get(r.platform) === r.date_pulled);
   const ads = latestAdRows.length ? adTotals(latestAdRows) : null;
 
+  // Zone lock state, derived from signals already on the session row. `ads` is
+  // null when the session has no ad_metrics rows, so it doubles as the ads gate
+  // with no extra query.
+  const locks = zoneLocks({
+    sessionId,
+    collected: (session.collected ?? null) as Record<string, unknown> | null,
+    agentEnabled: session.agent_enabled === true,
+    operatorPhone: (session.operator_phone ?? null) as string | null,
+    adsPresent: ads !== null,
+  });
+
   // Map client_capabilities rows: capability_key -> key
   const rawCaps = capabilitiesResult.data ?? [];
   const capabilities: DashCapability[] = rawCaps.map((row) => ({
@@ -128,7 +141,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     status: String(row.status),
   }));
 
-  const data: DashData = {
+  const rawData: DashData = {
     events: eventsResult.data ?? [],
     appointments: appointmentsResult.data ?? [],
     reactivation: reactivationResult.data ?? null,
@@ -141,11 +154,17 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     ads,
   };
 
+  // Withhold every locked zone's data from the client payload. Card.tsx never
+  // MOUNTS locked children, but without this the rows would still ride along in
+  // the RSC/Flight payload embedded in the HTML. Locked zone == no data shipped.
+  const data = gateLockedZoneData(rawData, locks);
+
   return (
     <DashboardView
       session={{ id: session.id, mate_name: session.mate_name }}
       leads={(leadsResult.data ?? []) as Lead[]}
       data={data}
+      locks={locks}
     />
   );
 }
