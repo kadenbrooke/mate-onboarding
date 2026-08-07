@@ -34,7 +34,7 @@ import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
 import { SortableStack, type StackItem } from './SortableStack';
 import { SetupChecklist } from './SetupChecklist';
 import type { DashData } from './types';
-import { ZONE_LABELS, type ZoneId, type ZoneLock } from '@/lib/dash/locks';
+import { ZONE_LABELS, ZONE_DESCRIPTIONS, type ZoneId, type ZoneLock } from '@/lib/dash/locks';
 import type { SectionLock } from './Card';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
@@ -72,7 +72,12 @@ export function DashboardView({ session, leads, data, locks }: {
   // already computed in page.tsx, keeping the gate logic in one place.
   const lockFor = (id: ZoneId): SectionLock | undefined => {
     const lock = locks[id];
-    return lock ? { zoneLabel: ZONE_LABELS[id], reason: lock.reason, cta: lock.cta } : undefined;
+    return lock
+      ? {
+          zoneLabel: ZONE_LABELS[id], kind: lock.kind, reason: lock.reason,
+          description: ZONE_DESCRIPTIONS[id], cta: lock.cta,
+        }
+      : undefined;
   };
   // Mobile zones render as bare cards on the canvas, not inside a SectionCard.
   // When one is locked, wrap it so the MISSING INFO card shows AND its children

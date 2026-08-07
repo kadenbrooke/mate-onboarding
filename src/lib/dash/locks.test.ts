@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { zoneLocks, ALWAYS_LIVE_ZONES, GATED_ZONES } from './locks';
+import { zoneLocks, ALWAYS_LIVE_ZONES, GATED_ZONES, ZONE_DESCRIPTIONS } from './locks';
 
 const ALL_CONNECTED = {
   sessionId: 's1',
@@ -64,10 +64,15 @@ describe('zoneLocks', () => {
     expect(locks['zone-ads']).toBeNull();
   });
 
-  it('gives ads a secondary cta and the others a primary cta', () => {
+  it('classifies ads as coming-soon (no client action, no cta) and the others as action (with cta)', () => {
     const locks = zoneLocks(NOTHING_CONNECTED);
-    expect(locks['zone-ads']?.cta?.secondary).toBe(true);
-    expect(locks['zone-calendar']?.cta?.secondary).toBeFalsy();
+    expect(locks['zone-ads']?.kind).toBe('coming-soon');
+    expect(locks['zone-ads']?.cta).toBeUndefined();
+
+    for (const id of ['zone-calendar', 'zone-reputation', 'zone-followup', 'zone-operations', 'zone-money'] as const) {
+      expect(locks[id]?.kind, `${id} should be action-kind`).toBe('action');
+      expect(locks[id]?.cta, `${id} should carry a cta`).toBeTruthy();
+    }
   });
 
   it('builds session-scoped cta links', () => {
@@ -80,6 +85,22 @@ describe('zoneLocks', () => {
     const locks = zoneLocks(NOTHING_CONNECTED);
     for (const lock of Object.values(locks)) {
       if (lock) expect(lock.reason).not.toContain('—');
+    }
+  });
+
+  it('every gated zone locked with nothing connected declares an explicit kind', () => {
+    const locks = zoneLocks(NOTHING_CONNECTED);
+    for (const id of GATED_ZONES) {
+      expect(['action', 'coming-soon']).toContain(locks[id]?.kind);
+    }
+  });
+
+  it('writes a description for every zone, gated or not, with no em dashes', () => {
+    for (const id of [...ALWAYS_LIVE_ZONES, ...GATED_ZONES]) {
+      const desc = ZONE_DESCRIPTIONS[id];
+      expect(desc, `${id} missing a description`).toBeTruthy();
+      expect(desc.length, `${id} description too short`).toBeGreaterThan(10);
+      expect(desc).not.toContain('—');
     }
   });
 });
