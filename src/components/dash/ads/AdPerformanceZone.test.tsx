@@ -43,9 +43,11 @@ const jcTotals: AdTotals = {
 };
 
 describe('AdPerformanceZone', () => {
-  it('shows an empty state with no ad data', () => {
+  it('shows the ComingSoon cover with no ad data', () => {
     render(<AdPerformanceZone ads={null} />);
-    expect(screen.getByText(/turns on with your first ad pull/i)).toBeInTheDocument();
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
+    expect(screen.getByText('Ad performance')).toBeInTheDocument();
+    expect(screen.queryByText(/^turns on with your first ad pull$/i)).toBeNull();
   });
 
   it('leads with cost-per-lead in the ring center', () => {

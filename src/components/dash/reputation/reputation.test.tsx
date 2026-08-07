@@ -20,8 +20,10 @@ describe('ReputationZone', () => {
     expect(screen.getByText('4.8')).toBeInTheDocument();
     expect(screen.getByText('$12.3k')).toBeInTheDocument();
   });
-  it('locked state when reputation null', () => {
+  it('renders the ComingSoon cover, not bare text, when reputation is null', () => {
     render(<ReputationZone reputation={null} reviews={[]} />);
-    expect(screen.getByText(/turns on with review collection/i)).toBeInTheDocument();
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
+    expect(screen.getByText('Reputation')).toBeInTheDocument();
+    expect(screen.queryByText(/^turns on with review collection$/i)).toBeNull();
   });
 });
