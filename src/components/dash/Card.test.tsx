@@ -107,4 +107,68 @@ describe('SectionCard', () => {
     expect(screen.getByRole('link', { name: 'Connect Google' }).getAttribute('href'))
       .toBe('/api/connect/google?sessionId=s1');
   });
+
+  it('defaults an omitted kind to the action MISSING INFO body (backward compatible)', () => {
+    render(
+      <SectionCard title="Calendar" locked={{ zoneLabel: 'Calendar', reason: 'r' }}>
+        <p>x</p>
+      </SectionCard>,
+    );
+    expect(screen.getByText(/MISSING/)).toBeInTheDocument();
+    expect(screen.queryByText('Coming soon')).toBeNull();
+  });
+
+  it("renders the COMING SOON cover, not MISSING INFO, when kind is 'coming-soon'", () => {
+    render(
+      <SectionCard
+        title="Ad performance"
+        locked={{
+          zoneLabel: 'Ad performance', kind: 'coming-soon',
+          reason: 'unused by the coming-soon body',
+          description: 'Your ad spend and cost per lead, once we connect it for you.',
+        }}
+      >
+        <p>x</p>
+      </SectionCard>,
+    );
+    expect(screen.queryByText(/MISSING/)).toBeNull();
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
+    // "Ad performance" appears twice: the SectionCard title AND the cover's
+    // own zone label (the cover renders standalone from a mobile stack too).
+    expect(screen.getAllByText('Ad performance').length).toBe(2);
+    expect(screen.getByText('Your ad spend and cost per lead, once we connect it for you.')).toBeInTheDocument();
+  });
+
+  it('renders no cta and no numbers in the coming-soon cover, even if the lock carries one', () => {
+    render(
+      <SectionCard
+        title="Ad performance"
+        locked={{
+          zoneLabel: 'Ad performance', kind: 'coming-soon', reason: 'r',
+          description: 'Costs $500 per month once live.',
+          cta: { label: 'Contact us', href: '/dash/s1/assistant' },
+        }}
+      >
+        <p>x</p>
+      </SectionCard>,
+    );
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+
+  it('does not tint the coming-soon card red the way the action card is tinted', () => {
+    const { container: actionContainer } = render(
+      <SectionCard title="Calendar" locked={{ zoneLabel: 'Calendar', kind: 'action', reason: 'r' }}>
+        <p>x</p>
+      </SectionCard>,
+    );
+    const { container: comingSoonContainer } = render(
+      <SectionCard title="Ads" locked={{ zoneLabel: 'Ads', kind: 'coming-soon', reason: 'r', description: 'd' }}>
+        <p>x</p>
+      </SectionCard>,
+    );
+    const actionBg = (actionContainer.querySelector('section') as HTMLElement).style.background;
+    const comingSoonBg = (comingSoonContainer.querySelector('section') as HTMLElement).style.background;
+    expect(actionBg).toContain('color-mix');
+    expect(comingSoonBg).not.toContain('color-mix');
+  });
 });

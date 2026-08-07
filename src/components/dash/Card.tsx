@@ -6,7 +6,8 @@ import {
 } from '@/lib/theme';
 import { useCardTheme, CardModeStar, themeKeyFromLabel } from './cardTheme';
 import { MissingInfo } from './MissingInfo';
-import type { ZoneCta } from '@/lib/dash/locks';
+import { ComingSoon } from './ComingSoon';
+import type { ZoneCta, ZoneLockKind } from '@/lib/dash/locks';
 
 /**
  * SectionCard -- large light-grey rounded card that groups one dashboard zone.
@@ -15,10 +16,16 @@ import type { ZoneCta } from '@/lib/dash/locks';
  * treatment as the white Card labels so the page reads as one system.
  * `id` doubles as the icon-rail scroll anchor.
  *
- * `locked` gates the zone: when set, the card renders the red MISSING INFO body
- * in place of its children. Children are NOT rendered at all (not hidden with
- * CSS) so a locked zone's markup never reaches the DOM -- a CSS overlay would
- * leave the numbers one devtools inspection away.
+ * `locked` gates the zone: when set, the card renders one of two covers in
+ * place of its children, chosen by `locked.kind`:
+ * - 'action' (default when `kind` is omitted, for backward compatibility)
+ *   renders the red MISSING INFO body with its CTA -- the client can do
+ *   something right now to unlock this.
+ * - 'coming-soon' renders the muted COMING SOON cover -- nothing for the
+ *   client to do, the feature just is not live yet.
+ * Either way children are NOT rendered at all (not hidden with CSS) so a
+ * locked zone's markup never reaches the DOM -- a CSS overlay would leave the
+ * numbers one devtools inspection away.
  *
  * This DOM withholding is only HALF the guarantee: the zone's underlying data
  * is also stripped server-side by gateLockedZoneData (src/lib/dash/gate.ts)
@@ -28,7 +35,11 @@ import type { ZoneCta } from '@/lib/dash/locks';
  */
 export type SectionLock = {
   zoneLabel: string;
+  /** Defaults to 'action' when omitted, so existing callers/tests need not set it. */
+  kind?: ZoneLockKind;
   reason: string;
+  /** What the zone is + will do. Required in practice for 'coming-soon'. */
+  description?: string;
   cta?: ZoneCta;
 };
 
@@ -36,13 +47,19 @@ export function SectionCard({ title, right, children, style, id, locked }: {
   title?: string; right?: ReactNode; children: ReactNode; style?: React.CSSProperties; id?: string;
   locked?: SectionLock;
 }) {
-  // Variant C: the whole card is tinted so the zone reads as an alert, not as a
-  // card that happens to contain red text. Reuses SCORE_RED via color-mix; no
-  // new colour enters the palette.
-  const lockedStyle: React.CSSProperties = locked ? {
+  const comingSoon = locked?.kind === 'coming-soon';
+  // Variant C: the whole card is tinted so an 'action' zone reads as an alert,
+  // not as a card that happens to contain red text. Reuses SCORE_RED via
+  // color-mix; no new colour enters the palette. A 'coming-soon' zone is
+  // deliberately NOT tinted red -- red reads as an error, and a future
+  // feature is not one -- so it keeps the plain section chrome plus a
+  // slightly firmer hairline.
+  const lockedStyle: React.CSSProperties = !locked ? {} : comingSoon ? {
+    border: `1px solid ${BORDER_SOFT}`,
+  } : {
     background: `color-mix(in srgb, ${SCORE_RED} 7%, ${BG_SECTION})`,
     border: `1px solid color-mix(in srgb, ${SCORE_RED} 28%, transparent)`,
-  } : {};
+  };
 
   return (
     <section id={id} style={{
@@ -67,7 +84,9 @@ export function SectionCard({ title, right, children, style, id, locked }: {
       {/* Children are not rendered at all when locked, never merely hidden: a
           CSS overlay would still ship the real numbers to the browser. */}
       {locked
-        ? <MissingInfo zoneLabel={locked.zoneLabel} reason={locked.reason} cta={locked.cta} />
+        ? comingSoon
+          ? <ComingSoon zoneLabel={locked.zoneLabel} description={locked.description ?? locked.reason} />
+          : <MissingInfo zoneLabel={locked.zoneLabel} reason={locked.reason} cta={locked.cta} />
         : children}
     </section>
   );
