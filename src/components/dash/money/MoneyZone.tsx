@@ -11,11 +11,13 @@ import {
 
 // Money zone -- QuickBooks Online financials on one card, read-only.
 //
-// Two rings, laid out like the Pipeline TwinRings:
+// REVENUE · THIS MONTH is the card's single headline, centered at the top. Two
+// rings sit beneath it, laid out like the Pipeline TwinRings:
 //
-//   Ring 1  REVENUE = EXPENSES + PROFIT   -- a real equation. The two segments
-//           sum to revenue, so the ring visibly reconciles (the point the flat
-//           stat list missed). Resting center is REVENUE.
+//   Ring 1  EXPENSES + PROFIT = revenue   -- a real equation (the two segments
+//           still sum to the headline revenue, so it reconciles). Revenue is
+//           the headline now, so the ring rests on PROFIT -- the takeaway --
+//           and hover/tap swaps the center between Profit and Expenses.
 //   Ring 2  COLLECTED  vs  OUTSTANDING    -- a comparative gauge, NOT an
 //           equation: collected is this month's cash, outstanding is the
 //           all-time AR balance, so they do not form a total. The center
@@ -56,16 +58,27 @@ export function MoneyZone({ money, showLabel = true }: {
 
   return (
     <Card label={label} themeKey="money">
+      {/* Single headline: revenue for the period, centered above both rings. */}
+      <div style={{ marginTop: 8, textAlign: 'center' }}>
+        <div data-testid="money-revenue" style={{ fontSize: 30, ...NUM_DISPLAY, color: brandVar, lineHeight: 1.1 }}>
+          {moneyShort(money.revenue_cents)}
+        </div>
+        <div style={{ fontSize: 10, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
+          REVENUE &middot; THIS MONTH
+        </div>
+      </div>
+
       <div style={{
         display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap',
-        gap: 16, marginTop: 8,
+        gap: 16, marginTop: 12,
       }}>
-        {/* Ring 1: revenue = expenses + profit (a genuine sum). */}
-        {hasExpenses ? (
+        {/* Ring 1: expenses + profit = revenue (still a genuine sum). Revenue is
+            the headline now, so the ring rests on PROFIT and swaps Profit <-> Expenses. */}
+        {hasExpenses && (
           <SwapRing
             idPrefix="money"
-            centerTestId="money-revenue"
-            restKey="revenue"
+            centerTestId="money-pl-center"
+            restKey="profit"
             // Profit arc clamped at 0 so expenses>revenue can't make a
             // negative-length (NaN-ish) arc; the signed profit still shows in
             // the center + legend.
@@ -74,18 +87,15 @@ export function MoneyZone({ money, showLabel = true }: {
               { key: 'profit', value: Math.max(0, money.profit_cents), color: FREE_GREEN },
             ]}
             centers={{
-              revenue: { value: money.revenue_cents, color: brandVar, label: 'REVENUE · THIS MONTH' },
-              expenses: { value: money.expenses_cents, color: LOST_BROWN, label: 'EXPENSES' },
               profit: { value: money.profit_cents, color: profitColor, label: 'PROFIT' },
+              expenses: { value: money.expenses_cents, color: LOST_BROWN, label: 'EXPENSES' },
             }}
             legend={[
               { focusKey: 'expenses', testId: 'money-expenses', label: 'EXPENSES', value: moneyShort(money.expenses_cents), color: LOST_BROWN },
               { focusKey: 'profit', testId: 'money-profit', label: 'PROFIT', value: moneyShort(money.profit_cents), color: profitColor },
             ]}
-            ariaLabel={`Revenue ${moneyShort(money.revenue_cents)}: expenses ${moneyShort(money.expenses_cents)} plus profit ${moneyShort(money.profit_cents)}`}
+            ariaLabel={`Profit ${moneyShort(money.profit_cents)} and expenses ${moneyShort(money.expenses_cents)}, which sum to revenue ${moneyShort(money.revenue_cents)}`}
           />
-        ) : (
-          <RevenueHero revenueCents={money.revenue_cents} />
         )}
 
         {/* Ring 2: collected vs outstanding -- comparative gauge, no sum. */}
@@ -213,21 +223,6 @@ function SwapRing({ idPrefix, centerTestId, arcs, restKey, centers, legend, aria
           />
         ))}
       </div>
-    </div>
-  );
-}
-
-/** No expenses pulled: a plain revenue hero, no ring to split (and nothing
- *  broken to look at). Keeps the money-revenue hook the tests read. */
-function RevenueHero({ revenueCents }: { revenueCents: number }) {
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 138 }}>
-      <span data-testid="money-revenue" style={{ fontSize: 34, ...NUM_DISPLAY, color: brandVar }}>
-        {moneyShort(revenueCents)}
-      </span>
-      <span style={{ fontSize: 9, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600, marginTop: 2 }}>
-        REVENUE &middot; THIS MONTH
-      </span>
     </div>
   );
 }

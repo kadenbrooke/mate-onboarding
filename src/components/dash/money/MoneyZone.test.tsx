@@ -22,10 +22,14 @@ describe('MoneyZone', () => {
     expect(screen.getByText(/turns on when your quickbooks is connected/i)).toBeInTheDocument();
   });
 
-  it('leads with revenue for the period', () => {
+  it('leads with revenue as the single top headline', () => {
     render(<MoneyZone money={totals} />);
     // moneyShort(1_250_000) -> "$12.5k"
     expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
+    expect(screen.getByText(/REVENUE · THIS MONTH/)).toBeInTheDocument();
+    // Revenue is NOT inside either ring center anymore.
+    expect(screen.getByTestId('money-pl-center').textContent).not.toBe('$12.5k');
+    expect(screen.getByTestId('money-cash-center').textContent).not.toBe('$12.5k');
   });
 
   it('shows the period and last-updated footer', () => {
@@ -43,27 +47,30 @@ describe('MoneyZone', () => {
       expect(screen.getByTestId('money-seg-profit')).toBeInTheDocument();
     });
 
-    it('rests with revenue in the center', () => {
+    it('rests with PROFIT in the center (revenue is the headline now)', () => {
       render(<MoneyZone money={totals} />);
-      expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
-      expect(screen.getByText(/REVENUE · THIS MONTH/)).toBeInTheDocument();
+      // moneyShort(850_000) -> "$8,500"
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$8,500');
+      // "PROFIT" appears as the center sub and the legend label.
+      expect(screen.getAllByText(/^PROFIT$/).length).toBeGreaterThanOrEqual(1);
     });
 
-    it('swaps the center metric when a segment is tapped (locked center-swap)', () => {
+    it('swaps Profit <-> Expenses when a segment is tapped (locked center-swap)', () => {
       render(<MoneyZone money={totals} />);
-      fireEvent.click(screen.getByTestId('money-seg-profit'));
-      expect(screen.getByTestId('money-revenue').textContent).toBe('$8,500');
+      // Rest = profit.
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$8,500');
+      // Tap expenses -> center shows expenses.
       fireEvent.click(screen.getByTestId('money-seg-expenses'));
-      expect(screen.getByTestId('money-revenue').textContent).toBe('$4,000');
-      // Re-tapping the active segment returns to revenue.
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$4,000');
+      // Re-tapping the active segment returns to the resting metric (profit).
       fireEvent.click(screen.getByTestId('money-seg-expenses'));
-      expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$8,500');
     });
 
     it('swaps the center metric from the legend chip too', () => {
       render(<MoneyZone money={totals} />);
-      fireEvent.click(screen.getByTestId('money-profit'));
-      expect(screen.getByTestId('money-revenue').textContent).toBe('$8,500');
+      fireEvent.click(screen.getByTestId('money-expenses'));
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$4,000');
     });
 
     it('legend chips report the underlying figures', () => {
