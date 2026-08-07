@@ -7,7 +7,7 @@ import { DotsSixVertical, ArrowCounterClockwise, Check } from '@phosphor-icons/r
 import { useDashLayout } from './useDashLayout';
 import {
   type DashLayout, GRID_COLS, GRID_ROW_HEIGHT, GRID_MARGIN,
-  colSpanPx, pxToRows,
+  colSpanPx, pxToRows, applyContentHeights,
 } from '@/lib/dash/layout';
 import {
   brandVar, BG_SECTION, BORDER_SOFT, TEXT_DARK, TEXT_MUTED, FONT_BODY,
@@ -24,17 +24,27 @@ export interface MovableCard {
 
 const FALLBACK_H = 24; // rows, used only for the sub-frame before measurement
 const MIN_W = 3; // 12 / 3 = up to 4 cards across a row
-const MIN_H = 5;
+const MIN_H = 1; // pre-measurement placeholder; the real floor is content height
 
 /**
  * Desktop dashboard grid: drag to reorder, drag the SE corner to resize, all
  * gated behind `editing`. Off → cards are fully static (normal scroll/read).
  *
- * RGL uses fixed row-height cells but these cards are content-height, so on
- * first mount (when the client has no stored layout) we measure each card's
- * natural height at its exact grid-column width and build the default layout
- * from that — the default view matches the founder-designed heights. Once the
- * client drags or resizes, that arrangement is stored and measurement stops.
+ * RGL uses fixed row-height cells but these cards are content-height. A hidden
+ * measure layer renders every card at its exact grid-column width and reports
+ * each card's natural pixel height; that height (in rows) is pinned onto BOTH
+ * `h` and `minH` for every card — stored layouts included — via
+ * `applyContentHeights`. Consequences:
+ *   - a card can never be compacted or resized shorter than its content (no
+ *     clipping — bug 1), because `minH` == content rows;
+ *   - a card never grows past its content (no dead space below — bug 2),
+ *     because `h` == content rows;
+ *   - a restored custom layout is re-measured against the CURRENT data on every
+ *     load, so a saved arrangement never renders "reset"/broken when the data
+ *     (and thus content height) has shifted since it was saved (bug 3). Only
+ *     x/y/w/order come from storage; height is always live.
+ * Measurement is continuous (ResizeObserver on the measure layer), so data
+ * updates that change a card's height reflow it without a reload.
  */
 export function MovableDashGrid({ sessionId, cards, editing, onDone }: {
   sessionId: string;
@@ -59,18 +69,31 @@ export function MovableDashGrid({ sessionId, cards, editing, onDone }: {
   const measureRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const interacted = useRef(false);
   const [containerW, setContainerW] = useState(0);
-  const [measured, setMeasured] = useState<DashLayout | null>(null);
+  // Measured natural content height, in grid rows, per card id. The single
+  // source of truth for every card's height — see applyContentHeights.
+  const [contentRows, setContentRows] = useState<Record<string, number>>({});
 
-  // Track container width; a material change re-triggers measurement.
+  // Position/width/order source: the stored layout once customized, else the
+  // founder-designed default. Heights on these are placeholders; the measured
+  // heights are layered on below and always win.
+  const basePositions = isCustomized ? layout : defaultLayout;
+
+  // Current column width per card (a resize changes `w`, which changes content
+  // height, which must be re-measured). Keyed so the measure layer + observers
+  // re-run when any width changes, not on every unrelated re-render.
+  const widthKey = basePositions.map((i) => `${i.i}:${i.w}`).join('|');
+  const widthFor = useCallback(
+    (id: string) => basePositions.find((i) => i.i === id)?.w ?? cards.find((c) => c.id === id)?.w ?? 6,
+    [basePositions, cards],
+  );
+
+  // Track container width (drives the measure-layer column math).
   useLayoutEffect(() => {
     const el = containerRef.current;
     if (!el) return;
     const read = () => {
       const w = el.clientWidth;
-      setContainerW((prev) => {
-        if (Math.abs(prev - w) > 2) { setMeasured(null); return w; }
-        return prev;
-      });
+      setContainerW((prev) => (Math.abs(prev - w) > 2 ? w : prev));
     };
     read();
     if (typeof ResizeObserver === 'undefined') return; // jsdom / non-browser
@@ -79,18 +102,37 @@ export function MovableDashGrid({ sessionId, cards, editing, onDone }: {
     return () => ro.disconnect();
   }, []);
 
-  const needMeasure = !isCustomized && containerW > 0 && measured === null;
-
-  // Measure natural heights at each card's exact column width (pre-paint).
-  useLayoutEffect(() => {
-    if (!needMeasure) return;
-    const next = defaultLayout.map((item) => {
-      const el = measureRefs.current[item.i];
-      if (!el) return item;
-      return { ...item, h: Math.max(MIN_H, pxToRows(el.offsetHeight)) };
+  // Read every card's natural height from the measure layer into contentRows.
+  // Idempotent: only writes ids whose row count actually changed, so it can be
+  // called freely from a ResizeObserver without looping.
+  const measureNow = useCallback(() => {
+    if (containerW <= 0) return;
+    setContentRows((prev) => {
+      let changed = false;
+      const next = { ...prev };
+      for (const c of cards) {
+        const el = measureRefs.current[c.id];
+        if (!el) continue;
+        const rows = pxToRows(el.offsetHeight);
+        if (next[c.id] !== rows) { next[c.id] = rows; changed = true; }
+      }
+      return changed ? next : prev;
     });
-    setMeasured(next);
-  }, [needMeasure, containerW, geometryKey, defaultLayout]);
+  }, [cards, containerW]);
+
+  // Measure on mount and whenever width or a card's column-span changes.
+  useLayoutEffect(() => { measureNow(); }, [measureNow, widthKey, geometryKey]);
+
+  // Re-measure when a card's content height changes (data updates), keeping the
+  // grid in sync without a reload.
+  useLayoutEffect(() => {
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => measureNow());
+    for (const c of cards) { const el = measureRefs.current[c.id]; if (el) ro.observe(el); }
+    return () => ro.disconnect();
+    // widthKey/geometryKey re-attach observers when the node set or widths change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [measureNow, widthKey, geometryKey]);
 
   const markInteracted = useCallback(() => { interacted.current = true; }, []);
   const handleLayoutChange = useCallback((next: Layout, all?: Partial<Record<'lg', Layout>>) => {
@@ -99,7 +141,17 @@ export function MovableDashGrid({ sessionId, cards, editing, onDone }: {
     if (editing && interacted.current) setLayout([...(all?.lg ?? next)] as DashLayout);
   }, [editing, setLayout]);
 
-  const effectiveLayout = isCustomized ? layout : (measured ?? defaultLayout);
+  // Reset also clears the interaction flag: without this, a compaction event
+  // fired right after reset (while still editing) would re-persist the default
+  // as a "custom" layout, silently undoing the reset.
+  const handleReset = useCallback(() => { interacted.current = false; reset(); }, [reset]);
+
+  // Height is always live: pin measured content rows onto h AND minH for every
+  // card, stored or default. Positions/width/order come from basePositions.
+  const effectiveLayout = useMemo(
+    () => applyContentHeights(basePositions, contentRows),
+    [basePositions, contentRows],
+  );
 
   return (
     <div ref={containerRef} className={editing ? 'dash-rgl-wrap dash-editing' : 'dash-rgl-wrap'}>
@@ -114,7 +166,7 @@ export function MovableDashGrid({ sessionId, cards, editing, onDone }: {
           </span>
           <button
             type="button"
-            onClick={reset}
+            onClick={handleReset}
             disabled={!isCustomized}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5, height: 30, padding: '0 12px',
@@ -139,17 +191,21 @@ export function MovableDashGrid({ sessionId, cards, editing, onDone }: {
         </div>
       )}
 
-      {/* Hidden measurement layer: each card at its true grid-column width. */}
-      {needMeasure && (
+      {/* Hidden measurement layer: each card rendered at its CURRENT grid-column
+          width so its natural height can be read continuously. Always mounted
+          (not just on first paint) so a restored custom layout and any later
+          data-driven content change both re-measure. Offscreen + hidden so it
+          never paints or catches pointer events. */}
+      {containerW > 0 && (
         <div aria-hidden style={{
           position: 'absolute', top: -99999, left: 0, visibility: 'hidden',
-          pointerEvents: 'none',
+          pointerEvents: 'none', width: containerW,
         }}>
           {cards.map((c) => (
             <div
               key={c.id}
               ref={(el) => { measureRefs.current[c.id] = el; }}
-              style={{ width: colSpanPx(containerW, c.w) }}
+              style={{ width: colSpanPx(containerW, widthFor(c.id)) }}
             >
               {c.node}
             </div>
