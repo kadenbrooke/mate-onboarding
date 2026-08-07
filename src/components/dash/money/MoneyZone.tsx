@@ -45,7 +45,7 @@ export function MoneyZone({ money, showLabel = true }: {
           {moneyShort(money.revenue_cents)}
         </span>
         <span style={{ fontSize: 10, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
-          REVENUE
+          REVENUE &middot; THIS MONTH
         </span>
       </div>
 
