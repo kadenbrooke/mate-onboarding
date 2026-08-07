@@ -136,3 +136,30 @@ export function colSpanPx(containerWidth: number, w: number): number {
   const colWidth = (containerWidth - GRID_MARGIN * (GRID_COLS - 1)) / GRID_COLS;
   return w * colWidth + (w - 1) * GRID_MARGIN;
 }
+
+/**
+ * Reconcile a layout's row-heights against MEASURED content heights.
+ *
+ * Each card's `h` and `minH` are pinned to the rows its content actually needs
+ * (`contentRows[id]`), so a cell can never be compacted/resized below its
+ * content (clipping) nor grow past it (dead space). Positions (`x`/`y`/`w`) and
+ * order are preserved untouched — only the vertical sizing is derived.
+ *
+ * A card with no measurement yet (absent from `contentRows`) is left exactly as
+ * given, so the pre-measurement fallback height still applies on first paint.
+ * This is the single source of truth for card height and runs on EVERY layout,
+ * stored or default — a restored custom layout reconciles to current content
+ * every load, which is what stops a saved arrangement from looking "reset" when
+ * the underlying data (and thus content height) has changed since it was saved.
+ */
+export function applyContentHeights(
+  base: DashLayout,
+  contentRows: Record<string, number>,
+): DashLayout {
+  return base.map((item) => {
+    const rows = contentRows[item.i];
+    if (rows == null || !Number.isFinite(rows)) return item;
+    const h = Math.max(1, Math.round(rows));
+    return { ...item, h, minH: h };
+  });
+}
