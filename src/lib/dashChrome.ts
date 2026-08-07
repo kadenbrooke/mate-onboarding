@@ -32,6 +32,7 @@ export const RAIL_SECTIONS = [
   { id: 'zone-leadflow', label: 'Lead flow' },
   { id: 'zone-speed', label: 'Speed to lead' },
   { id: 'zone-ads', label: 'Ad performance' },
+  { id: 'zone-money', label: 'Revenue' },
   { id: 'zone-followup', label: 'Follow-up engine' },
   { id: 'zone-reputation', label: 'Reputation' },
   { id: 'zone-calendar', label: 'Calendar' },

@@ -1,6 +1,7 @@
 import type { ClientEvent } from '@/lib/metrics/events';
 import type { Appointment } from '@/lib/metrics/calendar';
 import type { AdTotals } from '@/lib/metrics/ads';
+import type { MoneyTotals } from '@/lib/metrics/money';
 
 export type Reactivation = {
   pool_size: number;
@@ -67,4 +68,5 @@ export type DashData = {
   incidents: Incident[];
   weekActionCount: number;
   ads: AdTotals | null;
+  money: MoneyTotals | null;
 };

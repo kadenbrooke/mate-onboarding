@@ -4,27 +4,27 @@ import { SetupChecklist } from './SetupChecklist';
 import { zoneLocks } from '@/lib/dash/locks';
 
 const NOTHING = zoneLocks({
-  sessionId: 's1', collected: null, agentEnabled: false, operatorPhone: null, adsPresent: false,
+  sessionId: 's1', collected: null, agentEnabled: false, operatorPhone: null, adsPresent: false, moneyPresent: false,
 });
 const EVERYTHING = zoneLocks({
   sessionId: 's1', collected: { google_connected: true }, agentEnabled: true,
-  operatorPhone: '+18015551234', adsPresent: true,
+  operatorPhone: '+18015551234', adsPresent: true, moneyPresent: true,
 });
 
 describe('SetupChecklist', () => {
   it('counts connected items out of the gated total', () => {
     render(<SetupChecklist locks={NOTHING} />);
-    expect(screen.getByText('0 of 5 connected')).toBeTruthy();
+    expect(screen.getByText('0 of 6 connected')).toBeTruthy();
   });
 
   it('counts everything when all gates pass', () => {
     render(<SetupChecklist locks={EVERYTHING} />);
-    expect(screen.getByText('5 of 5 connected')).toBeTruthy();
+    expect(screen.getByText('6 of 6 connected')).toBeTruthy();
   });
 
   it('lists every gated zone by name', () => {
     render(<SetupChecklist locks={NOTHING} />);
-    for (const label of ['Calendar', 'Reputation', 'Follow-up engine', 'Operations', 'Ad performance']) {
+    for (const label of ['Calendar', 'Reputation', 'Follow-up engine', 'Operations', 'Ad performance', 'Revenue']) {
       expect(screen.getByText(label), label).toBeTruthy();
     }
   });

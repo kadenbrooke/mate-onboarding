@@ -16,14 +16,15 @@ const FULL: DashData = {
   incidents: [],
   weekActionCount: 4,
   ads: null,
+  money: null,
 };
 
 const ALL_LOCKED = zoneLocks({
-  sessionId: 's1', collected: null, agentEnabled: false, operatorPhone: null, adsPresent: false,
+  sessionId: 's1', collected: null, agentEnabled: false, operatorPhone: null, adsPresent: false, moneyPresent: false,
 });
 const ALL_UNLOCKED = zoneLocks({
   sessionId: 's1', collected: { google_connected: true }, agentEnabled: true,
-  operatorPhone: '+18015551234', adsPresent: true,
+  operatorPhone: '+18015551234', adsPresent: true, moneyPresent: true,
 });
 
 describe('gateLockedZoneData', () => {
@@ -66,7 +67,7 @@ describe('gateLockedZoneData', () => {
     // Only calendar locked (no google), everything else connected.
     const partial = zoneLocks({
       sessionId: 's1', collected: null, agentEnabled: true,
-      operatorPhone: '+18015551234', adsPresent: true,
+      operatorPhone: '+18015551234', adsPresent: true, moneyPresent: true,
     });
     // collected null -> calendar AND reputation both gate on google_connected.
     const gated = gateLockedZoneData(FULL, partial);

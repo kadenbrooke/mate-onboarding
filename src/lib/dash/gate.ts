@@ -39,5 +39,9 @@ export function gateLockedZoneData(
     // Ad performance zone: `ads` is already null when locked (no ad_metrics
     // rows), but null it defensively so this gate is the single source of truth.
     ads: locked('zone-ads') ? null : data.ads,
+    // Money zone: financial figures (revenue, AR, collections) must never ride
+    // in the payload of a session that hasn't connected QBO. `money` is already
+    // null when locked (no qb_metrics rows); null it defensively too.
+    money: locked('zone-money') ? null : data.money,
   };
 }

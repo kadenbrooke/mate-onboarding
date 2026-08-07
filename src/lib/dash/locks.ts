@@ -34,6 +34,7 @@ export const GATED_ZONES = [
   'zone-followup',
   'zone-operations',
   'zone-ads',
+  'zone-money',
 ] as const;
 
 export type ZoneId = (typeof ALWAYS_LIVE_ZONES)[number] | (typeof GATED_ZONES)[number];
@@ -45,6 +46,8 @@ export type LockInput = {
   operatorPhone: string | null;
   /** True when ad_metrics rows exist for this session. */
   adsPresent: boolean;
+  /** True when qb_metrics rows exist for this session (QBO connected + pulled). */
+  moneyPresent: boolean;
 };
 
 /** Human labels, used by the setup checklist and the MISSING INFO card. */
@@ -58,6 +61,7 @@ export const ZONE_LABELS: Record<ZoneId, string> = {
   'zone-followup': 'Follow-up engine',
   'zone-operations': 'Operations',
   'zone-ads': 'Ad performance',
+  'zone-money': 'Revenue',
 };
 
 export function zoneLocks(input: LockInput): Record<ZoneId, ZoneLock | null> {
@@ -103,6 +107,13 @@ export function zoneLocks(input: LockInput): Record<ZoneId, ZoneLock | null> {
     'zone-ads': input.adsPresent ? null : {
       reason: "Your ad account isn't linked yet. We do this for you, so get in touch and we'll wire it up.",
       cta: { label: 'Contact us', href: `/dash/${input.sessionId}/assistant`, secondary: true },
+    },
+    // QBO is a per-client OAuth connection the client authorizes once. Unlike
+    // Meta (shared app env), there IS a self-serve action here: connect
+    // QuickBooks. Unlocks when the first pull lands qb_metrics rows.
+    'zone-money': input.moneyPresent ? null : {
+      reason: 'Connect QuickBooks to see your revenue, collections, and unpaid invoices here.',
+      cta: { label: 'Connect QuickBooks', href: `/api/qb/connect?sessionId=${input.sessionId}` },
     },
   };
 

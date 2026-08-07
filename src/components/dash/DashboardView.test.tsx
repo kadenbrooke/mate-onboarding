@@ -13,7 +13,7 @@ const session = { id: 's1', mate_name: 'J&C Asphalt' };
 // covered in Card.test.tsx and locks.test.ts.
 const UNLOCKED = zoneLocks({
   sessionId: 's1', collected: { google_connected: true }, agentEnabled: true,
-  operatorPhone: '+18015551234', adsPresent: true,
+  operatorPhone: '+18015551234', adsPresent: true, moneyPresent: true,
 });
 
 const emptyDash: DashData = {
@@ -27,6 +27,7 @@ const emptyDash: DashData = {
   incidents: [],
   weekActionCount: 0,
   ads: null,
+  money: null,
 };
 
 /** Stand-in for the header's Customize chip (TopBar), which now owns the

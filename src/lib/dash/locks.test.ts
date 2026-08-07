@@ -7,6 +7,7 @@ const ALL_CONNECTED = {
   agentEnabled: true,
   operatorPhone: '+18015551234',
   adsPresent: true,
+  moneyPresent: true,
 };
 const NOTHING_CONNECTED = {
   sessionId: 's1',
@@ -14,6 +15,7 @@ const NOTHING_CONNECTED = {
   agentEnabled: false,
   operatorPhone: null,
   adsPresent: false,
+  moneyPresent: false,
 };
 
 describe('zoneLocks', () => {

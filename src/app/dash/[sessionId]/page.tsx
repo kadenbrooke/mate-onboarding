@@ -7,6 +7,7 @@ import type { DashData } from '@/components/dash/types';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { adTotals, type AdMetricRow } from '@/lib/metrics/ads';
+import { fetchMoneyTotals, type MoneyQuery } from '@/lib/metrics/money';
 import { zoneLocks } from '@/lib/dash/locks';
 import { gateLockedZoneData } from '@/lib/dash/gate';
 
@@ -38,6 +39,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     incidentsResult,
     weekActionCountResult,
     adMetricsResult,
+    money,
   ] = await Promise.all([
     supabase
       .from('client_leads')
@@ -107,6 +109,13 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .eq('session_id', sessionId)
       .order('date_pulled', { ascending: false })
       .limit(100),
+    // Money zone: latest QBO financial snapshot for THIS session. Tenant-scoped
+    // read (fetchMoneyTotals filters by session_id and re-checks the returned
+    // row's session_id); null when QBO isn't connected, which drives the lock.
+    // Cast through unknown: the service client's generics are far deeper than
+    // the small MoneyQuery contract needs, and matching them structurally
+    // inside this Promise.all tuple trips TS "excessively deep" inference.
+    fetchMoneyTotals(supabase as unknown as MoneyQuery, sessionId),
   ]);
 
   // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
@@ -131,6 +140,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     agentEnabled: session.agent_enabled === true,
     operatorPhone: (session.operator_phone ?? null) as string | null,
     adsPresent: ads !== null,
+    moneyPresent: money !== null,
   });
 
   // Map client_capabilities rows: capability_key -> key
@@ -152,6 +162,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     incidents: incidentsResult.data ?? [],
     weekActionCount: weekActionCountResult.count ?? 0,
     ads,
+    money,
   };
 
   // Withhold every locked zone's data from the client payload. Card.tsx never

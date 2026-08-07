@@ -29,6 +29,7 @@ import { CrewRoster } from './ops/CrewRoster';
 import { AgentActivity } from './ops/AgentActivity';
 import { AssistantView } from './assistant/AssistantView';
 import { AdPerformanceZone } from './ads/AdPerformanceZone';
+import { MoneyZone } from './money/MoneyZone';
 import { MovableDashGrid, type MovableCard } from './MovableDashGrid';
 import { SortableStack, type StackItem } from './SortableStack';
 import { SetupChecklist } from './SetupChecklist';
@@ -106,6 +107,9 @@ export function DashboardView({ session, leads, data, locks }: {
   // Ad Performance zone (Meta spend + cost-per-lead)
   const adPerformanceZone = <AdPerformanceZone ads={data.ads} />;
 
+  // Money zone (QuickBooks revenue, collections, receivables)
+  const moneyZone = <MoneyZone money={data.money} />;
+
   // Setup completion checklist: counts connected gated zones. Replaces the
   // former placeholder stub.
   const setupCard = <SetupChecklist locks={locks} />;
@@ -178,10 +182,13 @@ export function DashboardView({ session, leads, data, locks }: {
         </div>
       </SectionCard>
     ) },
+    { id: 'zone-money', x: 0, y: 5, w: 6, node: (
+      <SectionCard title="Revenue" locked={lockFor('zone-money')}><MoneyZone money={data.money} showLabel={false} /></SectionCard>
+    ) },
     // Setup checklist: always visible (never gated -- it is the thing that tells
     // the client what to unlock). Full-width row at the bottom of the grid. Its
     // own label is suppressed since the SectionCard title carries it.
-    { id: 'zone-setup', x: 0, y: 5, w: 12, node: (
+    { id: 'zone-setup', x: 0, y: 6, w: 12, node: (
       <SectionCard title="Setup"><SetupChecklist locks={locks} showLabel={false} /></SectionCard>
     ) },
   ];
@@ -212,6 +219,7 @@ export function DashboardView({ session, leads, data, locks }: {
     ],
     money: [
       { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
+      { id: 'm-revenue', node: mobileZone('zone-money', 'Revenue', moneyZone) },
       { id: 'm-ads', node: mobileZone('zone-ads', 'Ad performance', adPerformanceZone) },
       { id: 'm-followup', node: mobileZone('zone-followup', 'Follow-up engine', followUpZone) },
       { id: 'm-reputation', node: mobileZone('zone-reputation', 'Reputation', reputationZone) },
