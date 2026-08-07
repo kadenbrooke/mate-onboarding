@@ -30,9 +30,11 @@ describe('FollowUpZone', () => {
     expect(screen.getByText('CONTACTS BY DORMANCY')).toBeInTheDocument();
     expect(screen.getByText('Mike H.')).toBeInTheDocument();
   });
-  it('renders locked state when reactivation is null', () => {
+  it('renders the ComingSoon cover, not bare text, when reactivation is null', () => {
     render(<FollowUpZone reactivation={null} wins={[]} />);
-    expect(screen.getByText(/turns on with the Reactivator/i)).toBeInTheDocument();
+    expect(screen.getByText('Coming soon')).toBeInTheDocument();
+    expect(screen.getByText(/reactivator/i)).toBeInTheDocument();
+    expect(screen.queryByText(/^turns on with the Reactivator$/i)).toBeNull();
   });
   it('renders empty wins placeholder when reactivation present and wins empty', () => {
     render(<FollowUpZone reactivation={reactivation} wins={[]} />);

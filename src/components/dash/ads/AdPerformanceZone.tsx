@@ -1,9 +1,11 @@
 'use client';
 import { useState } from 'react';
 import { Card } from '../Card';
+import { ComingSoon } from '../ComingSoon';
 import { ringSegments } from '@/lib/metrics/ring';
 import { moneyShort } from '@/lib/metrics/format';
 import type { AdTotals, AdPlatform } from '@/lib/metrics/ads';
+import { ZONE_LABELS, ZONE_DESCRIPTIONS } from '@/lib/dash/locks';
 import {
   brandVar, FREE_GREEN, CARD_TRACK, CARD_MUTED, CARD_HAIRLINE, CARD_INSET,
   NUM_DISPLAY, FONT_BODY, FONT_HEAD, FONT_NUM,
@@ -50,12 +52,15 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
   const label = showLabel ? 'AD PERFORMANCE' : undefined;
   const [center, setCenter] = useState<Center>('cpl');
 
+  // No client action turns this on -- there is no per-session ad account for
+  // a client to connect; we wire ads up on our side. In practice this only
+  // renders when the outer zone-ads lock itself has already covered the
+  // SectionCard (the same adsPresent signal gates both), but it keeps the
+  // same muted ComingSoon cover for defensiveness if that ever decouples.
   if (ads == null || ads.campaigns.length === 0) {
     return (
       <Card label={label} themeKey="ad-performance">
-        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
-          turns on with your first ad pull
-        </div>
+        <ComingSoon zoneLabel={ZONE_LABELS['zone-ads']} description={ZONE_DESCRIPTIONS['zone-ads']} />
       </Card>
     );
   }

@@ -2,8 +2,10 @@ import { Card } from '@/components/dash/Card';
 import { CascadeFunnel } from '../followup/CascadeFunnel';
 import { StarBars } from './StarBars';
 import { ReferralRing } from './ReferralRing';
+import { ComingSoon } from '@/components/dash/ComingSoon';
 import { FREE_GREEN, CARD_MUTED, CARD_BG, CARD_INSET, CARD_HAIRLINE, FONT_BODY, FONT_HEAD } from '@/lib/theme';
 import type { Reputation, Review } from '@/components/dash/types';
+import { ZONE_LABELS, ZONE_DESCRIPTIONS } from '@/lib/dash/locks';
 
 export function ReputationZone({
   reputation,
@@ -16,12 +18,14 @@ export function ReputationZone({
 }) {
   // Desktop suppresses the card label: the surrounding SectionCard carries it.
   const label = showLabel ? 'THE REPUTATION MACHINE' : undefined;
+  // No client action turns this on -- review collection ramps up on its own
+  // once Google is connected. Reachable even when the zone is unlocked (google
+  // connected, no reputation rows computed yet), so it gets the same muted
+  // ComingSoon cover the locked SectionCard uses.
   if (reputation == null) {
     return (
       <Card label={label} themeKey="the-reputation-machine">
-        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
-          turns on with review collection
-        </div>
+        <ComingSoon zoneLabel={ZONE_LABELS['zone-reputation']} description={ZONE_DESCRIPTIONS['zone-reputation']} />
       </Card>
     );
   }

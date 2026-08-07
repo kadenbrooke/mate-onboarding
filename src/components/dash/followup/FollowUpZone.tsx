@@ -1,9 +1,11 @@
 import { Card } from '../Card';
 import { CascadeFunnel } from './CascadeFunnel';
+import { ComingSoon } from '../ComingSoon';
 import type { Reactivation, ReactivationWin } from '../types';
 import { FREE_GREEN, CARD_MUTED, NUM_DISPLAY, NUM_TABLE, FONT_BODY } from '@/lib/theme';
 import { BRAND_RAMP } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
+import { ZONE_LABELS, ZONE_DESCRIPTIONS } from '@/lib/dash/locks';
 
 // Purple used for "replied" states matches the web_form categorical hue
 // (legible on white, unlike the old pastel #b586e8).
@@ -20,12 +22,14 @@ export function FollowUpZone({
 }) {
   // Desktop suppresses the card label: the surrounding SectionCard carries it.
   const label = showLabel ? 'FOLLOW-UP ENGINE' : undefined;
+  // No client action turns this on -- the Reactivator is a future feature,
+  // not a connection the client can make. Same cover the locked SectionCard
+  // uses (ComingSoon), reused here because this state is reachable even when
+  // the zone itself is unlocked (agent on, no reactivation data yet).
   if (reactivation == null) {
     return (
       <Card label={label} themeKey="follow-up-engine">
-        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 10, fontFamily: FONT_BODY }}>
-          turns on with the Reactivator
-        </div>
+        <ComingSoon zoneLabel={ZONE_LABELS['zone-followup']} description={ZONE_DESCRIPTIONS['zone-followup']} />
       </Card>
     );
   }
