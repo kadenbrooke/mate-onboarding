@@ -11,23 +11,26 @@ import {
 
 // Money zone -- QuickBooks Online financials on one card, read-only.
 //
-// Headline is REVENUE this period, rendered inside a ring that splits it into
-// its two parts: EXPENSES + PROFIT. The two segments sum to revenue, so the
-// ring visibly "adds up" -- the point the flat stat list missed (a stack of
-// numbers that don't obviously reconcile). Tapping a segment swaps the center
-// metric (the locked ring center-swap interaction, same as the Pipeline
-// TwinRings); the resting center is always REVENUE.
+// Two rings, laid out like the Pipeline TwinRings:
 //
-// Cash-flow stats sit below the ring: money COLLECTED this month and
-// OUTSTANDING receivables -- the two numbers a paving-crew owner acts on.
+//   Ring 1  REVENUE = EXPENSES + PROFIT   -- a real equation. The two segments
+//           sum to revenue, so the ring visibly reconciles (the point the flat
+//           stat list missed). Resting center is REVENUE.
+//   Ring 2  COLLECTED  vs  OUTSTANDING    -- a comparative gauge, NOT an
+//           equation: collected is this month's cash, outstanding is the
+//           all-time AR balance, so they do not form a total. The center
+//           therefore only ever shows ONE real segment value -- never a sum.
+//
+// Both rings carry the same locked center-swap interaction (SwapRing): a
+// resting center metric, and hovering/tapping a segment (or its legend chip)
+// swaps the center to that segment; leaving / re-tapping returns to rest.
+//
 // Read-only by construction: the pull only ever GETs from QBO. This card never
 // writes anything back.
 
 const R = 48;
 const GAP_DEG = 3;
 const CIRC = 2 * Math.PI * R;
-
-type Focus = 'revenue' | 'expenses' | 'profit';
 
 export function MoneyZone({ money, showLabel = true }: {
   money: MoneyTotals | null;
@@ -46,144 +49,169 @@ export function MoneyZone({ money, showLabel = true }: {
   }
 
   const hasExpenses = money.expenses_cents > 0;
+  const profitColor = money.profit_cents >= 0 ? FREE_GREEN : LOST_BROWN;
+  const invoiceSub = money.invoices_outstanding > 0
+    ? `${money.invoices_outstanding} ${money.invoices_outstanding === 1 ? 'invoice' : 'invoices'}`
+    : undefined;
 
   return (
     <Card label={label} themeKey="money">
-      {hasExpenses
-        ? <RevenueRing money={money} />
-        : <RevenueHero revenueCents={money.revenue_cents} />}
+      <div style={{
+        display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap',
+        gap: 16, marginTop: 8,
+      }}>
+        {/* Ring 1: revenue = expenses + profit (a genuine sum). */}
+        {hasExpenses ? (
+          <SwapRing
+            idPrefix="money"
+            centerTestId="money-revenue"
+            restKey="revenue"
+            // Profit arc clamped at 0 so expenses>revenue can't make a
+            // negative-length (NaN-ish) arc; the signed profit still shows in
+            // the center + legend.
+            arcs={[
+              { key: 'expenses', value: money.expenses_cents, color: LOST_BROWN },
+              { key: 'profit', value: Math.max(0, money.profit_cents), color: FREE_GREEN },
+            ]}
+            centers={{
+              revenue: { value: money.revenue_cents, color: brandVar, label: 'REVENUE · THIS MONTH' },
+              expenses: { value: money.expenses_cents, color: LOST_BROWN, label: 'EXPENSES' },
+              profit: { value: money.profit_cents, color: profitColor, label: 'PROFIT' },
+            }}
+            legend={[
+              { focusKey: 'expenses', testId: 'money-expenses', label: 'EXPENSES', value: moneyShort(money.expenses_cents), color: LOST_BROWN },
+              { focusKey: 'profit', testId: 'money-profit', label: 'PROFIT', value: moneyShort(money.profit_cents), color: profitColor },
+            ]}
+            ariaLabel={`Revenue ${moneyShort(money.revenue_cents)}: expenses ${moneyShort(money.expenses_cents)} plus profit ${moneyShort(money.profit_cents)}`}
+          />
+        ) : (
+          <RevenueHero revenueCents={money.revenue_cents} />
+        )}
 
-      {/* Cash-flow stats: what came in, what's still owed. */}
-      <div style={{ marginTop: 14, display: 'grid', gap: 6 }}>
-        <StatRow
-          label="COLLECTED THIS MONTH"
-          value={moneyShort(money.collected_cents)}
-          color={FREE_GREEN}
-          testId="money-collected"
-        />
-        <StatRow
-          label="OUTSTANDING"
-          value={moneyShort(money.ar_cents)}
-          sub={money.invoices_outstanding > 0
-            ? `${money.invoices_outstanding} ${money.invoices_outstanding === 1 ? 'invoice' : 'invoices'}`
-            : undefined}
-          color={brandVar}
-          testId="money-ar"
+        {/* Ring 2: collected vs outstanding -- comparative gauge, no sum. */}
+        <SwapRing
+          idPrefix="money-cash"
+          centerTestId="money-cash-center"
+          restKey="collected"
+          arcs={[
+            { key: 'collected', value: money.collected_cents, color: FREE_GREEN },
+            { key: 'ar', value: money.ar_cents, color: brandVar },
+          ]}
+          centers={{
+            collected: { value: money.collected_cents, color: FREE_GREEN, label: 'COLLECTED · THIS MONTH' },
+            ar: { value: money.ar_cents, color: brandVar, label: 'OUTSTANDING', sub: invoiceSub },
+          }}
+          legend={[
+            { focusKey: 'collected', testId: 'money-collected', label: 'COLLECTED', value: moneyShort(money.collected_cents), color: FREE_GREEN },
+            { focusKey: 'ar', testId: 'money-ar', label: 'OUTSTANDING', value: moneyShort(money.ar_cents), color: brandVar, sub: invoiceSub },
+          ]}
+          ariaLabel={`Collected this month ${moneyShort(money.collected_cents)} versus outstanding receivables ${moneyShort(money.ar_cents)}`}
         />
       </div>
 
-      <div style={{ marginTop: 10, fontSize: 9.5, letterSpacing: 0.5, color: CARD_MUTED, fontFamily: FONT_BODY }}>
+      <div style={{ marginTop: 12, fontSize: 9.5, letterSpacing: 0.5, color: CARD_MUTED, fontFamily: FONT_BODY, textAlign: 'center' }}>
         {periodLabel(money)} &middot; from QuickBooks &middot; updated {money.date_pulled}
       </div>
     </Card>
   );
 }
 
+type Arc = { key: string; value: number; color: string };
+type CenterSpec = { value: number; color: string; label: string; sub?: string };
+type LegendSpec = { focusKey: string; testId: string; label: string; value: string; color: string; sub?: string };
+
 /**
- * Revenue split into Expenses + Profit as a two-segment ring, with the locked
- * center-swap interaction. Resting center is REVENUE; hovering/tapping a
- * segment (or its legend row) swaps the center to that part, leaving resets to
- * revenue. Negative profit is clamped out of the arc (full expense ring) but
- * still shown, signed, in the legend -- never a NaN/negative-length arc.
+ * Segmented ring with the locked center-swap interaction (mirrors the Pipeline
+ * TwinRings): resting center = `restKey`; hovering/tapping a segment or its
+ * legend chip swaps the center to that segment; leaving / re-tapping the active
+ * segment returns to rest.
+ *
+ * The center only ever renders a value from `centers` -- one real number at a
+ * time. It never computes or displays a sum of segments, so a ring whose parts
+ * are different-period measures (collected vs outstanding) stays a comparative
+ * gauge, not a false equation.
+ *
+ * Zero-value / all-zero inputs degrade gracefully: `ringSegments` yields
+ * zero-length dashes (no NaN, no negative arcs) and the bare track circle shows
+ * through as a muted empty state.
  */
-function RevenueRing({ money }: { money: MoneyTotals }) {
-  const [focus, setFocus] = useState<Focus>('revenue');
+function SwapRing({ idPrefix, centerTestId, arcs, restKey, centers, legend, ariaLabel }: {
+  idPrefix: string;
+  centerTestId: string;
+  arcs: Arc[];
+  restKey: string;
+  centers: Record<string, CenterSpec>;
+  legend: LegendSpec[];
+  ariaLabel: string;
+}) {
+  const [focus, setFocus] = useState<string>(restKey);
+  const active = centers[focus] ?? centers[restKey];
 
-  const profitColor = money.profit_cents >= 0 ? FREE_GREEN : LOST_BROWN;
-  const profitForArc = Math.max(0, money.profit_cents); // negative profit -> no profit arc
-
-  const segs = ringSegments(
-    [
-      { key: 'expenses', value: money.expenses_cents },
-      { key: 'profit', value: profitForArc },
-    ],
-    R,
-    GAP_DEG,
-  );
-
-  const segColor = (key: string) => (key === 'profit' ? FREE_GREEN : LOST_BROWN);
-
-  const centerValue =
-    focus === 'expenses' ? money.expenses_cents
-    : focus === 'profit' ? money.profit_cents
-    : money.revenue_cents;
-  const centerColor =
-    focus === 'expenses' ? LOST_BROWN
-    : focus === 'profit' ? profitColor
-    : brandVar;
-  const centerSub =
-    focus === 'expenses' ? 'EXPENSES'
-    : focus === 'profit' ? 'PROFIT'
-    : 'REVENUE · THIS MONTH';
+  const segs = ringSegments(arcs.map(a => ({ key: a.key, value: a.value })), R, GAP_DEG);
+  const colorOf = (key: string) => arcs.find(a => a.key === key)?.color ?? brandVar;
 
   return (
-    <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
       <svg
         viewBox="0 0 120 120"
-        style={{ width: 150, maxWidth: '70%' }}
+        style={{ width: 138, maxWidth: '100%' }}
         role="img"
-        aria-label={`Revenue ${moneyShort(money.revenue_cents)}: expenses ${moneyShort(money.expenses_cents)} plus profit ${moneyShort(money.profit_cents)}`}
-        onMouseLeave={() => setFocus('revenue')}
+        aria-label={ariaLabel}
+        onMouseLeave={() => setFocus(restKey)}
       >
         <g transform="translate(60,60) rotate(-90)">
           <circle r={R} fill="none" stroke={CARD_TRACK} strokeWidth={11} />
           {segs.map(s => (
             <circle
               key={s.key}
-              data-testid={`money-seg-${s.key}`}
+              data-testid={`${idPrefix}-seg-${s.key}`}
               r={R}
               fill="none"
-              stroke={segColor(s.key)}
+              stroke={colorOf(s.key)}
               strokeWidth={focus === s.key ? 13 : 11}
               strokeLinecap="round"
               strokeDasharray={`${s.dash} ${CIRC}`}
               strokeDashoffset={s.offset}
               style={{ cursor: 'pointer' }}
-              onClick={() => setFocus(f => (f === s.key ? 'revenue' : (s.key as Focus)))}
-              onMouseEnter={() => setFocus(s.key as Focus)}
+              onClick={() => setFocus(f => (f === s.key ? restKey : s.key))}
+              onMouseEnter={() => setFocus(s.key)}
             />
           ))}
         </g>
         {/* Center: Geist 300 pnum standalone display stat, mirrors TwinRings. */}
         <text
-          data-testid="money-revenue"
+          data-testid={centerTestId}
           x="60"
           y="57"
           textAnchor="middle"
-          fill={centerColor}
+          fill={active.color}
           fontSize="20"
           fontWeight="300"
           fontFamily={FONT_NUM}
         >
-          {moneyShort(centerValue)}
+          {moneyShort(active.value)}
         </text>
         <text x="60" y="70" textAnchor="middle" fill={CARD_MUTED} fontSize="6.5" letterSpacing="0.5" fontFamily={FONT_BODY}>
-          {centerSub}
+          {active.sub ?? active.label}
         </text>
       </svg>
 
-      {/* Legend doubles as a large tap target for the swap on mobile. */}
-      <div style={{ display: 'flex', gap: 14 }}>
-        <LegendChip
-          testId="money-expenses"
-          label="EXPENSES"
-          value={moneyShort(money.expenses_cents)}
-          color={LOST_BROWN}
-          active={focus === 'expenses'}
-          onFocus={() => setFocus('expenses')}
-          onBlurToRest={() => setFocus('revenue')}
-          onToggle={() => setFocus(f => (f === 'expenses' ? 'revenue' : 'expenses'))}
-        />
-        <LegendChip
-          testId="money-profit"
-          label="PROFIT"
-          value={moneyShort(money.profit_cents)}
-          color={profitColor}
-          active={focus === 'profit'}
-          onFocus={() => setFocus('profit')}
-          onBlurToRest={() => setFocus('revenue')}
-          onToggle={() => setFocus(f => (f === 'profit' ? 'revenue' : 'profit'))}
-        />
+      {/* Legend chips double as large mobile tap targets for the swap. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 168 }}>
+        {legend.map(l => (
+          <LegendChip
+            key={l.focusKey}
+            testId={l.testId}
+            label={l.label}
+            value={l.value}
+            sub={l.sub}
+            color={l.color}
+            active={focus === l.focusKey}
+            onFocus={() => setFocus(l.focusKey)}
+            onBlurToRest={() => setFocus(restKey)}
+            onToggle={() => setFocus(f => (f === l.focusKey ? restKey : l.focusKey))}
+          />
+        ))}
       </div>
     </div>
   );
@@ -193,21 +221,22 @@ function RevenueRing({ money }: { money: MoneyTotals }) {
  *  broken to look at). Keeps the money-revenue hook the tests read. */
 function RevenueHero({ revenueCents }: { revenueCents: number }) {
   return (
-    <div style={{ marginTop: 10, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-      <span data-testid="money-revenue" style={{ fontSize: 30, ...NUM_DISPLAY, color: brandVar }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 138 }}>
+      <span data-testid="money-revenue" style={{ fontSize: 34, ...NUM_DISPLAY, color: brandVar }}>
         {moneyShort(revenueCents)}
       </span>
-      <span style={{ fontSize: 10, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
+      <span style={{ fontSize: 9, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600, marginTop: 2 }}>
         REVENUE &middot; THIS MONTH
       </span>
     </div>
   );
 }
 
-function LegendChip({ testId, label, value, color, active, onFocus, onBlurToRest, onToggle }: {
+function LegendChip({ testId, label, value, sub, color, active, onFocus, onBlurToRest, onToggle }: {
   testId: string;
   label: string;
   value: string;
+  sub?: string;
   color: string;
   active: boolean;
   onFocus: () => void;
@@ -222,45 +251,22 @@ function LegendChip({ testId, label, value, color, active, onFocus, onBlurToRest
       onMouseEnter={onFocus}
       onMouseLeave={onBlurToRest}
       style={{
-        display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
-        padding: '5px 9px', borderRadius: 8, background: CARD_INSET,
+        display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 7,
+        cursor: 'pointer', width: '100%',
+        padding: '6px 9px', borderRadius: 8, background: CARD_INSET,
         border: `1px solid ${active ? color : CARD_HAIRLINE}`,
-        font: 'inherit', color: 'inherit',
+        font: 'inherit', color: 'inherit', textAlign: 'left',
       }}
     >
       <span style={{ width: 9, height: 9, borderRadius: 3, background: color, flexShrink: 0 }} />
-      <span style={{ fontSize: 10, letterSpacing: 1, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
-        {label}
+      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+        <span style={{ fontSize: 9.5, letterSpacing: 1, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
+          {label}
+        </span>
+        {sub && <span style={{ fontSize: 8.5, color: CARD_MUTED, fontFamily: FONT_BODY }}>{sub}</span>}
       </span>
       <span style={{ fontSize: 13, ...NUM_DISPLAY, color }}>{value}</span>
     </button>
-  );
-}
-
-function StatRow({ label, value, sub, color, testId }: {
-  label: string;
-  value: string;
-  sub?: string;
-  color?: string;
-  testId?: string;
-}) {
-  return (
-    <div
-      data-testid={testId}
-      style={{
-        display: 'grid', gridTemplateColumns: '1fr auto', gap: 10, alignItems: 'baseline',
-        padding: '9px 11px', borderRadius: 10, background: CARD_INSET,
-        border: `1px solid ${CARD_HAIRLINE}`,
-      }}
-    >
-      <span style={{ fontSize: 10, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
-        {label}
-      </span>
-      <span style={{ display: 'flex', gap: 6, alignItems: 'baseline', whiteSpace: 'nowrap' }}>
-        {sub && <span style={{ fontSize: 9, color: CARD_MUTED, fontFamily: FONT_BODY }}>{sub}</span>}
-        <span style={{ fontSize: 15, ...NUM_DISPLAY, color: color ?? 'var(--card-fg, #141414)' }}>{value}</span>
-      </span>
-    </div>
   );
 }
 

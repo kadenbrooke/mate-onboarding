@@ -28,38 +28,13 @@ describe('MoneyZone', () => {
     expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
   });
 
-  it('shows collected-this-month and outstanding receivables', () => {
-    render(<MoneyZone money={totals} />);
-    expect(screen.getByTestId('money-collected')).toBeInTheDocument();
-    const ar = screen.getByTestId('money-ar');
-    expect(ar).toBeInTheDocument();
-    expect(ar.textContent).toContain('4 invoices');
-  });
-
-  it('shows expenses and profit only when expenses are present', () => {
-    render(<MoneyZone money={totals} />);
-    expect(screen.getByTestId('money-expenses')).toBeInTheDocument();
-    expect(screen.getByTestId('money-profit')).toBeInTheDocument();
-  });
-
-  it('hides the expenses/profit rows when there are no expenses', () => {
-    render(<MoneyZone money={{ ...totals, expenses_cents: 0 }} />);
-    expect(screen.queryByTestId('money-expenses')).toBeNull();
-    expect(screen.queryByTestId('money-profit')).toBeNull();
-  });
-
   it('shows the period and last-updated footer', () => {
     render(<MoneyZone money={totals} />);
     expect(screen.getByText(/July 2026/)).toBeInTheDocument();
     expect(screen.getByText(/updated 2026-08-01/)).toBeInTheDocument();
   });
 
-  it('singularizes the invoice count', () => {
-    render(<MoneyZone money={{ ...totals, invoices_outstanding: 1 }} />);
-    expect(screen.getByTestId('money-ar').textContent).toContain('1 invoice');
-  });
-
-  // --- Revenue ring: revenue split into expenses + profit ---
+  // --- Ring 1: revenue = expenses + profit (a genuine sum) ---
 
   describe('revenue ring', () => {
     it('renders both ring segments when expenses are present', () => {
@@ -76,13 +51,11 @@ describe('MoneyZone', () => {
 
     it('swaps the center metric when a segment is tapped (locked center-swap)', () => {
       render(<MoneyZone money={totals} />);
-      // Tap the profit segment -> center shows profit.
       fireEvent.click(screen.getByTestId('money-seg-profit'));
       expect(screen.getByTestId('money-revenue').textContent).toBe('$8,500');
-      // Tap the expenses segment -> center shows expenses.
       fireEvent.click(screen.getByTestId('money-seg-expenses'));
       expect(screen.getByTestId('money-revenue').textContent).toBe('$4,000');
-      // Tapping the active segment again returns to revenue.
+      // Re-tapping the active segment returns to revenue.
       fireEvent.click(screen.getByTestId('money-seg-expenses'));
       expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
     });
@@ -98,44 +71,118 @@ describe('MoneyZone', () => {
       expect(screen.getByTestId('money-expenses').textContent).toContain('$4,000');
       expect(screen.getByTestId('money-profit').textContent).toContain('$8,500');
     });
-  });
 
-  // --- Edge cases ---
-
-  describe('edge cases', () => {
     it('no expenses -> hero number, no ring segments, no NaN arc', () => {
       const { container } = render(
         <MoneyZone money={{ ...totals, expenses_cents: 0, profit_cents: 1_250_000 }} />,
       );
-      // Hero still shows revenue.
       expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
-      // No ring segments at all in the no-expenses path.
       expect(screen.queryByTestId('money-seg-expenses')).toBeNull();
       expect(screen.queryByTestId('money-seg-profit')).toBeNull();
-      // No dasharray anywhere contains NaN.
       container.querySelectorAll('circle').forEach(c => {
         expect(c.getAttribute('stroke-dasharray') ?? '').not.toContain('NaN');
       });
     });
 
     it('negative profit -> full expense arc, profit shown signed, no NaN', () => {
-      // expenses ($15k) exceed revenue ($12.5k): profit = -$2.5k.
-      const { container } = render(
+      render(
         <MoneyZone money={{ ...totals, expenses_cents: 1_500_000, profit_cents: -250_000 }} />,
       );
-      // Ring still renders both segment nodes.
-      const expensesArc = screen.getByTestId('money-seg-expenses');
       const profitArc = screen.getByTestId('money-seg-profit');
-      // Profit arc is clamped to zero length (no negative-length dash).
+      const expensesArc = screen.getByTestId('money-seg-expenses');
       const [profitDash] = (profitArc.getAttribute('stroke-dasharray') ?? '').split(' ');
       expect(Number(profitDash)).toBe(0);
-      // Expense arc has a real, positive, finite length.
       const [expenseDash] = (expensesArc.getAttribute('stroke-dasharray') ?? '').split(' ');
       expect(Number(expenseDash)).toBeGreaterThan(0);
       expect(Number.isNaN(Number(expenseDash))).toBe(false);
-      // Legend still surfaces the negative profit figure.
       expect(screen.getByTestId('money-profit').textContent).toContain('-2,500');
-      // Nothing rendered a NaN dasharray.
+    });
+  });
+
+  // --- Ring 2: collected vs outstanding (comparative gauge, NOT a sum) ---
+
+  describe('cash-flow ring', () => {
+    it('renders both segments and both legend chips', () => {
+      render(<MoneyZone money={totals} />);
+      expect(screen.getByTestId('money-cash-seg-collected')).toBeInTheDocument();
+      expect(screen.getByTestId('money-cash-seg-ar')).toBeInTheDocument();
+      expect(screen.getByTestId('money-collected')).toBeInTheDocument();
+      expect(screen.getByTestId('money-ar')).toBeInTheDocument();
+    });
+
+    it('rests with collected-this-month in the center', () => {
+      render(<MoneyZone money={totals} />);
+      // moneyShort(900_000) -> "$9,000"
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$9,000');
+      expect(screen.getByText(/COLLECTED · THIS MONTH/)).toBeInTheDocument();
+    });
+
+    it('swaps the center to outstanding on tap, then back on re-tap', () => {
+      render(<MoneyZone money={totals} />);
+      fireEvent.click(screen.getByTestId('money-cash-seg-ar'));
+      // moneyShort(320_000) -> "$3,200"
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$3,200');
+      fireEvent.click(screen.getByTestId('money-cash-seg-ar'));
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$9,000');
+    });
+
+    it('swaps from the outstanding legend chip and surfaces the invoice count', () => {
+      render(<MoneyZone money={totals} />);
+      fireEvent.click(screen.getByTestId('money-ar'));
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$3,200');
+      // Invoice count surfaces in the center sub (focused) AND the legend chip.
+      expect(screen.getAllByText(/4 invoices/).length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('singularizes the invoice count in the outstanding legend chip', () => {
+      render(<MoneyZone money={{ ...totals, invoices_outstanding: 1 }} />);
+      expect(screen.getByTestId('money-ar').textContent).toContain('1 invoice');
+    });
+
+    it('NEVER shows collected + outstanding as a total (semantic guard)', () => {
+      render(<MoneyZone money={totals} />);
+      const center = screen.getByTestId('money-cash-center');
+      // collected($9k) + ar($3.2k) = $12,200 -- must never appear as the center.
+      expect(center.textContent).not.toContain('12,200');
+      // Only ever one real segment value: collected at rest, ar on swap.
+      expect(center.textContent).toBe('$9,000');
+      fireEvent.click(screen.getByTestId('money-cash-seg-ar'));
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$3,200');
+    });
+
+    it('outstanding = 0 -> full collected arc, no NaN', () => {
+      const { container } = render(
+        <MoneyZone money={{ ...totals, ar_cents: 0, invoices_outstanding: 0 }} />,
+      );
+      const [arDash] = (screen.getByTestId('money-cash-seg-ar').getAttribute('stroke-dasharray') ?? '').split(' ');
+      const [collectedDash] = (screen.getByTestId('money-cash-seg-collected').getAttribute('stroke-dasharray') ?? '').split(' ');
+      expect(Number(arDash)).toBe(0);
+      expect(Number(collectedDash)).toBeGreaterThan(0);
+      container.querySelectorAll('circle').forEach(c => {
+        expect(c.getAttribute('stroke-dasharray') ?? '').not.toContain('NaN');
+      });
+    });
+
+    it('collected = 0 -> full outstanding arc, no NaN', () => {
+      render(<MoneyZone money={{ ...totals, collected_cents: 0 }} />);
+      const [collectedDash] = (screen.getByTestId('money-cash-seg-collected').getAttribute('stroke-dasharray') ?? '').split(' ');
+      const [arDash] = (screen.getByTestId('money-cash-seg-ar').getAttribute('stroke-dasharray') ?? '').split(' ');
+      expect(Number(collectedDash)).toBe(0);
+      expect(Number(arDash)).toBeGreaterThan(0);
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$0');
+    });
+
+    it('both zero -> muted empty ring, $0 center, both cash arcs collapse, no NaN', () => {
+      const { container } = render(
+        <MoneyZone money={{ ...totals, collected_cents: 0, ar_cents: 0, invoices_outstanding: 0 }} />,
+      );
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$0');
+      // Both cash-ring segment arcs collapse to zero length (no negative/NaN arc).
+      const [cDash] = (screen.getByTestId('money-cash-seg-collected').getAttribute('stroke-dasharray') ?? '').split(' ');
+      const [aDash] = (screen.getByTestId('money-cash-seg-ar').getAttribute('stroke-dasharray') ?? '').split(' ');
+      expect(Number(cDash)).toBe(0);
+      expect(Number(aDash)).toBe(0);
+      // Nothing anywhere on the card rendered a NaN dasharray.
       container.querySelectorAll('circle').forEach(c => {
         expect(c.getAttribute('stroke-dasharray') ?? '').not.toContain('NaN');
       });
