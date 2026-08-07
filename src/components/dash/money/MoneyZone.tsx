@@ -1,37 +1,33 @@
-'use client';
-import { useState } from 'react';
 import { Card } from '../Card';
 import { moneyShort } from '@/lib/metrics/format';
 import { ringSegments } from '@/lib/metrics/ring';
 import type { MoneyTotals } from '@/lib/metrics/money';
 import {
-  brandVar, FREE_GREEN, LOST_BROWN, CARD_MUTED, CARD_INSET, CARD_HAIRLINE,
-  CARD_TRACK, NUM_DISPLAY, FONT_NUM, FONT_BODY,
+  brandVar, FREE_GREEN, LOST_BROWN, CARD_MUTED, CARD_TRACK,
+  NUM_DISPLAY, NUM_TABLE, FONT_NUM, FONT_BODY,
 } from '@/lib/theme';
 
 // Money zone -- QuickBooks Online financials on one card, read-only.
 //
 // REVENUE · THIS MONTH is the card's single headline, centered at the top. Two
-// rings sit beneath it, laid out like the Pipeline TwinRings:
+// rings sit beneath it, each styled like the leadflow SourceDonut: a ring
+// BESIDE a persistent labeled legend, so every segment's value is readable at a
+// glance -- no tapping. (The founder prefers this always-visible breakdown to a
+// tap-to-reveal center-swap.)
 //
 //   Ring 1  EXPENSES + PROFIT = revenue   -- a real equation (the two segments
-//           still sum to the headline revenue, so it reconciles). Revenue is
-//           the headline now, so the ring rests on PROFIT -- the takeaway --
-//           and hover/tap swaps the center between Profit and Expenses.
+//           sum to the headline revenue). Center rests on PROFIT, the takeaway.
 //   Ring 2  COLLECTED  vs  OUTSTANDING    -- a comparative gauge, NOT an
 //           equation: collected is this month's cash, outstanding is the
-//           all-time AR balance, so they do not form a total. The center
-//           therefore only ever shows ONE real segment value -- never a sum.
-//
-// Both rings carry the same locked center-swap interaction (SwapRing): a
-// resting center metric, and hovering/tapping a segment (or its legend chip)
-// swaps the center to that segment; leaving / re-tapping returns to rest.
+//           all-time AR balance, so they do not form a total. Center rests on
+//           COLLECTED and never shows a sum of the two.
 //
 // Read-only by construction: the pull only ever GETs from QBO. This card never
 // writes anything back.
 
-const R = 48;
-const GAP_DEG = 3;
+// SourceDonut geometry, so these rings read as siblings of the leadflow donut.
+const R = 40;
+const GAP_DEG = 2;
 const CIRC = 2 * Math.PI * R;
 
 export function MoneyZone({ money, showLabel = true }: {
@@ -70,15 +66,14 @@ export function MoneyZone({ money, showLabel = true }: {
 
       <div style={{
         display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap',
-        gap: 16, marginTop: 12,
+        gap: 20, marginTop: 14,
       }}>
-        {/* Ring 1: expenses + profit = revenue (still a genuine sum). Revenue is
-            the headline now, so the ring rests on PROFIT and swaps Profit <-> Expenses. */}
+        {/* Ring 1: expenses + profit = revenue (still a genuine sum). Center
+            rests on PROFIT; both parts are spelled out in the legend. */}
         {hasExpenses && (
-          <SwapRing
+          <DonutStat
             idPrefix="money"
             centerTestId="money-pl-center"
-            restKey="profit"
             // Profit arc clamped at 0 so expenses>revenue can't make a
             // negative-length (NaN-ish) arc; the signed profit still shows in
             // the center + legend.
@@ -86,34 +81,27 @@ export function MoneyZone({ money, showLabel = true }: {
               { key: 'expenses', value: money.expenses_cents, color: LOST_BROWN },
               { key: 'profit', value: Math.max(0, money.profit_cents), color: FREE_GREEN },
             ]}
-            centers={{
-              profit: { value: money.profit_cents, color: profitColor, label: 'PROFIT' },
-              expenses: { value: money.expenses_cents, color: LOST_BROWN, label: 'EXPENSES' },
-            }}
+            center={{ value: money.profit_cents, color: profitColor, label: 'PROFIT' }}
             legend={[
-              { focusKey: 'expenses', testId: 'money-expenses', label: 'EXPENSES', value: moneyShort(money.expenses_cents), color: LOST_BROWN },
-              { focusKey: 'profit', testId: 'money-profit', label: 'PROFIT', value: moneyShort(money.profit_cents), color: profitColor },
+              { testId: 'money-expenses', label: 'EXPENSES', value: moneyShort(money.expenses_cents), color: LOST_BROWN },
+              { testId: 'money-profit', label: 'PROFIT', value: moneyShort(money.profit_cents), color: profitColor },
             ]}
             ariaLabel={`Profit ${moneyShort(money.profit_cents)} and expenses ${moneyShort(money.expenses_cents)}, which sum to revenue ${moneyShort(money.revenue_cents)}`}
           />
         )}
 
         {/* Ring 2: collected vs outstanding -- comparative gauge, no sum. */}
-        <SwapRing
+        <DonutStat
           idPrefix="money-cash"
           centerTestId="money-cash-center"
-          restKey="collected"
           arcs={[
             { key: 'collected', value: money.collected_cents, color: FREE_GREEN },
             { key: 'ar', value: money.ar_cents, color: brandVar },
           ]}
-          centers={{
-            collected: { value: money.collected_cents, color: FREE_GREEN, label: 'COLLECTED · THIS MONTH' },
-            ar: { value: money.ar_cents, color: brandVar, label: 'OUTSTANDING', sub: invoiceSub },
-          }}
+          center={{ value: money.collected_cents, color: FREE_GREEN, label: 'COLLECTED' }}
           legend={[
-            { focusKey: 'collected', testId: 'money-collected', label: 'COLLECTED', value: moneyShort(money.collected_cents), color: FREE_GREEN },
-            { focusKey: 'ar', testId: 'money-ar', label: 'OUTSTANDING', value: moneyShort(money.ar_cents), color: brandVar, sub: invoiceSub },
+            { testId: 'money-collected', label: 'COLLECTED', value: moneyShort(money.collected_cents), color: FREE_GREEN },
+            { testId: 'money-ar', label: 'OUTSTANDING', value: moneyShort(money.ar_cents), color: brandVar, sub: invoiceSub },
           ]}
           ariaLabel={`Collected this month ${moneyShort(money.collected_cents)} versus outstanding receivables ${moneyShort(money.ar_cents)}`}
         />
@@ -127,50 +115,39 @@ export function MoneyZone({ money, showLabel = true }: {
 }
 
 type Arc = { key: string; value: number; color: string };
-type CenterSpec = { value: number; color: string; label: string; sub?: string };
-type LegendSpec = { focusKey: string; testId: string; label: string; value: string; color: string; sub?: string };
+type CenterSpec = { value: number; color: string; label: string };
+type LegendSpec = { testId: string; label: string; value: string; color: string; sub?: string };
 
 /**
- * Segmented ring with the locked center-swap interaction (mirrors the Pipeline
- * TwinRings): resting center = `restKey`; hovering/tapping a segment or its
- * legend chip swaps the center to that segment; leaving / re-tapping the active
- * segment returns to rest.
+ * A segmented ring beside an always-visible labeled legend, mirroring the
+ * leadflow SourceDonut. Every segment's value is spelled out in the legend
+ * (swatch + label + value) with no interaction required; the ring center holds
+ * one resting stat.
  *
- * The center only ever renders a value from `centers` -- one real number at a
- * time. It never computes or displays a sum of segments, so a ring whose parts
- * are different-period measures (collected vs outstanding) stays a comparative
- * gauge, not a false equation.
+ * The center renders a single provided value -- it never sums the segments, so
+ * a ring whose parts are different-period measures (collected vs outstanding)
+ * stays a comparative gauge, not a false equation.
  *
  * Zero-value / all-zero inputs degrade gracefully: `ringSegments` yields
  * zero-length dashes (no NaN, no negative arcs) and the bare track circle shows
  * through as a muted empty state.
  */
-function SwapRing({ idPrefix, centerTestId, arcs, restKey, centers, legend, ariaLabel }: {
+function DonutStat({ idPrefix, centerTestId, arcs, center, legend, ariaLabel }: {
   idPrefix: string;
   centerTestId: string;
   arcs: Arc[];
-  restKey: string;
-  centers: Record<string, CenterSpec>;
+  center: CenterSpec;
   legend: LegendSpec[];
   ariaLabel: string;
 }) {
-  const [focus, setFocus] = useState<string>(restKey);
-  const active = centers[focus] ?? centers[restKey];
-
   const segs = ringSegments(arcs.map(a => ({ key: a.key, value: a.value })), R, GAP_DEG);
   const colorOf = (key: string) => arcs.find(a => a.key === key)?.color ?? brandVar;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <svg
-        viewBox="0 0 120 120"
-        style={{ width: 138, maxWidth: '100%' }}
-        role="img"
-        aria-label={ariaLabel}
-        onMouseLeave={() => setFocus(restKey)}
-      >
-        <g transform="translate(60,60) rotate(-90)">
-          <circle r={R} fill="none" stroke={CARD_TRACK} strokeWidth={11} />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+      <svg width={104} height={104} viewBox="0 0 100 100" style={{ flexShrink: 0 }} role="img" aria-label={ariaLabel}>
+        <g transform="translate(50,50) rotate(-90)">
+          <circle r={R} fill="none" stroke={CARD_TRACK} strokeWidth={12} />
           {segs.map(s => (
             <circle
               key={s.key}
@@ -178,90 +155,59 @@ function SwapRing({ idPrefix, centerTestId, arcs, restKey, centers, legend, aria
               r={R}
               fill="none"
               stroke={colorOf(s.key)}
-              strokeWidth={focus === s.key ? 13 : 11}
-              strokeLinecap="round"
+              strokeWidth={12}
               strokeDasharray={`${s.dash} ${CIRC}`}
               strokeDashoffset={s.offset}
-              style={{ cursor: 'pointer' }}
-              onClick={() => setFocus(f => (f === s.key ? restKey : s.key))}
-              onMouseEnter={() => setFocus(s.key)}
             />
           ))}
         </g>
-        {/* Center: Geist 300 pnum standalone display stat, mirrors TwinRings. */}
+        {/* Center: Geist 300 pnum standalone display stat, like SourceDonut. */}
         <text
           data-testid={centerTestId}
-          x="60"
-          y="57"
+          x={50}
+          y={47}
           textAnchor="middle"
-          fill={active.color}
-          fontSize="20"
-          fontWeight="300"
+          dominantBaseline="middle"
+          fontSize={19}
+          fontWeight={300}
           fontFamily={FONT_NUM}
+          fill={center.color}
         >
-          {moneyShort(active.value)}
+          {moneyShort(center.value)}
         </text>
-        <text x="60" y="70" textAnchor="middle" fill={CARD_MUTED} fontSize="6.5" letterSpacing="0.5" fontFamily={FONT_BODY}>
-          {active.sub ?? active.label}
+        <text
+          x={50}
+          y={62}
+          textAnchor="middle"
+          fontSize={8}
+          letterSpacing={1}
+          fontFamily={FONT_BODY}
+          fill={center.color}
+        >
+          {center.label}
         </text>
       </svg>
 
-      {/* Legend chips double as large mobile tap targets for the swap. */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, width: '100%', maxWidth: 168 }}>
+      {/* Persistent legend: swatch + label + value, all segments visible. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {legend.map(l => (
-          <LegendChip
-            key={l.focusKey}
-            testId={l.testId}
-            label={l.label}
-            value={l.value}
-            sub={l.sub}
-            color={l.color}
-            active={focus === l.focusKey}
-            onFocus={() => setFocus(l.focusKey)}
-            onBlurToRest={() => setFocus(restKey)}
-            onToggle={() => setFocus(f => (f === l.focusKey ? restKey : l.focusKey))}
-          />
+          <div key={l.testId} data-testid={l.testId} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
+            <div style={{ width: 9, height: 9, borderRadius: 3, background: l.color, flexShrink: 0 }} />
+            <span style={{ color: CARD_MUTED, fontFamily: FONT_BODY }}>
+              {l.label}
+              {' '}
+              <span style={{ ...NUM_TABLE, color: l.color }}>{l.value}</span>
+              {l.sub && (
+                <>
+                  {' '}
+                  <span style={{ fontSize: 8.5, color: CARD_MUTED }}>&middot; {l.sub}</span>
+                </>
+              )}
+            </span>
+          </div>
         ))}
       </div>
     </div>
-  );
-}
-
-function LegendChip({ testId, label, value, sub, color, active, onFocus, onBlurToRest, onToggle }: {
-  testId: string;
-  label: string;
-  value: string;
-  sub?: string;
-  color: string;
-  active: boolean;
-  onFocus: () => void;
-  onBlurToRest: () => void;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      data-testid={testId}
-      onClick={onToggle}
-      onMouseEnter={onFocus}
-      onMouseLeave={onBlurToRest}
-      style={{
-        display: 'grid', gridTemplateColumns: 'auto 1fr auto', alignItems: 'center', gap: 7,
-        cursor: 'pointer', width: '100%',
-        padding: '6px 9px', borderRadius: 8, background: CARD_INSET,
-        border: `1px solid ${active ? color : CARD_HAIRLINE}`,
-        font: 'inherit', color: 'inherit', textAlign: 'left',
-      }}
-    >
-      <span style={{ width: 9, height: 9, borderRadius: 3, background: color, flexShrink: 0 }} />
-      <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-        <span style={{ fontSize: 9.5, letterSpacing: 1, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>
-          {label}
-        </span>
-        {sub && <span style={{ fontSize: 8.5, color: CARD_MUTED, fontFamily: FONT_BODY }}>{sub}</span>}
-      </span>
-      <span style={{ fontSize: 13, ...NUM_DISPLAY, color }}>{value}</span>
-    </button>
   );
 }
 
