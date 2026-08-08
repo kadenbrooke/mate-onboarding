@@ -1,11 +1,6 @@
-'use client';
-import { useState } from 'react';
-import { ringSegments } from '@/lib/metrics/ring';
 import { moneyShort } from '@/lib/metrics/format';
-import {
-  FREE_GREEN, LOST_BROWN, brandVar, CARD_TRACK, CARD_MUTED,
-  NUM_DISPLAY, FONT_BODY, FONT_HEAD, FONT_NUM,
-} from '@/lib/theme';
+import { RingStat } from '../RingStat';
+import { FREE_GREEN, LOST_BROWN, brandVar, NUM_DISPLAY, FONT_HEAD } from '@/lib/theme';
 import type { Reputation } from '@/components/dash/types';
 
 type RingKey = 'won' | 'lost' | 'open';
@@ -16,78 +11,42 @@ const SEG_COLOR: Record<RingKey, string> = {
   open: brandVar,
 };
 
+const SEG_LABEL: Record<RingKey, string> = {
+  won: 'WON',
+  lost: 'LOST',
+  open: 'OPEN',
+};
+
 export function ReferralRing({ reputation }: { reputation: Reputation }) {
   const { referrals_closed, referrals_lost, referrals_in, referral_revenue_cents } = reputation;
   const open = Math.max(0, referrals_in - referrals_closed - referrals_lost);
-
-  const [active, setActive] = useState<RingKey>('won');
-
-  const segs = ringSegments(
-    [
-      { key: 'won', value: referrals_closed },
-      { key: 'lost', value: referrals_lost },
-      { key: 'open', value: open },
-    ],
-    48,
-    3,
-  );
-
-  const C = 2 * Math.PI * 48;
+  const counts: Record<RingKey, number> = { won: referrals_closed, lost: referrals_lost, open };
 
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-      {/* Donut ring: keeps the standard center-swap interaction */}
-      <div style={{ flexShrink: 0 }}>
-        <svg viewBox="0 0 120 120" style={{ width: 110 }}>
-          <g transform="translate(60,60) rotate(-90)">
-            <circle r={48} fill="none" stroke={CARD_TRACK} strokeWidth={11} />
-            {segs.map((s) => (
-              <circle
-                key={s.key}
-                r={48}
-                fill="none"
-                stroke={SEG_COLOR[s.key as RingKey]}
-                strokeWidth={active === s.key ? 13 : 11}
-                strokeLinecap="round"
-                strokeDasharray={`${s.dash} ${C}`}
-                strokeDashoffset={s.offset}
-                style={{ cursor: 'pointer' }}
-                onClick={() => setActive(s.key as RingKey)}
-                onMouseEnter={() => setActive(s.key as RingKey)}
-              />
-            ))}
-          </g>
-          {/* Center display */}
-          <text
-            x="60" y="54"
-            textAnchor="middle"
-            fill={SEG_COLOR[active]}
-            fontSize="14"
-            fontWeight="300"
-            fontFamily={FONT_NUM}
-          >
-            {active === 'won' ? referrals_closed : active === 'lost' ? referrals_lost : open}
-          </text>
-          <text x="60" y="67" textAnchor="middle" fill={CARD_MUTED} fontSize="7" fontFamily={FONT_BODY}>
-            {active === 'won' ? 'WON' : active === 'lost' ? 'LOST' : 'OPEN'}
-          </text>
-        </svg>
-      </div>
-
-      {/* Right side: revenue number stays */}
-      <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 10, letterSpacing: 1.5, color: FREE_GREEN, fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 4 }}>
-          REFERRAL WINS
-        </div>
-        <div style={{
-          fontSize: 24,
-          ...NUM_DISPLAY,
-          color: FREE_GREEN,
-          lineHeight: 1.1,
-        }}>
-          {moneyShort(referral_revenue_cents)}
-        </div>
-      </div>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+      <RingStat
+        idPrefix="referral"
+        size={100}
+        segments={(['won', 'lost', 'open'] as RingKey[]).map(k => ({
+          key: k,
+          label: SEG_LABEL[k],
+          value: counts[k],
+          display: String(counts[k]),
+          color: SEG_COLOR[k],
+        }))}
+        center={{ label: 'WON', display: String(counts.won), color: SEG_COLOR.won }}
+        ariaLabel={`Referrals: won ${counts.won}, lost ${counts.lost}, open ${counts.open}`}
+        aside={
+          <div style={{ marginTop: 4 }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, color: FREE_GREEN, fontFamily: FONT_HEAD, fontFeatureSettings: '"ss04"', marginBottom: 2 }}>
+              REFERRAL WINS
+            </div>
+            <div style={{ fontSize: 24, ...NUM_DISPLAY, color: FREE_GREEN, lineHeight: 1.1 }}>
+              {moneyShort(referral_revenue_cents)}
+            </div>
+          </div>
+        }
+      />
     </div>
   );
 }

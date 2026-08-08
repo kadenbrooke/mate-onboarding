@@ -1,15 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MoneyZone } from './MoneyZone';
 import type { MoneyTotals } from '@/lib/metrics/money';
 
 const totals: MoneyTotals = {
   revenue_cents: 1_250_000, // $12.5k
-  expenses_cents: 400_000,  // $4k
-  profit_cents: 850_000,    // $8.5k
+  expenses_cents: 400_000,  // $4,000
+  profit_cents: 850_000,    // $8,500
   ar_cents: 320_000,        // $3,200
   invoices_outstanding: 4,
-  collected_cents: 900_000, // $9k
+  collected_cents: 900_000, // $9,000
   period: '2026-07',
   period_start: '2026-07-01',
   period_end: '2026-07-31',
@@ -24,7 +24,6 @@ describe('MoneyZone', () => {
 
   it('leads with revenue as the single top headline', () => {
     render(<MoneyZone money={totals} />);
-    // moneyShort(1_250_000) -> "$12.5k"
     expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
     expect(screen.getByText(/REVENUE · THIS MONTH/)).toBeInTheDocument();
     // Revenue is NOT inside either ring center.
@@ -38,19 +37,13 @@ describe('MoneyZone', () => {
     expect(screen.getByText(/updated 2026-08-01/)).toBeInTheDocument();
   });
 
-  // --- Ring 1: revenue = expenses + profit, always-visible legend ---
+  // --- Ring 1: expenses + profit = revenue ---
 
-  describe('revenue ring (SourceDonut-style, no interaction)', () => {
-    it('renders both ring segments', () => {
+  describe('revenue ring (legend + swap)', () => {
+    it('spells out EXPENSES and PROFIT values in a legend WITHOUT interaction', () => {
       render(<MoneyZone money={totals} />);
-      expect(screen.getByTestId('money-seg-expenses')).toBeInTheDocument();
-      expect(screen.getByTestId('money-seg-profit')).toBeInTheDocument();
-    });
-
-    it('spells out EXPENSES and PROFIT values in a persistent legend, no tap', () => {
-      render(<MoneyZone money={totals} />);
-      const expenses = screen.getByTestId('money-expenses');
-      const profit = screen.getByTestId('money-profit');
+      const expenses = screen.getByTestId('money-pl-legend-expenses');
+      const profit = screen.getByTestId('money-pl-legend-profit');
       expect(expenses.textContent).toContain('EXPENSES');
       expect(expenses.textContent).toContain('$4,000');
       expect(profit.textContent).toContain('PROFIT');
@@ -59,7 +52,24 @@ describe('MoneyZone', () => {
 
     it('rests on PROFIT in the ring center', () => {
       render(<MoneyZone money={totals} />);
-      // moneyShort(850_000) -> "$8,500"
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$8,500');
+    });
+
+    it('center-swaps to a segment on tap and back on re-tap', () => {
+      render(<MoneyZone money={totals} />);
+      fireEvent.click(screen.getByTestId('money-pl-seg-expenses'));
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$4,000');
+      fireEvent.click(screen.getByTestId('money-pl-seg-expenses'));
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$8,500');
+    });
+
+    it('center-swaps on hover and returns to rest on mouse-leave', () => {
+      render(<MoneyZone money={totals} />);
+      const expensesRow = screen.getByTestId('money-pl-legend-expenses');
+      fireEvent.mouseEnter(expensesRow);
+      expect(screen.getByTestId('money-pl-center').textContent).toBe('$4,000');
+      // Leaving the whole ring+legend returns to the resting center (profit).
+      fireEvent.mouseLeave(expensesRow.closest('div')!.parentElement!);
       expect(screen.getByTestId('money-pl-center').textContent).toBe('$8,500');
     });
 
@@ -68,8 +78,8 @@ describe('MoneyZone', () => {
         <MoneyZone money={{ ...totals, expenses_cents: 0, profit_cents: 1_250_000 }} />,
       );
       expect(screen.getByTestId('money-revenue').textContent).toBe('$12.5k');
-      expect(screen.queryByTestId('money-seg-expenses')).toBeNull();
-      expect(screen.queryByTestId('money-seg-profit')).toBeNull();
+      expect(screen.queryByTestId('money-pl-seg-expenses')).toBeNull();
+      expect(screen.queryByTestId('money-pl-seg-profit')).toBeNull();
       // Ring #2 still present.
       expect(screen.getByTestId('money-cash-seg-collected')).toBeInTheDocument();
       container.querySelectorAll('circle').forEach(c => {
@@ -78,52 +88,46 @@ describe('MoneyZone', () => {
     });
 
     it('negative profit -> full expense arc, profit shown signed, no NaN', () => {
-      render(
-        <MoneyZone money={{ ...totals, expenses_cents: 1_500_000, profit_cents: -250_000 }} />,
-      );
-      const profitArc = screen.getByTestId('money-seg-profit');
-      const expensesArc = screen.getByTestId('money-seg-expenses');
-      const [profitDash] = (profitArc.getAttribute('stroke-dasharray') ?? '').split(' ');
+      render(<MoneyZone money={{ ...totals, expenses_cents: 1_500_000, profit_cents: -250_000 }} />);
+      const [profitDash] = (screen.getByTestId('money-pl-seg-profit').getAttribute('stroke-dasharray') ?? '').split(' ');
+      const [expenseDash] = (screen.getByTestId('money-pl-seg-expenses').getAttribute('stroke-dasharray') ?? '').split(' ');
       expect(Number(profitDash)).toBe(0);
-      const [expenseDash] = (expensesArc.getAttribute('stroke-dasharray') ?? '').split(' ');
       expect(Number(expenseDash)).toBeGreaterThan(0);
       expect(Number.isNaN(Number(expenseDash))).toBe(false);
-      // Signed profit visible in the legend and the center.
-      expect(screen.getByTestId('money-profit').textContent).toContain('-2,500');
+      expect(screen.getByTestId('money-pl-legend-profit').textContent).toContain('-2,500');
       expect(screen.getByTestId('money-pl-center').textContent).toContain('-2,500');
     });
   });
 
-  // --- Ring 2: collected vs outstanding, always-visible legend (no sum) ---
+  // --- Ring 2: collected vs outstanding (no fake total) ---
 
-  describe('cash-flow ring (SourceDonut-style, no interaction)', () => {
-    it('renders both segments', () => {
+  describe('cash-flow ring (legend + swap)', () => {
+    it('spells out COLLECTED and OUTSTANDING values in a legend WITHOUT interaction', () => {
       render(<MoneyZone money={totals} />);
-      expect(screen.getByTestId('money-cash-seg-collected')).toBeInTheDocument();
-      expect(screen.getByTestId('money-cash-seg-ar')).toBeInTheDocument();
-    });
-
-    it('spells out COLLECTED and OUTSTANDING values in a persistent legend, no tap', () => {
-      render(<MoneyZone money={totals} />);
-      const collected = screen.getByTestId('money-collected');
-      const ar = screen.getByTestId('money-ar');
+      const collected = screen.getByTestId('money-cash-legend-collected');
+      const ar = screen.getByTestId('money-cash-legend-ar');
       expect(collected.textContent).toContain('COLLECTED');
       expect(collected.textContent).toContain('$9,000');
       expect(ar.textContent).toContain('OUTSTANDING');
       expect(ar.textContent).toContain('$3,200');
-      // Invoice count surfaces as the outstanding sub -- still no interaction.
       expect(ar.textContent).toContain('4 invoices');
     });
 
     it('rests on COLLECTED in the ring center', () => {
       render(<MoneyZone money={totals} />);
-      // moneyShort(900_000) -> "$9,000"
       expect(screen.getByTestId('money-cash-center').textContent).toBe('$9,000');
+    });
+
+    it('center-swaps to OUTSTANDING on tap, surfacing the invoice sub', () => {
+      render(<MoneyZone money={totals} />);
+      fireEvent.click(screen.getByTestId('money-cash-seg-ar'));
+      expect(screen.getByTestId('money-cash-center').textContent).toBe('$3,200');
+      expect(screen.getByTestId('money-cash-center-sub').textContent).toContain('4 invoices');
     });
 
     it('singularizes the invoice count', () => {
       render(<MoneyZone money={{ ...totals, invoices_outstanding: 1 }} />);
-      expect(screen.getByTestId('money-ar').textContent).toContain('1 invoice');
+      expect(screen.getByTestId('money-cash-legend-ar').textContent).toContain('1 invoice');
     });
 
     it('NEVER shows collected + outstanding as a total (semantic guard)', () => {
@@ -156,7 +160,7 @@ describe('MoneyZone', () => {
       expect(screen.getByTestId('money-cash-center').textContent).toBe('$0');
     });
 
-    it('both zero -> muted empty ring, $0 center, both cash arcs collapse, no NaN', () => {
+    it('both zero -> muted empty ring, $0 center, both arcs collapse, no NaN', () => {
       const { container } = render(
         <MoneyZone money={{ ...totals, collected_cents: 0, ar_cents: 0, invoices_outstanding: 0 }} />,
       );

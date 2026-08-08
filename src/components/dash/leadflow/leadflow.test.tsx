@@ -115,10 +115,36 @@ describe('HotLeads (with merged quality gauge)', () => {
 });
 
 describe('SourceDonut', () => {
-  it('shows free count center stat', () => {
+  it('rests on the FREE count center stat', () => {
     render(<SourceDonut leads={[lead({ source: 'referral' }), lead({ source: 'missed_call' })]} />);
-    expect(screen.getAllByText('1').length).toBeGreaterThanOrEqual(1);
+    // referral is a FREE source, missed_call is not -> freeCount = 1.
+    expect(screen.getByTestId('source-center').textContent).toBe('1');
     expect(screen.getByText('FREE')).toBeInTheDocument();
+  });
+
+  it('spells out each source label + count in a legend WITHOUT interaction', () => {
+    render(<SourceDonut leads={[
+      lead({ source: 'referral', id: 'a' }), lead({ source: 'referral', id: 'b' }),
+      lead({ source: 'missed_call', id: 'c' }),
+    ]} />);
+    const ref = screen.getByTestId('source-legend-referral');
+    const missed = screen.getByTestId('source-legend-missed_call');
+    expect(ref.textContent).toContain('Referral');
+    expect(ref.textContent).toContain('2');
+    expect(missed.textContent).toContain('Missed call');
+    expect(missed.textContent).toContain('1');
+  });
+
+  it('center-swaps to a source on tap (locked center-swap)', () => {
+    render(<SourceDonut leads={[
+      lead({ source: 'referral', id: 'a' }), lead({ source: 'referral', id: 'b' }),
+      lead({ source: 'missed_call', id: 'c' }),
+    ]} />);
+    // Rest = freeCount = 2 (two referrals).
+    expect(screen.getByTestId('source-center').textContent).toBe('2');
+    fireEvent.click(screen.getByTestId('source-seg-missed_call'));
+    // Center now shows the missed_call segment count (1).
+    expect(screen.getByTestId('source-center').textContent).toBe('1');
   });
 });
 

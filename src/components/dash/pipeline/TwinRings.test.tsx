@@ -32,4 +32,16 @@ describe('TwinRings', () => {
     render(<TwinRings leads={leads} />);
     expect(screen.getByText(/AVG JOB/i)).toBeInTheDocument();
   });
+
+  it('spells out both ring breakdowns in always-visible legends (no interaction)', () => {
+    render(<TwinRings leads={leads} />);
+    // Revenue ring legend: WON / LOST / ON THE TABLE by quote value.
+    expect(screen.getByTestId('rev-legend-won').textContent).toContain('$38.2k');
+    expect(screen.getByTestId('rev-legend-lost').textContent).toContain('$10.0k');
+    expect(screen.getByTestId('rev-legend-open').textContent).toContain('$96.4k');
+    // Leads ring legend: the same split by count.
+    expect(screen.getByTestId('lead-legend-won').textContent).toContain('1');
+    expect(screen.getByTestId('lead-legend-lost').textContent).toContain('1');
+    expect(screen.getByTestId('lead-legend-open').textContent).toContain('1');
+  });
 });
