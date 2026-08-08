@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { ReputationZone } from './ReputationZone';
 
 const reputation = {
@@ -25,5 +25,22 @@ describe('ReputationZone', () => {
     expect(screen.getByText('Coming soon')).toBeInTheDocument();
     expect(screen.getByText('Reputation')).toBeInTheDocument();
     expect(screen.queryByText(/^turns on with review collection$/i)).toBeNull();
+  });
+
+  describe('ReferralRing (legend + swap)', () => {
+    it('spells out WON / LOST / OPEN referral counts in a legend WITHOUT interaction', () => {
+      render(<ReputationZone reputation={reputation} reviews={reviews} />);
+      // closed 4, lost 1, open = in(7) - closed(4) - lost(1) = 2
+      expect(screen.getByTestId('referral-legend-won').textContent).toContain('4');
+      expect(screen.getByTestId('referral-legend-lost').textContent).toContain('1');
+      expect(screen.getByTestId('referral-legend-open').textContent).toContain('2');
+    });
+
+    it('rests on WON and center-swaps to OPEN on tap', () => {
+      render(<ReputationZone reputation={reputation} reviews={reviews} />);
+      expect(screen.getByTestId('referral-center').textContent).toBe('4');
+      fireEvent.click(screen.getByTestId('referral-seg-open'));
+      expect(screen.getByTestId('referral-center').textContent).toBe('2');
+    });
   });
 });
