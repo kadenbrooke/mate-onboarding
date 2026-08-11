@@ -1,6 +1,7 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import { notFound } from 'next/navigation';
 import type { Lead } from '@/lib/metrics/leads';
+import { activeAgentCount } from '@/lib/metrics/crew';
 import type { DashCapability } from '@/components/dash/types';
 import { DashboardView } from '@/components/dash/DashboardView';
 import type { DashData } from '@/components/dash/types';
@@ -170,12 +171,25 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   // the RSC/Flight payload embedded in the HTML. Locked zone == no data shipped.
   const data = gateLockedZoneData(rawData, locks);
 
+  // Month Overview glance counts, derived from the UNGATED data on purpose.
+  // The gate exists to keep a locked zone's ROWS (review authors, capability
+  // detail) out of the client payload; these are two integers, which disclose
+  // nothing, and reading them post-gate would make a locked Operations zone
+  // silently under-report the client's own crew.
+  const glance = {
+    activeAgents: activeAgentCount(rawData.capabilities),
+    // Capped by the reviews query limit (200); fine at current volumes, and a
+    // client past 200 reviews needs a count(*) here rather than a longer list.
+    reviewsCollected: rawData.reviews.length,
+  };
+
   return (
     <DashboardView
       session={{ id: session.id, mate_name: session.mate_name }}
       leads={(leadsResult.data ?? []) as Lead[]}
       data={data}
       locks={locks}
+      glance={glance}
     />
   );
 }

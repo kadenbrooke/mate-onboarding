@@ -43,14 +43,16 @@ function CustomizeHarness() {
   );
 }
 
+const NO_GLANCE = { activeAgents: 1, reviewsCollected: 0 };
+
 function renderDash(
-  props: Omit<React.ComponentProps<typeof DashboardView>, 'locks'>
-    & Partial<Pick<React.ComponentProps<typeof DashboardView>, 'locks'>>,
+  props: Omit<React.ComponentProps<typeof DashboardView>, 'locks' | 'glance'>
+    & Partial<Pick<React.ComponentProps<typeof DashboardView>, 'locks' | 'glance'>>,
 ) {
   return render(
     <DashEditingProvider>
       <CustomizeHarness />
-      <DashboardView locks={UNLOCKED} {...props} />
+      <DashboardView locks={UNLOCKED} glance={NO_GLANCE} {...props} />
     </DashEditingProvider>,
   );
 }

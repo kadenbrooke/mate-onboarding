@@ -11,7 +11,7 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => ({ from: () => ({ delete: deleteMock }) }),
 }));
 
-const verdict = vi.fn(() => Promise.resolve({ ok: true, access: 'member' as const }));
+const verdict = vi.fn((_sessionId: string) => Promise.resolve({ ok: true, access: "member" as const }));
 vi.mock('@/lib/portal/api-gate', () => ({ checkDashApiAccess: (id: string) => verdict(id) }));
 
 import { DELETE } from './route';
