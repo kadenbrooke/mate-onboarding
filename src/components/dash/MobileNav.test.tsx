@@ -16,7 +16,7 @@ describe('MobileNav', () => {
     it('renders all four tabs and fires onChange', () => {
       const onChange = vi.fn();
       render(<MobileNav view="home" onChange={onChange} />);
-      for (const label of ['Home', 'Leads', 'Money', 'Agents']) {
+      for (const label of ['Home', 'Pipeline', 'Money', 'Agents']) {
         expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
       }
       fireEvent.click(screen.getByRole('button', { name: 'Money' }));
@@ -25,7 +25,7 @@ describe('MobileNav', () => {
 
     it('marks the active tab with aria-current', () => {
       render(<MobileNav view="leads" onChange={() => {}} />);
-      expect(screen.getByRole('button', { name: 'Leads' })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('button', { name: 'Pipeline' })).toHaveAttribute('aria-current', 'page');
       expect(screen.getByRole('button', { name: 'Home' })).not.toHaveAttribute('aria-current');
     });
 
@@ -45,9 +45,9 @@ describe('MobileNav', () => {
   });
 
   describe('link mode (standalone sub-pages)', () => {
-    it('renders real links to the leads table and assistant page', () => {
+    it('renders real links to the pipeline table and assistant page', () => {
       render(<MobileNav sessionId="s1" />);
-      expect(screen.getByRole('link', { name: /leads/i })).toHaveAttribute('href', '/dash/s1/leads');
+      expect(screen.getByRole('link', { name: /pipeline/i })).toHaveAttribute('href', '/dash/s1/pipeline');
       expect(screen.getByRole('link', { name: /assistant/i })).toHaveAttribute('href', '/dash/s1/assistant');
     });
 
@@ -58,10 +58,10 @@ describe('MobileNav', () => {
       expect(screen.getByRole('link', { name: 'Agents' })).toHaveAttribute('href', '/dash/s1');
     });
 
-    it('marks Leads active when on the leads table route', () => {
-      mockPathname.mockReturnValue('/dash/s1/leads');
+    it('marks Pipeline active when on the pipeline table route', () => {
+      mockPathname.mockReturnValue('/dash/s1/pipeline');
       render(<MobileNav sessionId="s1" />);
-      expect(screen.getByRole('link', { name: /leads/i })).toHaveAttribute('aria-current', 'page');
+      expect(screen.getByRole('link', { name: /pipeline/i })).toHaveAttribute('aria-current', 'page');
       expect(screen.getByRole('link', { name: 'Home' })).not.toHaveAttribute('aria-current');
     });
 

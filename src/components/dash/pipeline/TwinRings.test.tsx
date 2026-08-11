@@ -11,12 +11,13 @@ const lead = (over: Partial<Lead>): Lead => ({
 
 describe('TwinRings', () => {
   const leads = [
-    lead({ status: 'won', quote_cents: 3820000 }),
-    lead({ status: 'lost', quote_cents: 1000000 }),
+    lead({ status: 'serviced', quote_cents: 3820000 }),
+    lead({ status: 'quoted', quote_cents: 1000000 }),
+    lead({ status: 'booked', quote_cents: 2000000 }),
     lead({ status: 'open', quote_cents: 9640000 }),
   ];
 
-  it('defaults both centers to WON stats', () => {
+  it('defaults both centers to SERVICED stats', () => {
     render(<TwinRings leads={leads} />);
     expect(screen.getByTestId('rev-center')).toHaveTextContent('$38.2k');
     expect(screen.getByTestId('lead-center')).toHaveTextContent('1');
@@ -35,13 +36,14 @@ describe('TwinRings', () => {
 
   it('spells out both ring breakdowns in always-visible legends (no interaction)', () => {
     render(<TwinRings leads={leads} />);
-    // Revenue ring legend: WON / LOST / ON THE TABLE by quote value.
-    expect(screen.getByTestId('rev-legend-won').textContent).toContain('$38.2k');
-    expect(screen.getByTestId('rev-legend-lost').textContent).toContain('$10.0k');
+    // Revenue ring legend: one row per pipeline stage, by quote value.
+    expect(screen.getByTestId('rev-legend-serviced').textContent).toContain('$38.2k');
+    expect(screen.getByTestId('rev-legend-quoted').textContent).toContain('$10.0k');
+    expect(screen.getByTestId('rev-legend-booked').textContent).toContain('$20.0k');
     expect(screen.getByTestId('rev-legend-open').textContent).toContain('$96.4k');
     // Leads ring legend: the same split by count.
-    expect(screen.getByTestId('lead-legend-won').textContent).toContain('1');
-    expect(screen.getByTestId('lead-legend-lost').textContent).toContain('1');
-    expect(screen.getByTestId('lead-legend-open').textContent).toContain('1');
+    for (const stage of ['serviced', 'quoted', 'booked', 'open']) {
+      expect(screen.getByTestId(`lead-legend-${stage}`).textContent).toContain('1');
+    }
   });
 });

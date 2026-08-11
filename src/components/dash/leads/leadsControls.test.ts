@@ -64,9 +64,14 @@ describe('applySort (compound, priority = activation order)', () => {
     const leads = [mk({ id: 'lo', score: 40 }), mk({ id: 'hi', score: 90 }), mk({ id: 'na', score: null })];
     expect(applySort(leads, [{ key: 'score', dir: 'desc' }]).map(l => l.id)).toEqual(['hi', 'lo', 'na']);
   });
-  it('status asc orders open > won > lost', () => {
-    const leads = [mk({ id: 'l', status: 'lost' }), mk({ id: 'o', status: 'open' }), mk({ id: 'w', status: 'won' })];
-    expect(applySort(leads, [{ key: 'status', dir: 'asc' }]).map(l => l.id)).toEqual(['o', 'w', 'l']);
+  it('status asc orders open > booked > quoted > serviced', () => {
+    const leads = [
+      mk({ id: 's', status: 'serviced' }),
+      mk({ id: 'q', status: 'quoted' }),
+      mk({ id: 'o', status: 'open' }),
+      mk({ id: 'b', status: 'booked' }),
+    ];
+    expect(applySort(leads, [{ key: 'status', dir: 'asc' }]).map(l => l.id)).toEqual(['o', 'b', 'q', 's']);
   });
   it('quote desc orders price high to low', () => {
     const leads = [mk({ id: 'c', quote_cents: 100 }), mk({ id: 'a', quote_cents: 900 })];
@@ -76,10 +81,10 @@ describe('applySort (compound, priority = activation order)', () => {
     const leads = [
       mk({ id: 'open-lo', status: 'open', score: 10 }),
       mk({ id: 'open-hi', status: 'open', score: 99 }),
-      mk({ id: 'won', status: 'won', score: 50 }),
+      mk({ id: 'booked', status: 'booked', score: 50 }),
     ];
     expect(applySort(leads, [{ key: 'status', dir: 'asc' }, { key: 'score', dir: 'desc' }]).map(l => l.id))
-      .toEqual(['open-hi', 'open-lo', 'won']);
+      .toEqual(['open-hi', 'open-lo', 'booked']);
   });
   it('captured desc (default) puts newest first; null created_at last', () => {
     const nullCap = { ...mk({ id: 'na' }), created_at: null as unknown as string };
@@ -116,19 +121,22 @@ describe('applySort (compound, priority = activation order)', () => {
   });
 });
 
-describe('nextStatus (WON/LOST toggle -> deselect to open)', () => {
-  it('selects an outcome from the neutral open state', () => {
-    expect(nextStatus('open', 'won')).toBe('won');
-    expect(nextStatus('open', 'lost')).toBe('lost');
+describe('nextStatus (stage toggle -> deselect to open)', () => {
+  it('selects a stage from the neutral open state', () => {
+    expect(nextStatus('open', 'booked')).toBe('booked');
+    expect(nextStatus('open', 'quoted')).toBe('quoted');
+    expect(nextStatus('open', 'serviced')).toBe('serviced');
   });
 
-  it('clears back to open when the already-selected outcome is clicked again', () => {
-    expect(nextStatus('won', 'won')).toBe('open');
-    expect(nextStatus('lost', 'lost')).toBe('open');
+  it('clears back to open when the already-set stage is clicked again', () => {
+    expect(nextStatus('booked', 'booked')).toBe('open');
+    expect(nextStatus('quoted', 'quoted')).toBe('open');
+    expect(nextStatus('serviced', 'serviced')).toBe('open');
   });
 
-  it('switches directly between outcomes', () => {
-    expect(nextStatus('won', 'lost')).toBe('lost');
-    expect(nextStatus('lost', 'won')).toBe('won');
+  it('moves directly between stages, forwards and backwards', () => {
+    expect(nextStatus('booked', 'serviced')).toBe('serviced');
+    expect(nextStatus('serviced', 'booked')).toBe('booked');
+    expect(nextStatus('quoted', 'booked')).toBe('booked');
   });
 });

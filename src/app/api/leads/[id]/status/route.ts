@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { PIPELINE_STATUSES } from '@/lib/metrics/leads';
 
 // Real (non-demo) sessions require a signed-in user before any write; demo
 // sessions stay anonymous for the public Instant Demo flow. Membership-binding
@@ -11,8 +12,8 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   let body: { status?: string; session_id?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
   if (!body.session_id) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
-  if (!['open', 'won', 'lost'].includes(body.status ?? '')) {
-    return NextResponse.json({ error: 'status must be open|won|lost' }, { status: 400 });
+  if (!(PIPELINE_STATUSES as readonly string[]).includes(body.status ?? '')) {
+    return NextResponse.json({ error: `status must be ${PIPELINE_STATUSES.join('|')}` }, { status: 400 });
   }
 
   const supabase = createServiceClient();

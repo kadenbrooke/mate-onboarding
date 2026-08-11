@@ -19,16 +19,16 @@ describe('buildAssistantContext', () => {
   it('handles a null business name without crashing', () => {
     expect(buildAssistantContext([], null)).toContain('your business');
   });
-  it('reports won/lost/open counts and total', () => {
-    const leads = [mk({ status: 'won' }), mk({ status: 'won' }), mk({ status: 'lost' }), mk({ status: 'open' })];
+  it('reports per-stage counts and total', () => {
+    const leads = [mk({ status: 'serviced' }), mk({ status: 'serviced' }), mk({ status: 'quoted' }), mk({ status: 'open' })];
     const ctx = buildAssistantContext(leads, 'Acme');
     expect(ctx).toContain('4 total leads');
-    expect(ctx).toContain('2 won');
-    expect(ctx).toContain('1 lost');
+    expect(ctx).toContain('2 serviced');
+    expect(ctx).toContain('1 quoted');
     expect(ctx).toContain('1 open');
   });
-  it('reports revenue won in dollars', () => {
-    const ctx = buildAssistantContext([mk({ status: 'won', quote_cents: 150000 })], 'Acme');
+  it('reports revenue from serviced jobs in dollars', () => {
+    const ctx = buildAssistantContext([mk({ status: 'serviced', quote_cents: 150000 })], 'Acme');
     expect(ctx).toContain('$1,500');
   });
   it('reports average first-reply time when present', () => {

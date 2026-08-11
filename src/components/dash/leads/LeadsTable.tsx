@@ -2,25 +2,27 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { MagnifyingGlass, CaretRight } from '@phosphor-icons/react';
-import type { Lead } from '@/lib/metrics/leads';
+import { STAGE_STATUSES, type Lead, type LeadStatus, type StageStatus } from '@/lib/metrics/leads';
 import {
-  FREE_GREEN, LOST_BROWN, BORDER_SOFT, TEXT_MUTED, TEXT_DARK, TEXT_FAINT, BG_CARD,
-  NUM_TABLE, NUM_DISPLAY, FONT_BODY, scoreColor,
+  FREE_GREEN, BORDER_SOFT, TEXT_MUTED, TEXT_DARK, TEXT_FAINT, BG_CARD,
+  NUM_TABLE, NUM_DISPLAY, FONT_BODY, scoreColor, STAGE_COLOR, STAGE_LABEL,
 } from '@/lib/theme';
 import {
   searchLeads, applySort, cycleSort, nextStatus, SORT_CHIPS, type SortEntry,
 } from './leadsControls';
 import { DriverPill } from './DriverPill';
+import { ContactDots } from './ContactDots';
+import { DeleteLeadButton } from './DeleteLeadButton';
 import { normalizeHandler, toggleHandler, type HandlerState } from './driverToggle';
 
-// Outcome toggle button styling. The selected option is filled (it is also the
-// status indicator now that WON/LOST are always both shown); the unselected one
-// is an outline. Clicking the selected option clears back to 'open'.
-function outcomeBtnStyle(kind: 'won' | 'lost', active: boolean, variant: 'desktop' | 'mobile'): React.CSSProperties {
-  const base = kind === 'won' ? FREE_GREEN : LOST_BROWN;
+// Stage toggle button styling. All three stages are always shown; the one the
+// lead is currently at is filled (it doubles as the status indicator), the rest
+// are outlines. Clicking the filled one clears back to 'open'.
+function stageBtnStyle(kind: StageStatus, active: boolean, variant: 'desktop' | 'mobile'): React.CSSProperties {
+  const base = STAGE_COLOR[kind];
   const size: React.CSSProperties = variant === 'desktop'
-    ? { fontSize: 10, padding: '3px 9px' }
-    : { fontSize: 11, minHeight: 40, padding: '0 14px' };
+    ? { fontSize: 9, padding: '3px 7px' }
+    : { fontSize: 10, minHeight: 40, padding: '0 9px' };
   return {
     background: active ? base : 'transparent',
     border: `1px solid ${base}`,
@@ -41,11 +43,12 @@ const captured = (iso: string | null | undefined) =>
 
 const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, transparent)';
 
-// Desktop: 9-column table (SCORE NAME SERVICE CITY SOURCE QUOTE DRIVER CAPTURED STATUS)
-// plus a trailing chevron. Mobile (<=640px): the table crushed unreadably at
-// 390px, so leads render as stacked card rows with 40px WON/LOST buttons and the
-// Driver pill inline. Both variants render and CSS toggles display; state
-// (optimistic status + handler) is shared so switching breakpoints never desyncs.
+// Desktop: 10-column table (SCORE NAME CONTACT SERVICE CITY SOURCE QUOTE DRIVER
+// CAPTURED STAGE) plus a trailing chevron. Mobile (<=640px): the table crushed
+// unreadably at 390px, so leads render as stacked card rows with 40px stage
+// buttons and the Driver pill + contact dots inline. Both variants render and
+// CSS toggles display; state (optimistic status + handler) is shared so
+// switching breakpoints never desyncs.
 //
 // A row (or the trailing chevron) opens the lead's conversation thread via the
 // ?spotlight= param -- the same navigation HotLeads uses -- so the full thread
@@ -60,7 +63,8 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
   // Per-lead driver in-flight + error state (keyed by lead id).
   const [driverBusy, setDriverBusy] = useState<Record<string, boolean>>({});
   const [driverErr, setDriverErr] = useState<Record<string, string | null>>({});
-  // Default sort: open leads first (open>won>lost), then highest score first.
+  // Default sort: earliest pipeline stage first (open>booked>quoted>serviced),
+  // then highest score first.
   const [sort, setSort] = useState<SortEntry[]>([
     { key: 'status', dir: 'asc' },
     { key: 'score', dir: 'desc' },
@@ -80,7 +84,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
     }
   }, []);
 
-  async function mark(id: string, status: 'won' | 'lost' | 'open') {
+  async function mark(id: string, status: LeadStatus) {
     setRows(r => r.map(l => l.id === id ? { ...l, status } : l));
     await fetch(`/api/leads/${id}/status`, {
       method: 'PATCH', headers: { 'content-type': 'application/json' },
@@ -88,8 +92,12 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
     });
   }
 
+  function removeRow(id: string) {
+    setRows(r => r.filter(l => l.id !== id));
+  }
+
   function openThread(id: string) {
-    router.push(`/dash/${sessionId}/leads?spotlight=${id}`);
+    router.push(`/dash/${sessionId}/pipeline?spotlight=${id}`);
   }
 
   async function toggleDriver(id: string) {
@@ -116,7 +124,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
           <MagnifyingGlass size={14} aria-hidden />
           <input
             type="search" value={query} onChange={e => setQuery(e.target.value)}
-            placeholder="Search leads" aria-label="Search leads"
+            placeholder="Search pipeline" aria-label="Search pipeline"
             style={{
               border: 'none', outline: 'none', background: 'transparent',
               fontFamily: FONT_BODY, fontSize: 13, color: TEXT_DARK, width: '100%',
@@ -167,8 +175,8 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
       <table className="leads-desktop" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
         <thead>
           <tr style={{ textAlign: 'left', opacity: .5, fontSize: 10, letterSpacing: 1, fontFamily: FONT_BODY }}>
-            <th style={{ padding: 8 }}>SCORE</th><th>NAME</th><th>SERVICE</th><th>CITY</th>
-            <th>SOURCE</th><th>QUOTE</th><th>DRIVER</th><th>CAPTURED</th><th>STATUS</th><th aria-hidden></th>
+            <th style={{ padding: 8 }}>SCORE</th><th>NAME</th><th>CONTACT</th><th>SERVICE</th><th>CITY</th>
+            <th>SOURCE</th><th>QUOTE</th><th>DRIVER</th><th>CAPTURED</th><th>STAGE</th><th aria-hidden></th>
           </tr>
         </thead>
         <tbody>
@@ -185,7 +193,9 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               }}>
               {/* Score: tnum Geist 400 -- column of aligned numerics */}
               <td style={{ padding: 8, ...NUM_TABLE, color: l.score != null ? scoreColor(l.score) : undefined, fontWeight: l.score != null ? 600 : undefined }}>{l.score ?? ''}</td>
-              <td>{l.name}</td><td>{l.service}</td><td>{l.city}</td>
+              <td>{l.name}</td>
+              <td><ContactDots lead={l} testId={`contact-dots-${l.id}`} /></td>
+              <td>{l.service}</td><td>{l.city}</td>
               <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>{l.source.replaceAll('_', ' ')}</td>
               <td>{dollars(l.quote_cents)}</td>
               <td>
@@ -200,22 +210,25 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               </td>
               <td style={{ color: TEXT_MUTED, whiteSpace: 'nowrap' }}>{captured(l.created_at)}</td>
               <td>
-                {/* Always-visible WON|LOST toggle: the active option is filled
-                    (doubles as the status indicator); clicking the active option
-                    clears the outcome back to 'open'. */}
-                <span style={{ display: 'flex', gap: 4 }}>
-                  <button type="button"
-                    onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'won')); }}
-                    aria-label={`won ${l.name}`} aria-pressed={l.status === 'won'}
-                    style={outcomeBtnStyle('won', l.status === 'won', 'desktop')}>WON</button>
-                  <button type="button"
-                    onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'lost')); }}
-                    aria-label={`lost ${l.name}`} aria-pressed={l.status === 'lost'}
-                    style={outcomeBtnStyle('lost', l.status === 'lost', 'desktop')}>LOST</button>
+                {/* Always-visible BOOKED|QUOTED|SERVICED toggle: the stage the
+                    lead is at is filled (it doubles as the status indicator);
+                    clicking the filled stage clears back to 'open'. */}
+                <span style={{ display: 'flex', gap: 3 }}>
+                  {STAGE_STATUSES.map(stage => (
+                    <button key={stage} type="button"
+                      onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, stage)); }}
+                      aria-label={`${stage} ${l.name}`} aria-pressed={l.status === stage}
+                      style={stageBtnStyle(stage, l.status === stage, 'desktop')}>{STAGE_LABEL[stage]}</button>
+                  ))}
                 </span>
               </td>
-              {/* Trailing chevron: keyboard-accessible affordance to open the thread */}
-              <td style={{ textAlign: 'right', paddingRight: 6 }}>
+              {/* Trailing controls: remove the lead, then the chevron that
+                  opens its thread (keyboard-accessible affordance). */}
+              <td style={{ textAlign: 'right', paddingRight: 6, whiteSpace: 'nowrap' }}>
+                <DeleteLeadButton
+                  leadId={l.id} sessionId={sessionId} name={l.name}
+                  onDeleted={() => removeRow(l.id)} testId={`delete-lead-${l.id}`}
+                />
                 <button type="button" className="lead-open"
                   onClick={(e) => { e.stopPropagation(); openThread(l.id); }}
                   aria-label={`Open conversation with ${l.name?.trim() || 'this lead'}`}
@@ -275,7 +288,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                 {l.created_at && <>{' · '}{captured(l.created_at)}</>}
               </div>
               {/* Driver pill on its own line so it stays tappable without crowding the meta row */}
-              <div style={{ marginTop: 6 }}>
+              <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <DriverPill
                   handler={normalizeHandler(l.handler)}
                   name={l.name}
@@ -284,20 +297,24 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                   onToggle={() => toggleDriver(l.id)}
                   testId={`driver-pill-card-${l.id}`}
                 />
+                <ContactDots lead={l} testId={`contact-dots-card-${l.id}`} />
+                <DeleteLeadButton
+                  leadId={l.id} sessionId={sessionId} name={l.name}
+                  onDeleted={() => removeRow(l.id)} testId={`delete-lead-card-${l.id}`}
+                />
               </div>
             </div>
 
-            {/* Always-visible WON|LOST toggle (mobile). Same deselect-to-open
-                semantics as the desktop table. */}
-            <span style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-              <button type="button"
-                onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'won')); }}
-                aria-label={`mark won ${l.name}`} aria-pressed={l.status === 'won'}
-                style={outcomeBtnStyle('won', l.status === 'won', 'mobile')}>WON</button>
-              <button type="button"
-                onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, 'lost')); }}
-                aria-label={`mark lost ${l.name}`} aria-pressed={l.status === 'lost'}
-                style={outcomeBtnStyle('lost', l.status === 'lost', 'mobile')}>LOST</button>
+            {/* Always-visible stage toggle (mobile). Same deselect-to-open
+                semantics as the desktop table. Stacked vertically: three 40px
+                pills side by side do not fit a 390px row next to the name. */}
+            <span style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+              {STAGE_STATUSES.map(stage => (
+                <button key={stage} type="button"
+                  onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, stage)); }}
+                  aria-label={`mark ${stage} ${l.name}`} aria-pressed={l.status === stage}
+                  style={stageBtnStyle(stage, l.status === stage, 'mobile')}>{STAGE_LABEL[stage]}</button>
+              ))}
             </span>
           </div>
         ))}

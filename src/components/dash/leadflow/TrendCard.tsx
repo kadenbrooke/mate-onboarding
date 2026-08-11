@@ -4,16 +4,16 @@ import { Card } from '../Card';
 import { CalendarBlank } from '@phosphor-icons/react';
 import {
   weekBars, monthBuckets, yearBuckets, customBuckets,
-  outcomesInPeriod, outcomesInRange,
+  outcomesInPeriod, outcomesInRange, PIPELINE_STATUSES,
   type Range as PeriodRange,
 } from '@/lib/metrics/leads';
 import {
   brandVar, CARD_TRACK, CARD_MUTED, CARD_FG, CARD_CHIP, CARD_HAIRLINE, CARD_INSET,
-  NUM_DISPLAY, NUM_TABLE, FONT_BODY, FREE_GREEN, LOST_BROWN,
+  NUM_DISPLAY, NUM_TABLE, FONT_BODY, STAGE_COLOR, STAGE_LABEL,
 } from '@/lib/theme';
-import type { Lead } from '@/lib/metrics/leads';
+import type { Lead, LeadStatus } from '@/lib/metrics/leads';
 
-// The Leads card shows lead volume over the selected calendar period. The
+// The Pipeline card shows lead volume over the selected calendar period. The
 // three standard chips are calendar-to-date (this week Su..Sa, this month,
 // this year); CUSTOM opens a date-range picker for any span. The chips switch
 // on CLICK only (no hover-select). The headline number, caption, outcome strip,
@@ -41,12 +41,10 @@ function fmtDay(iso: string): string {
   return new Date(y, (m ?? 1) - 1, d ?? 1).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
-function OutcomeStrip({ won, open, lost }: { won: number; open: number; lost: number }) {
-  const items: { label: string; count: number; color: string }[] = [
-    { label: 'won', count: won, color: FREE_GREEN },
-    { label: 'open', count: open, color: brandVar },
-    { label: 'lost', count: lost, color: LOST_BROWN },
-  ];
+function OutcomeStrip({ counts }: { counts: Record<LeadStatus, number> }) {
+  const items = PIPELINE_STATUSES.map(k => ({
+    label: STAGE_LABEL[k].toLowerCase(), count: counts[k], color: STAGE_COLOR[k],
+  }));
   return (
     <div style={{ display: 'flex', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
       {items.map(it => (
@@ -224,7 +222,7 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
   let labels: string[];
   let mode: ChartMode;
   let caption: string;
-  let outcomes: { won: number; open: number; lost: number; total: number };
+  let outcomes: Record<LeadStatus, number> & { total: number };
 
   if (chip === 'CUSTOM') {
     const built = customBuckets(leads, customStart, customEnd);
@@ -359,15 +357,13 @@ export function TrendCard({ leads }: { leads: Lead[] }) {
         </div>
       )}
 
-      {/* Won/open/lost for the selected period: volume vs outcome in one glance,
-          without pulling in the all-time funnel below. Kept behind `mounted`
-          for the same timezone-parity reason as the headline; hidden zeros hold
-          its height so nothing jumps on hydrate. */}
+      {/* Per-stage counts for the selected period: volume vs progress in one
+          glance, without pulling in the all-time funnel below. Kept behind
+          `mounted` for the same timezone-parity reason as the headline; hidden
+          zeros hold its height so nothing jumps on hydrate. */}
       <div style={{ visibility: mounted ? 'visible' : 'hidden' }}>
         <OutcomeStrip
-          won={mounted ? outcomes.won : 0}
-          open={mounted ? outcomes.open : 0}
-          lost={mounted ? outcomes.lost : 0}
+          counts={mounted ? outcomes : { open: 0, booked: 0, quoted: 0, serviced: 0 }}
         />
       </div>
       {chartBody}

@@ -1,13 +1,32 @@
+// The pipeline a lead walks, in order. Replaced won/lost (2026-08-11): the old
+// pair recorded an outcome, these record WHERE the job is.
+//   open     -- came in, nothing scheduled yet
+//   booked   -- free on-site estimate is scheduled
+//   quoted   -- estimate finished, price is out
+//   serviced -- job done and paid
+// There is no terminal "lost": a lead that never buys simply rests at 'quoted'.
+export const PIPELINE_STATUSES = ['open', 'booked', 'quoted', 'serviced'] as const;
+export type LeadStatus = (typeof PIPELINE_STATUSES)[number];
+
+/** The three stages an operator can set from the pipeline table (open is the
+ *  neutral un-set state, reached by de-selecting whichever stage is active). */
+export const STAGE_STATUSES = ['booked', 'quoted', 'serviced'] as const;
+export type StageStatus = (typeof STAGE_STATUSES)[number];
+
 export type Lead = {
   id: string; name: string | null; city: string | null; service: string | null;
   phone: string | null;
+  // Contact info the First Responder extracts from the text thread (synced into
+  // client_leads by a DB trigger, migration 0010). Nullable: most rows have a
+  // phone and nothing else until the conversation gets going.
+  email?: string | null; address?: string | null;
   // Closed taxonomy going forward: meta | call | text | referral | google (2026-08-05).
   // Legacy values (missed_call, meta_ads, unknown) were renamed/removed table-wide;
   // texted_in/web_form/revived are kept only because live demo-session rows still use
   // them (out of scope to migrate -- see reference_mate_jc_data_exposure_incident).
   source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'unknown';
   referrer_name: string | null; score: number | null;
-  status: 'open' | 'won' | 'lost'; quote_cents: number | null;
+  status: LeadStatus; quote_cents: number | null;
   // Who is driving the conversation: Mate's agent ('agent') or the client ('human').
   // Optional + nullable because legacy/demo rows may predate the column or omit it;
   // the UI treats null/absent as 'agent' (see normalizeHandler).
@@ -15,6 +34,18 @@ export type Lead = {
   contacted: boolean; after_hours: boolean; first_reply_seconds: number | null;
   created_at: string;
 };
+
+/** Money is real once the job is serviced. This is the successor to the old
+ *  `status === 'won'` test, and the single definition of "revenue realized"
+ *  used by the hero stats, the recovered-$ chart, and the month banner. */
+export function isServiced(l: Lead): boolean {
+  return l.status === 'serviced';
+}
+
+/** Anything past 'open': the lead has moved somewhere in the pipeline. */
+export function isEngaged(l: Lead): boolean {
+  return l.status !== 'open';
+}
 
 const FREE_SOURCES = new Set(['referral', 'revived']);
 
@@ -62,17 +93,23 @@ export function sourceBreakdown(leads: Lead[]) {
   return { segments, freeCount: leads.filter(l => FREE_SOURCES.has(l.source)).length, total: leads.length };
 }
 
+/** Count + quote value at every pipeline stage.
+ *  `serviceRate` is the share of engaged leads (booked/quoted/serviced) that
+ *  made it all the way to serviced -- the successor to the old win rate, which
+ *  divided won by won+lost. */
 export function pipelineTotals(leads: Lead[]) {
-  const acc = { won: { cents: 0, count: 0 }, lost: { cents: 0, count: 0 }, open: { cents: 0, count: 0 } };
+  const counts: Record<LeadStatus, number> = { open: 0, booked: 0, quoted: 0, serviced: 0 };
+  const cents: Record<LeadStatus, number> = { open: 0, booked: 0, quoted: 0, serviced: 0 };
   for (const l of leads) {
-    acc[l.status].count++;
-    acc[l.status].cents += l.quote_cents ?? 0;
+    counts[l.status]++;
+    cents[l.status] += l.quote_cents ?? 0;
   }
-  const settled = acc.won.count + acc.lost.count;
+  const engaged = counts.booked + counts.quoted + counts.serviced;
   return {
-    wonCents: acc.won.cents, lostCents: acc.lost.cents, openCents: acc.open.cents,
-    counts: { won: acc.won.count, lost: acc.lost.count, open: acc.open.count },
-    winRate: settled === 0 ? 0 : Math.round((acc.won.count / settled) * 100),
+    counts,
+    cents,
+    totalCents: cents.open + cents.booked + cents.quoted + cents.serviced,
+    serviceRate: engaged === 0 ? 0 : Math.round((counts.serviced / engaged) * 100),
   };
 }
 
@@ -235,20 +272,21 @@ export function customBuckets(leads: Lead[], startISO: string, endISO: string):
 
 function tallyOutcomes(rows: Lead[]) {
   return {
-    won: rows.filter(l => l.status === 'won').length,
     open: rows.filter(l => l.status === 'open').length,
-    lost: rows.filter(l => l.status === 'lost').length,
+    booked: rows.filter(l => l.status === 'booked').length,
+    quoted: rows.filter(l => l.status === 'quoted').length,
+    serviced: rows.filter(l => l.status === 'serviced').length,
     total: rows.length,
   };
 }
 
-/** Won/open/lost counts among leads created within the selected calendar
- *  period, so the outcome strip matches the headline count and the chart. */
+/** Per-stage counts among leads created within the selected calendar period,
+ *  so the outcome strip matches the headline count and the chart. */
 export function outcomesInPeriod(leads: Lead[], range: Range, now = new Date()) {
   return tallyOutcomes(leadsInPeriod(leads, range, now));
 }
 
-/** Won/open/lost counts among leads created within an explicit [start, end]. */
+/** Per-stage counts among leads created within an explicit [start, end]. */
 export function outcomesInRange(leads: Lead[], startISO: string, endISO: string) {
   return tallyOutcomes(leadsInRange(leads, startISO, endISO));
 }

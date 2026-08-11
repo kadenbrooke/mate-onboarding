@@ -21,7 +21,7 @@ describe('IconRail', () => {
   });
 
   it('does not render on the leads page (no scroll targets there)', () => {
-    mockPathname.mockReturnValue('/dash/s1/leads');
+    mockPathname.mockReturnValue('/dash/s1/pipeline');
     const { container } = render(<IconRail />);
     expect(container.firstChild).toBeNull();
   });

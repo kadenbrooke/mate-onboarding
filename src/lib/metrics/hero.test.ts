@@ -11,7 +11,7 @@ const lead = (over: Partial<Lead>): Lead => ({
 describe('heroStats', () => {
   it('computes recovered $, roi multiple, actions, hours saved', () => {
     const out = heroStats(
-      [lead({ status: 'won', quote_cents: 3820000 })],
+      [lead({ status: 'serviced', quote_cents: 3820000 })],
       { monthlyRetainerCents: 100000, actionsThisWeek: 212, minutesPerAction: 5 },
     );
     expect(out.recoveredCents).toBe(3820000);
@@ -47,8 +47,8 @@ describe('heroSeries', () => {
   it('builds recovered/hours/actions series from leads and events', () => {
     const now = new Date('2026-07-28T12:00:00Z');
     const leads = [
-      lead({ status: 'won', quote_cents: 200000, created_at: '2026-07-27T12:00:00Z' }),
-      lead({ status: 'won', quote_cents: 100000, created_at: '2026-07-20T12:00:00Z' }),
+      lead({ status: 'serviced', quote_cents: 200000, created_at: '2026-07-27T12:00:00Z' }),
+      lead({ status: 'serviced', quote_cents: 100000, created_at: '2026-07-20T12:00:00Z' }),
     ];
     const events = [
       { id: 'e1', agent: 'first_responder', kind: 'sms', message: 'x', created_at: '2026-07-27T12:00:00Z' },

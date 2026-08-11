@@ -1,4 +1,4 @@
-import type { Lead } from './leads';
+import { isServiced, type Lead } from './leads';
 
 // ---------------------------------------------------------------------------
 // Recovered-$ interactive area chart (Mercury-style) -- pure math layer.
@@ -30,7 +30,7 @@ export function recoveredDailySeries(leads: Lead[], days = 30, now = new Date())
   let base = 0;
   const perDay = Array<number>(days).fill(0);
   for (const l of leads) {
-    if (l.status !== 'won') continue;
+    if (!isServiced(l)) continue;
     const cents = l.quote_cents ?? 0;
     const t = dayStart(new Date(l.created_at));
     if (t < windowStart) base += cents;
@@ -52,7 +52,7 @@ export function recoveredWowDeltaCents(leads: Lead[], now = new Date()): number 
   let cur = 0;
   let prev = 0;
   for (const l of leads) {
-    if (l.status !== 'won') continue;
+    if (!isServiced(l)) continue;
     const age = t - new Date(l.created_at).getTime();
     if (age < 0) continue;
     if (age < WEEK_MS) cur += l.quote_cents ?? 0;

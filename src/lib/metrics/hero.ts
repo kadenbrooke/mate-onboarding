@@ -1,10 +1,10 @@
-import type { Lead } from './leads';
+import { isServiced, type Lead } from './leads';
 import type { ClientEvent } from './events';
 
 export function heroStats(leads: Lead[], opts: {
   monthlyRetainerCents: number; actionsThisWeek: number; minutesPerAction: number;
 }) {
-  const recoveredCents = leads.filter(l => l.status === 'won')
+  const recoveredCents = leads.filter(isServiced)
     .reduce((a, l) => a + (l.quote_cents ?? 0), 0);
   return {
     recoveredCents,
@@ -55,12 +55,12 @@ export function heroSeries(
   opts: { minutesPerAction: number },
   now = new Date(),
 ): { recovered: HeroSeries; hours: HeroSeries; actions: HeroSeries } {
-  const wonItems = leads
-    .filter(l => l.status === 'won')
+  const servicedItems = leads
+    .filter(isServiced)
     .map(l => ({ at: l.created_at, value: l.quote_cents ?? 0 }));
   const actionItems = events.map(e => ({ at: e.created_at, value: 1 }));
 
-  const recoveredBuckets = weeklyBuckets(wonItems, 8, now);
+  const recoveredBuckets = weeklyBuckets(servicedItems, 8, now);
   const actionBuckets = weeklyBuckets(actionItems, 8, now);
   const hourBuckets = actionBuckets.map(c => (c * opts.minutesPerAction) / 60);
 

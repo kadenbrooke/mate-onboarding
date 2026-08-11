@@ -67,10 +67,10 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
       icon: <SquaresFour size={15} weight={active === 'dashboard' ? 'fill' : 'regular'} />,
     },
     {
-      key: 'leads',
-      href: `/dash/${sessionId}/leads`,
-      label: 'Leads',
-      icon: <UsersThree size={15} weight={active === 'leads' ? 'fill' : 'regular'} />,
+      key: 'pipeline',
+      href: `/dash/${sessionId}/pipeline`,
+      label: 'Pipeline',
+      icon: <UsersThree size={15} weight={active === 'pipeline' ? 'fill' : 'regular'} />,
     },
     {
       key: 'assistant',

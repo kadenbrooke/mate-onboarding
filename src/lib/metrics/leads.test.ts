@@ -47,18 +47,23 @@ describe('sourceBreakdown', () => {
 });
 
 describe('pipelineTotals', () => {
-  it('sums cents and counts by status', () => {
+  it('sums cents and counts by pipeline stage', () => {
     const out = pipelineTotals([
-      lead({ status: 'won', quote_cents: 100000 }),
-      lead({ status: 'lost', quote_cents: 50000 }),
+      lead({ status: 'serviced', quote_cents: 100000 }),
+      lead({ status: 'quoted', quote_cents: 50000 }),
+      lead({ status: 'booked', quote_cents: 40000 }),
       lead({ status: 'open', quote_cents: 200000 }),
       lead({ status: 'open', quote_cents: null }),
     ]);
-    expect(out.wonCents).toBe(100000);
-    expect(out.lostCents).toBe(50000);
-    expect(out.openCents).toBe(200000);
-    expect(out.counts).toEqual({ won: 1, lost: 1, open: 2 });
-    expect(out.winRate).toBe(50); // won / (won + lost)
+    expect(out.cents.serviced).toBe(100000);
+    expect(out.cents.quoted).toBe(50000);
+    expect(out.cents.booked).toBe(40000);
+    expect(out.totalCents).toBe(390000);
+    expect(out.cents.open).toBe(200000);
+    expect(out.counts).toEqual({ open: 2, booked: 1, quoted: 1, serviced: 1 });
+    // serviced / (booked + quoted + serviced) -- 'open' leads have not had
+    // their shot yet, so they are not in the denominator.
+    expect(out.serviceRate).toBe(33);
   });
 });
 
@@ -130,21 +135,22 @@ describe('periodStart / leadsInPeriod / outcomesInPeriod', () => {
     expect(leadsInPeriod(leads, 'YEAR', NOW)).toHaveLength(4);
   });
 
-  it('tallies won/open/lost within the period', () => {
+  it('tallies each pipeline stage within the period', () => {
     const leads = [
-      lead({ created_at: at(2026, 7, 3), status: 'won' }),
-      lead({ created_at: at(2026, 7, 4), status: 'lost' }),
+      lead({ created_at: at(2026, 7, 3), status: 'serviced' }),
+      lead({ created_at: at(2026, 7, 4), status: 'booked' }),
       lead({ created_at: at(2026, 7, 1), status: 'open' }), // prior week
     ];
-    expect(outcomesInPeriod(leads, 'WEEK', NOW)).toMatchObject({ won: 1, lost: 1, open: 0, total: 2 });
+    expect(outcomesInPeriod(leads, 'WEEK', NOW))
+      .toMatchObject({ open: 0, booked: 1, quoted: 0, serviced: 1, total: 2 });
   });
 });
 
 describe('custom range: leadsInRange / outcomesInRange / customBuckets', () => {
   const leads = [
-    lead({ created_at: at(2026, 6, 20), status: 'won' }), // Jul 20
-    lead({ created_at: at(2026, 6, 25), status: 'open' }), // Jul 25
-    lead({ created_at: at(2026, 7, 4), status: 'lost' }),  // Aug 4
+    lead({ created_at: at(2026, 6, 20), status: 'serviced' }), // Jul 20
+    lead({ created_at: at(2026, 6, 25), status: 'open' }),     // Jul 25
+    lead({ created_at: at(2026, 7, 4), status: 'quoted' }),    // Aug 4
   ];
 
   it('counts leads inclusive of both endpoints', () => {
@@ -153,7 +159,7 @@ describe('custom range: leadsInRange / outcomesInRange / customBuckets', () => {
     // Jul 21 .. Aug 3 excludes both endpoints' leads.
     expect(leadsInRange(leads, at(2026, 6, 21), at(2026, 7, 3))).toHaveLength(1);
     expect(outcomesInRange(leads, at(2026, 6, 20), at(2026, 7, 4)))
-      .toMatchObject({ won: 1, open: 1, lost: 1, total: 3 });
+      .toMatchObject({ open: 1, booked: 0, quoted: 1, serviced: 1, total: 3 });
   });
 
   it('returns empty for an inverted range', () => {

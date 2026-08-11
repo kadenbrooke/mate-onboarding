@@ -22,9 +22,9 @@ export function buildAssistantContext(leads: Lead[], businessName: string | null
     `Answer ONLY from the data below and general small-business advice. If the data does not contain the answer, say so plainly — never invent numbers.`,
     ``,
     `LIVE DATA SNAPSHOT (their real numbers right now):`,
-    `- ${leads.length} total leads (${totals.counts.won} won, ${totals.counts.lost} lost, ${totals.counts.open} open).`,
-    `- Win rate: ${totals.winRate}% of settled leads.`,
-    `- Revenue won: ${dollars(totals.wonCents)}. Open pipeline value: ${dollars(totals.openCents)}.`,
+    `- ${leads.length} total leads (${totals.counts.open} open, ${totals.counts.booked} booked for an estimate, ${totals.counts.quoted} quoted, ${totals.counts.serviced} serviced).`,
+    `- Service rate: ${totals.serviceRate}% of leads that got past open were serviced.`,
+    `- Revenue from serviced jobs: ${dollars(totals.cents.serviced)}. Still in the pipeline: ${dollars(totals.cents.open + totals.cents.booked + totals.cents.quoted)}.`,
     `- Lead sources: ${sources}.`,
     avgReply != null ? `- Average first-reply time: ${avgReply} seconds.` : `- First-reply time: not enough data yet.`,
   ];

@@ -1,64 +1,63 @@
-import { pipelineTotals, type Lead } from '@/lib/metrics/leads';
+import { pipelineTotals, PIPELINE_STATUSES, type Lead, type LeadStatus } from '@/lib/metrics/leads';
 import { Card } from '../Card';
 import { RingStat } from '../RingStat';
-import { FREE_GREEN, LOST_BROWN, brandVar, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
+import { STAGE_COLOR, STAGE_LABEL, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 import { moneyShort } from '@/lib/metrics/format';
 
-type Seg = 'won' | 'lost' | 'open';
-
-const SEG_COLOR: Record<Seg, string> = {
-  won: FREE_GREEN,
-  lost: LOST_BROWN,
-  open: brandVar,
-};
-
-const SEG_LABEL: Record<Seg, string> = {
-  won: 'WON',
-  lost: 'LOST',
-  open: 'ON THE TABLE',
-};
+// Two rings over the same four pipeline stages: one by quote value, one by
+// lead count. Both rest on SERVICED (money actually collected), the way they
+// used to rest on WON, with the remaining three stages showing what is still
+// in flight rather than a dead-end "lost" bucket.
 
 export function TwinRings({ leads, showLabel = true }: { leads: Lead[]; showLabel?: boolean }) {
   const t = pipelineTotals(leads);
-  const quotedTotal = t.wonCents + t.lostCents + t.openCents;
-  const avgJob = t.counts.won ? Math.round(t.wonCents / t.counts.won) : 0;
-
-  const revenue = { won: t.wonCents, lost: t.lostCents, open: t.openCents };
-  const counts = t.counts;
+  const avgJob = t.counts.serviced ? Math.round(t.cents.serviced / t.counts.serviced) : 0;
+  const stages = PIPELINE_STATUSES as readonly LeadStatus[];
+  const rateSub = `${t.serviceRate}% of engaged leads serviced`;
 
   return (
     <Card label={showLabel ? 'THE PIPELINE' : undefined} themeKey="the-pipeline">
       <div style={{ display: 'flex', justifyContent: 'space-around', flexWrap: 'wrap', gap: 16, marginTop: 8 }}>
-        {/* Revenue ring: WON / LOST / ON THE TABLE by quote value. Rests on WON. */}
+        {/* Revenue ring: quote value at each stage. Rests on SERVICED. */}
         <RingStat
           idPrefix="rev"
           caption="REVENUE"
-          segments={(['won', 'lost', 'open'] as Seg[]).map(k => ({
+          segments={stages.map(k => ({
             key: k,
-            label: SEG_LABEL[k],
-            value: revenue[k],
-            display: moneyShort(revenue[k]),
-            color: SEG_COLOR[k],
-            sub: k === 'won' ? `of ${moneyShort(quotedTotal)} quoted` : undefined,
+            label: STAGE_LABEL[k],
+            value: t.cents[k],
+            display: moneyShort(t.cents[k]),
+            color: STAGE_COLOR[k],
+            sub: k === 'serviced' ? `of ${moneyShort(t.totalCents)} in the pipeline` : undefined,
           }))}
-          center={{ label: 'WON', display: moneyShort(revenue.won), color: SEG_COLOR.won, sub: `of ${moneyShort(quotedTotal)} quoted` }}
-          ariaLabel={`Pipeline revenue: won ${moneyShort(revenue.won)}, lost ${moneyShort(revenue.lost)}, on the table ${moneyShort(revenue.open)}`}
+          center={{
+            label: STAGE_LABEL.serviced,
+            display: moneyShort(t.cents.serviced),
+            color: STAGE_COLOR.serviced,
+            sub: `of ${moneyShort(t.totalCents)} in the pipeline`,
+          }}
+          ariaLabel={stages.map(k => `${STAGE_LABEL[k].toLowerCase()} ${moneyShort(t.cents[k])}`).join(', ')}
         />
 
-        {/* Leads ring: the same split by count. Rests on WON. */}
+        {/* Leads ring: the same split by count. Rests on SERVICED. */}
         <RingStat
           idPrefix="lead"
           caption="LEADS"
-          segments={(['won', 'lost', 'open'] as Seg[]).map(k => ({
+          segments={stages.map(k => ({
             key: k,
-            label: SEG_LABEL[k],
-            value: counts[k],
-            display: String(counts[k]),
-            color: SEG_COLOR[k],
-            sub: k === 'won' ? `${t.winRate}% win rate` : undefined,
+            label: STAGE_LABEL[k],
+            value: t.counts[k],
+            display: String(t.counts[k]),
+            color: STAGE_COLOR[k],
+            sub: k === 'serviced' ? rateSub : undefined,
           }))}
-          center={{ label: 'WON', display: String(counts.won), color: SEG_COLOR.won, sub: `${t.winRate}% win rate` }}
-          ariaLabel={`Pipeline leads: won ${counts.won}, lost ${counts.lost}, on the table ${counts.open}`}
+          center={{
+            label: STAGE_LABEL.serviced,
+            display: String(t.counts.serviced),
+            color: STAGE_COLOR.serviced,
+            sub: rateSub,
+          }}
+          ariaLabel={stages.map(k => `${STAGE_LABEL[k].toLowerCase()} ${t.counts[k]}`).join(', ')}
         />
       </div>
 

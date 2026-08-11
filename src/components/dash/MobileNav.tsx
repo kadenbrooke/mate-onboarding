@@ -22,8 +22,8 @@ export type MobileView = 'home' | 'leads' | 'money' | 'crew' | 'assistant';
 // - Tab mode (`view`+`onChange`): used on the dashboard root, where Home/
 //   Leads/Money/Crew are in-page SortableStack views, not real routes.
 //   Unchanged from before.
-// - Link mode (`sessionId`): used on standalone sub-pages (the full leads
-//   table, the standalone assistant page). Leads/Assistant navigate to
+// - Link mode (`sessionId`): used on standalone sub-pages (the full pipeline
+//   table, the standalone assistant page). Pipeline/Assistant navigate to
 //   their real routes; Home/Money/Crew navigate back to the dashboard root
 //   (they have no standalone route of their own). Active state comes from
 //   the URL, not a `view` prop.
@@ -36,14 +36,14 @@ export type MobileView = 'home' | 'leads' | 'money' | 'crew' | 'assistant';
 
 const TABS: { key: MobileView; label: string; icon: (active: boolean) => React.ReactNode }[] = [
   { key: 'home', label: 'Home', icon: a => <House size={20} weight={a ? 'fill' : 'regular'} /> },
-  { key: 'leads', label: 'Leads', icon: a => <ChartLineUp size={20} weight={a ? 'fill' : 'regular'} /> },
+  { key: 'leads', label: 'Pipeline', icon: a => <ChartLineUp size={20} weight={a ? 'fill' : 'regular'} /> },
   { key: 'assistant', label: 'Assistant', icon: () => <Microphone size={24} weight="fill" /> },
   { key: 'money', label: 'Money', icon: a => <CurrencyDollar size={20} weight={a ? 'fill' : 'regular'} /> },
   { key: 'crew', label: 'Agents', icon: a => <UsersThree size={20} weight={a ? 'fill' : 'regular'} /> },
 ];
 
 function hrefFor(key: MobileView, sessionId: string): string {
-  if (key === 'leads') return `/dash/${sessionId}/leads`;
+  if (key === 'leads') return `/dash/${sessionId}/pipeline`;
   if (key === 'assistant') return `/dash/${sessionId}/assistant`;
   return `/dash/${sessionId}`; // home, money, crew have no standalone route
 }
@@ -119,7 +119,7 @@ export function MobileNav(props: MobileNavProps) {
 
   const isActive = (key: MobileView): boolean => {
     if (!linkMode) return props.view === key;
-    if (key === 'leads') return pathname === `/dash/${sessionId}/leads`;
+    if (key === 'leads') return pathname === `/dash/${sessionId}/pipeline`;
     if (key === 'assistant') return pathname === `/dash/${sessionId}/assistant`;
     return key === 'home' && pathname === `/dash/${sessionId}`;
   };

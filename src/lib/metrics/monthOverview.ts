@@ -1,4 +1,4 @@
-import type { Lead } from './leads';
+import { isServiced, type Lead } from './leads';
 import type { ClientEvent } from './events';
 
 // ---------------------------------------------------------------------------
@@ -15,9 +15,10 @@ export type MonthStat = { value: number; pct: number };
 
 export type MonthOverview = {
   monthLabel: string;
-  revenueWon: MonthStat;
+  revenueEarned: MonthStat;
   quotedThisMonthCents: number;
-  winRatePct: number;
+  /** Share of engaged leads (booked/quoted/serviced) that reached serviced. */
+  serviceRatePct: number;
   jobsCompleted: MonthStat;
   leadsAcquired: MonthStat;
   callsHandled: MonthStat;
@@ -53,16 +54,19 @@ export function monthOverview(leads: Lead[], events: ClientEvent[], now = new Da
   const thisMonth = leads.filter(l => inRange(l.created_at, start, now));
   const prevMonth = leads.filter(l => inRange(l.created_at, prevStart, start));
 
-  const wonThisMonth = thisMonth.filter(l => l.status === 'won');
-  const wonPrevMonth = prevMonth.filter(l => l.status === 'won');
-  const revenueWonCents = wonThisMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
-  const revenueWonPrevCents = wonPrevMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
+  const servicedThisMonth = thisMonth.filter(isServiced);
+  const servicedPrevMonth = prevMonth.filter(isServiced);
+  const revenueEarnedCents = servicedThisMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
+  const revenueEarnedPrevCents = servicedPrevMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
 
   const quotedThisMonthCents = thisMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
 
-  const settledThisMonth = thisMonth.filter(l => l.status === 'won' || l.status === 'lost');
-  const winRatePct = settledThisMonth.length
-    ? Math.round((wonThisMonth.length / settledThisMonth.length) * 100)
+  // Denominator is every lead that got somewhere (booked/quoted/serviced), not
+  // won+lost: 'open' leads have not had their shot yet, so counting them would
+  // punish a healthy month with lots of fresh leads.
+  const engagedThisMonth = thisMonth.filter(l => l.status !== 'open');
+  const serviceRatePct = engagedThisMonth.length
+    ? Math.round((servicedThisMonth.length / engagedThisMonth.length) * 100)
     : 0;
 
   const callsThisMonth = events.filter(e => inRange(e.created_at, start, now)).length;
@@ -73,10 +77,10 @@ export function monthOverview(leads: Lead[], events: ClientEvent[], now = new Da
 
   return {
     monthLabel: now.toLocaleDateString('en-US', { month: 'long' }),
-    revenueWon: { value: revenueWonCents, pct: pctChange(revenueWonCents, revenueWonPrevCents) },
+    revenueEarned: { value: revenueEarnedCents, pct: pctChange(revenueEarnedCents, revenueEarnedPrevCents) },
     quotedThisMonthCents,
-    winRatePct,
-    jobsCompleted: { value: wonThisMonth.length, pct: pctChange(wonThisMonth.length, wonPrevMonth.length) },
+    serviceRatePct,
+    jobsCompleted: { value: servicedThisMonth.length, pct: pctChange(servicedThisMonth.length, servicedPrevMonth.length) },
     leadsAcquired: { value: thisMonth.length, pct: pctChange(thisMonth.length, prevMonth.length) },
     callsHandled: { value: callsThisMonth, pct: pctChange(callsThisMonth, callsPrevMonth) },
     avgResponseSeconds: { value: respThisMonth, pct: pctChange(respThisMonth, respPrevMonth) },
