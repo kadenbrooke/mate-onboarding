@@ -3,36 +3,49 @@ import { CREW_AGENTS, AUTO_MATE_AGENT_COUNT, isAgentLive, activeAgentCount } fro
 import type { DashCapability } from '@/components/dash/types';
 
 const cap = (key: string, status: string): DashCapability => ({ key, label: key, status });
+const agent = (key: string) => CREW_AGENTS.find(a => a.key === key)!;
 
 describe('crew roster', () => {
-  it('carries the four capability-backed agents; Command Center is the fifth slot', () => {
+  it('is the Auto Mate 5, live ones first', () => {
     expect(CREW_AGENTS.map(a => a.key)).toEqual([
-      'first_responder', 'cultivator', 'reactivator', 'reputation_manager',
+      'first_responder', 'cultivator', 'command_center', 'reactivator', 'reputation_builder',
     ]);
+    expect(CREW_AGENTS.map(a => a.label)).toEqual([
+      'First Responder', 'Cultivator', 'Command Center', 'Reactivator', 'Reputation Builder',
+    ]);
+  });
+
+  it('derives the tile denominator from the roster so the two cannot drift', () => {
+    expect(AUTO_MATE_AGENT_COUNT).toBe(CREW_AGENTS.length);
     expect(AUTO_MATE_AGENT_COUNT).toBe(5);
   });
 });
 
 describe('isAgentLive', () => {
   it('matches the legacy first_responder_sms capability key', () => {
-    const fr = CREW_AGENTS[0];
-    expect(isAgentLive(fr.aliases, [cap('first_responder_sms', 'live')])).toBe(true);
+    expect(isAgentLive(agent('first_responder'), [cap('first_responder_sms', 'live')])).toBe(true);
+  });
+
+  it('still matches the old reputation_manager key after the rename', () => {
+    expect(isAgentLive(agent('reputation_builder'), [cap('reputation_manager', 'live')])).toBe(true);
   });
 
   it('is false for a non-live status and for a missing row', () => {
-    const fr = CREW_AGENTS[0];
-    expect(isAgentLive(fr.aliases, [cap('first_responder', 'under_construction')])).toBe(false);
-    expect(isAgentLive(fr.aliases, [])).toBe(false);
+    expect(isAgentLive(agent('first_responder'), [cap('first_responder', 'under_construction')])).toBe(false);
+    expect(isAgentLive(agent('first_responder'), [])).toBe(false);
   });
 
   it('accepts "active" as well as "live"', () => {
-    expect(isAgentLive(CREW_AGENTS[1].aliases, [cap('cultivator', 'active')])).toBe(true);
+    expect(isAgentLive(agent('cultivator'), [cap('cultivator', 'active')])).toBe(true);
+  });
+
+  it('treats Command Center as live with no capability row at all', () => {
+    expect(isAgentLive(agent('command_center'), [])).toBe(true);
   });
 });
 
 describe('activeAgentCount', () => {
-  it('counts live agents plus Command Center', () => {
-    // J&C today: First Responder + Cultivator live, plus Command Center = 3.
+  it('counts J&C today as 3: First Responder, Cultivator, Command Center', () => {
     expect(activeAgentCount([
       cap('first_responder_sms', 'live'),
       cap('cultivator', 'live'),
@@ -40,7 +53,7 @@ describe('activeAgentCount', () => {
     ])).toBe(3);
   });
 
-  it('is 1 (Command Center only) for a client with nothing live', () => {
+  it('is 1 (Command Center only) for a client with nothing else live', () => {
     expect(activeAgentCount([])).toBe(1);
     expect(activeAgentCount([cap('first_responder_sms', 'under_construction')])).toBe(1);
   });
@@ -48,5 +61,11 @@ describe('activeAgentCount', () => {
   it('never exceeds the roster size', () => {
     const all = CREW_AGENTS.map(a => cap(a.aliases[0], 'live'));
     expect(activeAgentCount(all)).toBe(AUTO_MATE_AGENT_COUNT);
+  });
+
+  it('agrees with the number of agents the crew card would draw as live', () => {
+    const caps = [cap('first_responder_sms', 'live'), cap('cultivator', 'live')];
+    const drawnLive = CREW_AGENTS.filter(a => isAgentLive(a, caps)).length;
+    expect(activeAgentCount(caps)).toBe(drawnLive);
   });
 });
