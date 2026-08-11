@@ -17,45 +17,18 @@ import type { ReactNode } from 'react';
 import { Lightning, Plant, ArrowsClockwise, Star } from '@phosphor-icons/react';
 import { Card } from '../Card';
 import { FONT_BODY, FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, CARD_FG, CARD_HAIRLINE } from '@/lib/theme';
+import { CREW_AGENTS, isAgentLive } from '@/lib/metrics/crew';
 import type { DashCapability } from '../types';
 
-// Canonical crew, display order fixed. `aliases` are the capability_key values
-// a backend row may legitimately use for this agent.
-const CREW: { key: string; label: string; aliases: string[]; icon: ReactNode; hint: string }[] = [
-  {
-    key: 'first_responder', label: 'First Responder',
-    aliases: ['first_responder', 'first_responder_sms'],
-    icon: <Lightning size={17} weight="fill" />,
-    hint: 'answers every lead in seconds',
-  },
-  {
-    key: 'cultivator', label: 'Cultivator',
-    aliases: ['cultivator'],
-    icon: <Plant size={17} weight="fill" />,
-    hint: 'follows up until they book',
-  },
-  {
-    key: 'reactivator', label: 'Reactivator',
-    aliases: ['reactivator'],
-    icon: <ArrowsClockwise size={17} weight="bold" />,
-    hint: 'coming soon',
-  },
-  {
-    key: 'reputation_manager', label: 'Reputation Manager',
-    aliases: ['reputation_manager', 'reputation_builder', 'reputation', 'gbp_reviews'],
-    icon: <Star size={17} weight="fill" />,
-    hint: 'coming soon',
-  },
-];
-
-function isLive(status: string): boolean {
-  return status === 'live' || status === 'active';
-}
-
-/** True when one of this agent's capability rows says it is live. */
-function agentIsLive(aliases: string[], capabilities: DashCapability[]): boolean {
-  return capabilities.some(c => aliases.includes(c.key) && isLive(c.status));
-}
+// Per-agent presentation. The roster itself (keys, labels, capability_key
+// aliases) lives in metrics/crew.ts so the AGENTS ACTIVE tile counts exactly
+// what this card draws; only the icon and the one-line hint are view concerns.
+const PRESENTATION: Record<string, { icon: ReactNode; hint: string }> = {
+  first_responder: { icon: <Lightning size={17} weight="fill" />, hint: 'answers every lead in seconds' },
+  cultivator: { icon: <Plant size={17} weight="fill" />, hint: 'follows up until they book' },
+  reactivator: { icon: <ArrowsClockwise size={17} weight="bold" />, hint: 'coming soon' },
+  reputation_manager: { icon: <Star size={17} weight="fill" />, hint: 'coming soon' },
+};
 
 function CrewChip({ icon, live }: { icon: ReactNode; live: boolean }) {
   const bg = live
@@ -121,9 +94,10 @@ function StatusPill({ live }: { live: boolean }) {
 }
 
 function CrewRow({ agent, live }: {
-  agent: (typeof CREW)[number];
+  agent: (typeof CREW_AGENTS)[number];
   live: boolean;
 }) {
+  const view = PRESENTATION[agent.key];
   return (
     <div
       data-testid={`crew-row-${agent.key}`}
@@ -136,7 +110,7 @@ function CrewRow({ agent, live }: {
         marginTop: 10,
       }}
     >
-      <CrewChip icon={agent.icon} live={live} />
+      <CrewChip icon={view.icon} live={live} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -157,7 +131,7 @@ function CrewRow({ agent, live }: {
             marginTop: 2,
           }}
         >
-          {agent.hint}
+          {view.hint}
         </div>
       </div>
       <StatusPill live={live} />
@@ -168,8 +142,8 @@ function CrewRow({ agent, live }: {
 export function CrewRoster({ capabilities }: { capabilities: DashCapability[] }) {
   return (
     <Card label="YOUR CREW">
-      {CREW.map(agent => (
-        <CrewRow key={agent.key} agent={agent} live={agentIsLive(agent.aliases, capabilities)} />
+      {CREW_AGENTS.map(agent => (
+        <CrewRow key={agent.key} agent={agent} live={isAgentLive(agent.aliases, capabilities)} />
       ))}
     </Card>
   );

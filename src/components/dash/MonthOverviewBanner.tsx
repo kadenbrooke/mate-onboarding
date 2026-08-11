@@ -1,30 +1,23 @@
 'use client';
 import {
-  Wrench, UsersThree, Phone, Timer, Star, Target, ArrowUpRight, ArrowDownRight,
+  Wrench, UsersThree, Robot, Warning, Star, Clock, ArrowUpRight, ArrowDownRight,
 } from '@phosphor-icons/react';
 import { useCountUp } from './useCountUp';
 import { FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
-import { moneyShort } from '@/lib/metrics/format';
+import { AUTO_MATE_AGENT_COUNT } from '@/lib/metrics/crew';
 import type { MonthOverview } from '@/lib/metrics/monthOverview';
-import type { Reputation } from './types';
-import type { AdTotals } from '@/lib/metrics/ads';
 
 // Sits above the Hero strip: the "CEO glance" zone. Six stats that cover the
-// questions an owner actually asks in the first 30 seconds -- are we busy,
-// are we fast, are we winning the jobs we quote, are customers happy. No
-// revenue headline here: the dark Recovered card directly below already
-// owns that number, so this stays the activity/speed/reputation summary
-// instead of repeating it.
-
-function fmtDuration(seconds: number): string {
-  if (seconds <= 0) return '0s';
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  // Non-breaking space: keeps "4m 32s" from wrapping the "s" onto its own
-  // line when the tile is narrow (mobile 2-col grid).
-  return s ? `${m}m ${s}s` : `${m}m`;
-}
+// questions an owner actually asks in the first 30 seconds -- are we busy, how
+// much of the crew is working, what needs me, are customers happy. No revenue
+// headline here: the dark Recovered card directly below already owns that
+// number, so this stays the activity/crew/reputation summary instead of
+// repeating it.
+//
+// 2026-08-11 tile swap: CALLS HANDLED -> AGENTS ACTIVE, AVG RESPONSE ->
+// NEEDS ATTENTION, RATING -> REVIEWS COLLECTED, COST / LEAD -> HOURS SAVED.
+// monthOverview still computes callsHandled and avgResponseSeconds; they are
+// simply no longer on the glance card.
 
 function TrendPill({ pct }: { pct: number }) {
   const up = pct >= 0;
@@ -81,10 +74,17 @@ function CountedNumber({ value }: { value: number }) {
   return <>{Math.round(n)}</>;
 }
 
-export function MonthOverviewBanner({ overview, reputation, ads }: {
+export function MonthOverviewBanner({ overview, activeAgents, reviewsCollected, hoursSaved }: {
   overview: MonthOverview;
-  reputation: Reputation | null;
-  ads: AdTotals | null;
+  /** Live agents out of AUTO_MATE_AGENT_COUNT. Counted from the client's own
+   *  capability rows BEFORE zone gating (see page.tsx), so a locked Operations
+   *  zone cannot make the crew look smaller than it is. */
+  activeAgents: number;
+  /** client_reviews rows for this session. */
+  reviewsCollected: number;
+  /** Agent-hours saved this week: the metric the retired HOURS SAVED hero card
+   *  carried, same calculation (actions x minutes-per-action). */
+  hoursSaved: number;
 }) {
   return (
     <div style={{
@@ -104,7 +104,7 @@ export function MonthOverviewBanner({ overview, reputation, ads }: {
         </span>
       </div>
 
-      {/* Six supporting stats: activity, speed, reputation, ad efficiency */}
+      {/* Six supporting stats: activity, crew, attention, reputation */}
       <style>{`
         @media (max-width: 640px) {
           .month-overview-grid { grid-template-columns: repeat(2, 1fr) !important; }
@@ -126,28 +126,29 @@ export function MonthOverviewBanner({ overview, reputation, ads }: {
           trend={{ pct: overview.leadsAcquired.pct }}
         />
         <StatTile
-          icon={<Phone size={13} weight="bold" />}
-          label="CALLS HANDLED"
-          big={<CountedNumber value={overview.callsHandled.value} />}
-          trend={{ pct: overview.callsHandled.pct }}
+          icon={<Robot size={13} weight="bold" />}
+          label="AGENTS ACTIVE"
+          big={<>{activeAgents}/{AUTO_MATE_AGENT_COUNT}</>}
+          sub="of your Auto Mate crew"
         />
+        {/* Placeholder until the attention queue exists. Deliberately not "0":
+            a zero would claim nothing needs the client, which we cannot yet
+            say truthfully. */}
         <StatTile
-          icon={<Timer size={13} weight="bold" />}
-          label="AVG RESPONSE"
-          big={fmtDuration(overview.avgResponseSeconds.value)}
-          trend={{ pct: overview.avgResponseSeconds.pct }}
+          icon={<Warning size={13} weight="bold" />}
+          label="NEEDS ATTENTION"
+          big={<span style={{ fontSize: 15, fontFamily: FONT_BODY }}>coming soon</span>}
         />
         <StatTile
           icon={<Star size={13} weight="fill" />}
-          label="RATING"
-          big={reputation?.avg_rating ? reputation.avg_rating.toFixed(1) : '--'}
-          sub={reputation ? `${reputation.on_google} reviews` : 'no data yet'}
+          label="REVIEWS COLLECTED"
+          big={<CountedNumber value={reviewsCollected} />}
         />
         <StatTile
-          icon={<Target size={13} weight="bold" />}
-          label="COST / LEAD"
-          big={ads ? moneyShort(ads.cpl_cents) : '--'}
-          sub={ads ? `${ads.leads} leads from ads` : 'ads not connected'}
+          icon={<Clock size={13} weight="bold" />}
+          label="HOURS SAVED"
+          big={<>{Math.round(hoursSaved)}h</>}
+          sub="handled while you worked, this week"
         />
       </div>
     </div>

@@ -62,9 +62,11 @@ function LinkCard({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function DashboardView({ session, leads, data, locks }: {
+export function DashboardView({ session, leads, data, locks, glance }: {
   session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
   locks: Record<ZoneId, ZoneLock | null>;
+  /** Month Overview counts computed server-side from ungated data (page.tsx). */
+  glance: { activeAgents: number; reviewsCollected: number };
 }) {
   const [view, setView] = useState<MobileView>('home');
   // Turns a computed lock into the prop SectionCard expects, or undefined when
@@ -252,7 +254,12 @@ export function DashboardView({ session, leads, data, locks }: {
           full-width on top; heights measured at runtime). Zone `id`s ride the
           grid cells so the IconRail scroll anchors still resolve. */}
       <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
-        <MonthOverviewBanner overview={overview} reputation={data.reputation} ads={data.ads} />
+        <MonthOverviewBanner
+                  overview={overview}
+                  activeAgents={glance.activeAgents}
+                  reviewsCollected={glance.reviewsCollected}
+                  hoursSaved={hero.hoursSaved}
+                />
         <HeroStrip {...hero} series={series} recovered={recovered} leads={leads} />
         <Ticker events={data.events} />
         <MovableDashGrid
@@ -278,7 +285,12 @@ export function DashboardView({ session, leads, data, locks }: {
           <>
             {view === 'home' && (
               <>
-                <MonthOverviewBanner overview={overview} reputation={data.reputation} ads={data.ads} />
+                <MonthOverviewBanner
+                  overview={overview}
+                  activeAgents={glance.activeAgents}
+                  reviewsCollected={glance.reviewsCollected}
+                  hoursSaved={hero.hoursSaved}
+                />
                 <HeroStrip {...hero} series={series} recovered={recovered} leads={leads} />
                 <Ticker events={data.events} />
               </>
