@@ -43,16 +43,16 @@ describe('PATCH /api/leads/[id]/status', () => {
   });
 
   it('rejects missing session_id with 400', async () => {
-    const res = await PATCH(req({ status: 'won' }) as never, { params });
+    const res = await PATCH(req({ status: 'booked' }) as never, { params });
     expect(res.status).toBe(400);
   });
 
   it('updates status scoped to session (demo session, no auth needed)', async () => {
     eqArgs.length = 0;
     maybeSingleMock.mockResolvedValueOnce({ data: { is_demo: true }, error: null });
-    const res = await PATCH(req({ status: 'won', session_id: 's1' }) as never, { params });
+    const res = await PATCH(req({ status: 'serviced', session_id: 's1' }) as never, { params });
     expect(res.status).toBe(200);
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'won' }));
+    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'serviced' }));
     expect(eqArgs).toContainEqual(['id', 'lead-1']);
     expect(eqArgs).toContainEqual(['session_id', 's1']);
   });
@@ -61,14 +61,14 @@ describe('PATCH /api/leads/[id]/status', () => {
     eqArgs.length = 0;
     maybeSingleMock.mockResolvedValueOnce({ data: { is_demo: false }, error: null });
     getUserMock.mockResolvedValueOnce({ data: { user: { id: 'u1' } } } as never);
-    const res = await PATCH(req({ status: 'lost', session_id: 's2' }) as never, { params });
+    const res = await PATCH(req({ status: 'quoted', session_id: 's2' }) as never, { params });
     expect(res.status).toBe(200);
   });
 
   it('rejects non-demo session when no user is signed in', async () => {
     maybeSingleMock.mockResolvedValueOnce({ data: { is_demo: false }, error: null });
     getUserMock.mockResolvedValueOnce({ data: { user: null } } as never);
-    const res = await PATCH(req({ status: 'won', session_id: 's3' }) as never, { params });
+    const res = await PATCH(req({ status: 'serviced', session_id: 's3' }) as never, { params });
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error).toBe('Sign in required.');
@@ -76,7 +76,7 @@ describe('PATCH /api/leads/[id]/status', () => {
 
   it('returns 404 when session is not found', async () => {
     maybeSingleMock.mockResolvedValueOnce({ data: null, error: null });
-    const res = await PATCH(req({ status: 'won', session_id: 'missing' }) as never, { params });
+    const res = await PATCH(req({ status: 'serviced', session_id: 'missing' }) as never, { params });
     expect(res.status).toBe(404);
   });
 

@@ -152,7 +152,7 @@ describe('DashboardView', () => {
     expect(screen.getByTestId('view-money')).toBeInTheDocument();
 
     // Switch to leads tab
-    fireEvent.click(screen.getByRole('button', { name: /leads/i }));
+    fireEvent.click(screen.getByRole('button', { name: /pipeline/i }));
     expect(screen.getByTestId('view-leads')).toBeInTheDocument();
 
     // Switch to agents tab

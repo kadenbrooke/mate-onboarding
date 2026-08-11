@@ -1,4 +1,4 @@
-import type { Lead } from '@/lib/metrics/leads';
+import type { Lead, LeadStatus, StageStatus } from '@/lib/metrics/leads';
 import { normalizeHandler } from './driverToggle';
 
 export type SortKey = 'location' | 'score' | 'status' | 'quote' | 'captured' | 'driver';
@@ -6,21 +6,21 @@ export type SortDir = 'asc' | 'desc';
 export interface SortEntry { key: SortKey; dir: SortDir }
 
 /** First-click direction per chip. Founder intent: score & quote high->low,
- *  status open>won>lost (asc rank), location A->Z, captured newest->oldest,
- *  driver agent->human (A->Z). */
+ *  status in pipeline order (open > booked > quoted > serviced, asc rank),
+ *  location A->Z, captured newest->oldest, driver agent->human (A->Z). */
 export const DEFAULT_DIR: Record<SortKey, SortDir> = {
   location: 'asc', score: 'desc', status: 'asc', quote: 'desc',
   captured: 'desc', driver: 'asc',
 };
 
-const STATUS_RANK: Record<Lead['status'], number> = { open: 0, won: 1, lost: 2 };
+const STATUS_RANK: Record<LeadStatus, number> = { open: 0, booked: 1, quoted: 2, serviced: 3 };
 
-/** Toggle semantics for the WON/LOST outcome control. Clicking the option that
- *  is already selected clears the outcome back to the neutral 'open' state (the
- *  schema's no-outcome value); clicking the other option switches to it.
- *  'open' is the same neutral value the status API and DB column already use --
- *  no new column, no new sentinel. */
-export function nextStatus(current: Lead['status'], clicked: 'won' | 'lost'): Lead['status'] {
+/** Toggle semantics for the Booked/Quoted/Serviced stage control. Clicking the
+ *  stage that is already set clears it back to the neutral 'open' state (the
+ *  schema's no-stage value); clicking a different stage moves straight to it,
+ *  in either direction -- an operator who mis-taps Serviced must be able to
+ *  walk it back to Booked without an intermediate step. */
+export function nextStatus(current: LeadStatus, clicked: StageStatus): LeadStatus {
   return current === clicked ? 'open' : clicked;
 }
 
@@ -29,7 +29,7 @@ export function searchLeads(leads: Lead[], query: string): Lead[] {
   const q = query.trim().toLowerCase();
   if (!q) return leads;
   return leads.filter(l =>
-    [l.name, l.service, l.city, l.phone, l.source]
+    [l.name, l.service, l.city, l.phone, l.email, l.address, l.source]
       .some(v => (v ?? '').toString().toLowerCase().includes(q)),
   );
 }

@@ -27,17 +27,17 @@ describe('TopBar', () => {
   it('marks Dashboard active on the dash root', () => {
     renderTopBar({ sessionId: 's1', businessName: 'J&C Asphalt', logoUrl: null, openIncidents: 0 });
     const dash = screen.getByRole('link', { name: /dashboard/i });
-    const leads = screen.getByRole('link', { name: /leads/i });
+    const pipeline = screen.getByRole('link', { name: /pipeline/i });
     expect(dash).toHaveAttribute('aria-current', 'page');
-    expect(leads).not.toHaveAttribute('aria-current');
+    expect(pipeline).not.toHaveAttribute('aria-current');
     expect(dash).toHaveAttribute('href', '/dash/s1');
-    expect(leads).toHaveAttribute('href', '/dash/s1/leads');
+    expect(pipeline).toHaveAttribute('href', '/dash/s1/pipeline');
   });
 
-  it('flips the active pill on the leads page', () => {
-    mockPathname.mockReturnValue('/dash/s1/leads');
+  it('flips the active pill on the pipeline page', () => {
+    mockPathname.mockReturnValue('/dash/s1/pipeline');
     renderTopBar({ sessionId: 's1', businessName: 'J&C Asphalt', logoUrl: null, openIncidents: 0 });
-    expect(screen.getByRole('link', { name: /leads/i })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: /pipeline/i })).toHaveAttribute('aria-current', 'page');
     expect(screen.getByRole('link', { name: /dashboard/i })).not.toHaveAttribute('aria-current');
   });
 
@@ -88,8 +88,8 @@ describe('TopBar', () => {
     expect(screen.getByRole('button', { name: /customize layout/i })).toBeInTheDocument();
   });
 
-  it('hides the Customize layout control on leads/assistant pages', () => {
-    mockPathname.mockReturnValue('/dash/s1/leads');
+  it('hides the Customize layout control on pipeline/assistant pages', () => {
+    mockPathname.mockReturnValue('/dash/s1/pipeline');
     renderTopBar({ sessionId: 's1', businessName: 'J&C Asphalt', logoUrl: null, openIncidents: 0 });
     expect(screen.queryByRole('button', { name: /customize layout/i })).toBeNull();
   });

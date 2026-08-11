@@ -13,7 +13,7 @@ import type { Lead } from './leads';
 
 const NOW = new Date('2026-07-28T12:00:00');
 
-function won(cents: number, daysAgo: number): Lead {
+function serviced(cents: number, daysAgo: number): Lead {
   return {
     id: `l-${cents}-${daysAgo}`,
     name: 'X',
@@ -22,7 +22,7 @@ function won(cents: number, daysAgo: number): Lead {
     source: 'referral',
     referrer_name: null,
     score: 80,
-    status: 'won',
+    status: 'serviced',
     quote_cents: cents,
     contacted: true,
     after_hours: false,
@@ -40,7 +40,7 @@ describe('recoveredDailySeries', () => {
   });
 
   it('is cumulative and ends at total recovered', () => {
-    const leads = [won(10_000, 20), won(5_000, 5), won(2_500, 0)];
+    const leads = [serviced(10_000, 20), serviced(5_000, 5), serviced(2_500, 0)];
     const pts = recoveredDailySeries(leads, 30, NOW);
     const values = pts.map(p => p.cents);
     // Monotone non-decreasing
@@ -51,30 +51,30 @@ describe('recoveredDailySeries', () => {
   });
 
   it('carries wins before the window as the baseline', () => {
-    const leads = [won(100_000, 90), won(5_000, 2)];
+    const leads = [serviced(100_000, 90), serviced(5_000, 2)];
     const pts = recoveredDailySeries(leads, 30, NOW);
     expect(pts[0].cents).toBe(100_000);
     expect(pts[29].cents).toBe(105_000);
   });
 
-  it('ignores non-won leads', () => {
-    const lost = { ...won(50_000, 3), status: 'lost' } as Lead;
-    const pts = recoveredDailySeries([lost], 30, NOW);
+  it('ignores leads that are not serviced yet', () => {
+    const stillQuoted = { ...serviced(50_000, 3), status: 'quoted' } as Lead;
+    const pts = recoveredDailySeries([stillQuoted], 30, NOW);
     expect(pts[29].cents).toBe(0);
   });
 });
 
 describe('recoveredWowDeltaCents', () => {
   it('is positive when this week beats last week', () => {
-    expect(recoveredWowDeltaCents([won(10_000, 2), won(4_000, 10)], NOW)).toBe(6_000);
+    expect(recoveredWowDeltaCents([serviced(10_000, 2), serviced(4_000, 10)], NOW)).toBe(6_000);
   });
 
   it('is negative when last week was bigger', () => {
-    expect(recoveredWowDeltaCents([won(3_000, 1), won(9_000, 8)], NOW)).toBe(-6_000);
+    expect(recoveredWowDeltaCents([serviced(3_000, 1), serviced(9_000, 8)], NOW)).toBe(-6_000);
   });
 
   it('is zero with no recent wins', () => {
-    expect(recoveredWowDeltaCents([won(9_000, 40)], NOW)).toBe(0);
+    expect(recoveredWowDeltaCents([serviced(9_000, 40)], NOW)).toBe(0);
   });
 });
 

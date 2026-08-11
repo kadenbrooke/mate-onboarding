@@ -1,7 +1,7 @@
 'use client';
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { ringSegments } from '@/lib/metrics/ring';
+import { ringSegments, ringTrackDash } from '@/lib/metrics/ring';
 import { CARD_TRACK, CARD_MUTED, NUM_TABLE, FONT_NUM, FONT_BODY } from '@/lib/theme';
 
 // RingStat -- the ONE donut pattern for the whole dashboard.
@@ -23,10 +23,40 @@ import { CARD_TRACK, CARD_MUTED, NUM_TABLE, FONT_NUM, FONT_BODY } from '@/lib/th
 // rings read as siblings. Zero / all-zero inputs degrade gracefully:
 // `ringSegments` yields zero-length dashes (no NaN, no negative arcs) and the
 // bare track circle shows through.
+//
+// `variant="half"` renders the same ring as a 180-degree gauge (9 o'clock ->
+// 12 -> 3) for two-way comparisons where a full donut over-reads as a whole.
+// Everything else (legend, center swap, colors, tokens) is identical, so a
+// half ring is still the same component and not a second look.
 
 const R = 40;
 const GAP_DEG = 2;
 const CIRC = 2 * Math.PI * R;
+
+type RingVariant = 'full' | 'half';
+
+// Per-variant SVG frame + text baselines. The half gauge sits in the top of its
+// box, so its readout drops into the empty bowl underneath the arc.
+const GEO = {
+  full: {
+    sweepDeg: 360,
+    rotate: -90,
+    viewBox: '0 0 100 100',
+    heightRatio: 1,
+    value: { withSub: 44, plain: 47 },
+    label: { withSub: 58, plain: 61 },
+    sub: 69,
+  },
+  half: {
+    sweepDeg: 180,
+    rotate: 180,
+    viewBox: '0 0 100 62',
+    heightRatio: 0.62,
+    value: { withSub: 38, plain: 42 },
+    label: { withSub: 48, plain: 53 },
+    sub: 58,
+  },
+} as const satisfies Record<RingVariant, unknown>;
 
 export type RingStatSegment = {
   key: string;
@@ -52,7 +82,7 @@ export type RingStatCenter = {
 };
 
 export function RingStat({
-  idPrefix, segments, center, ariaLabel, size = 104, caption, aside,
+  idPrefix, segments, center, ariaLabel, size = 104, caption, aside, variant = 'full',
 }: {
   idPrefix: string;
   segments: RingStatSegment[];
@@ -64,13 +94,17 @@ export function RingStat({
   caption?: string;
   /** Extra content rendered under the legend (e.g. an adjacent hero number). */
   aside?: ReactNode;
+  /** 'half' draws a 180-degree gauge instead of a full donut. */
+  variant?: RingVariant;
 }) {
   const [focus, setFocus] = useState<string | null>(null);
+  const geo = GEO[variant];
 
   const segs = ringSegments(
     segments.map(s => ({ key: s.key, value: Math.max(0, s.arcValue ?? s.value) })),
     R,
     GAP_DEG,
+    geo.sweepDeg,
   );
 
   const focused = focus ? segments.find(s => s.key === focus) ?? null : null;
@@ -86,9 +120,22 @@ export function RingStat({
       style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}
       onMouseLeave={() => setFocus(null)}
     >
-      <svg width={size} height={size} viewBox="0 0 100 100" style={{ flexShrink: 0 }} role="img" aria-label={ariaLabel}>
-        <g transform="translate(50,50) rotate(-90)">
-          <circle r={R} fill="none" stroke={CARD_TRACK} strokeWidth={12} />
+      <svg
+        width={size}
+        height={Math.round(size * geo.heightRatio)}
+        viewBox={geo.viewBox}
+        style={{ flexShrink: 0 }}
+        role="img"
+        aria-label={ariaLabel}
+      >
+        <g transform={`translate(50,50) rotate(${geo.rotate})`}>
+          <circle
+            r={R}
+            fill="none"
+            stroke={CARD_TRACK}
+            strokeWidth={12}
+            strokeDasharray={`${ringTrackDash(R, geo.sweepDeg)} ${CIRC}`}
+          />
           {segs.map(s => {
             const seg = segments.find(x => x.key === s.key)!;
             return (
@@ -113,7 +160,7 @@ export function RingStat({
         <text
           data-testid={`${idPrefix}-center`}
           x={50}
-          y={hasSub ? 44 : 47}
+          y={hasSub ? geo.value.withSub : geo.value.plain}
           textAnchor="middle"
           dominantBaseline="middle"
           fontSize={19}
@@ -123,11 +170,11 @@ export function RingStat({
         >
           {shown.display}
         </text>
-        <text x={50} y={hasSub ? 58 : 61} textAnchor="middle" fontSize={8} letterSpacing={1} fontFamily={FONT_BODY} fill={shown.color}>
+        <text x={50} y={hasSub ? geo.label.withSub : geo.label.plain} textAnchor="middle" fontSize={8} letterSpacing={1} fontFamily={FONT_BODY} fill={shown.color}>
           {shown.label}
         </text>
         {hasSub && (
-          <text data-testid={`${idPrefix}-center-sub`} x={50} y={69} textAnchor="middle" fontSize={6.5} fontFamily={FONT_BODY} fill={CARD_MUTED}>
+          <text data-testid={`${idPrefix}-center-sub`} x={50} y={geo.sub} textAnchor="middle" fontSize={6.5} fontFamily={FONT_BODY} fill={CARD_MUTED}>
             {shown.sub}
           </text>
         )}

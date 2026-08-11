@@ -3,7 +3,7 @@ import type { Lead } from '@/lib/metrics/leads';
 import { journeyRiver } from '@/lib/metrics/journey';
 import { moneyShort } from '@/lib/metrics/format';
 import { Card } from '../Card';
-import { brandVar, FREE_GREEN, LOST_BROWN, FONT_BODY, CARD_MUTED, CARD_TRACK, CARD_HAIRLINE } from '@/lib/theme';
+import { STAGE_COLOR, FONT_BODY, CARD_MUTED, CARD_TRACK, CARD_HAIRLINE } from '@/lib/theme';
 
 // d3-sankey layout over: Quoted -> Won / Still open / Lost. Source-level
 // detail (web form, missed call, etc.) now lives entirely in the Source
@@ -16,7 +16,7 @@ import { brandVar, FREE_GREEN, LOST_BROWN, FONT_BODY, CARD_MUTED, CARD_TRACK, CA
 // ~5px rendered, which was unreadable. The narrower mobile viewBox keeps
 // rendered text at ~9px.
 
-type NodeExtra = { id: string; label: string; color: string; kind: 'quoted' | 'won' | 'open' | 'lost' };
+type NodeExtra = { id: string; label: string; color: string; kind: 'priced' | 'open' | 'booked' | 'quoted' | 'serviced' };
 type LinkExtra = { color: string };
 
 type RiverGeometry = {
@@ -81,10 +81,10 @@ function RiverSvg({ nodes, links, geo, variant }: {
             width={(n.x1 ?? 0) - (n.x0 ?? 0)}
             height={Math.max(2, (n.y1 ?? 0) - (n.y0 ?? 0))}
             rx={4}
-            fill={n.kind === 'quoted' ? CARD_TRACK : n.color}
-            stroke={n.kind === 'quoted' ? CARD_HAIRLINE : 'none'}
+            fill={n.kind === 'priced' ? CARD_TRACK : n.color}
+            stroke={n.kind === 'priced' ? CARD_HAIRLINE : 'none'}
           />
-          {n.kind === 'quoted' && (
+          {n.kind === 'priced' && (
             <text
               x={((n.x0 ?? 0) + (n.x1 ?? 0)) / 2}
               y={(n.y0 ?? 0) - 7}
@@ -97,7 +97,7 @@ function RiverSvg({ nodes, links, geo, variant }: {
               {n.label}
             </text>
           )}
-          {(n.kind === 'won' || n.kind === 'open' || n.kind === 'lost') && (
+          {n.kind !== 'priced' && (
             <text
               x={(n.x1 ?? 0) + 8}
               y={((n.y0 ?? 0) + (n.y1 ?? 0)) / 2}
@@ -105,7 +105,7 @@ function RiverSvg({ nodes, links, geo, variant }: {
               fontSize={10}
               fontFamily={FONT_BODY}
               fontWeight={700}
-              fill={n.kind === 'won' ? FREE_GREEN : n.kind === 'lost' ? LOST_BROWN : brandVar}
+              fill={n.color}
             >
               {n.label}
             </text>
@@ -135,21 +135,22 @@ export function JourneyRiver({ leads, showLabel = true }: { leads: Lead[]; showL
     );
   }
 
-  const nodes: NodeExtra[] = [{ id: 'quoted', label: `Quoted ${river.quoted}`, color: '#8a8378', kind: 'quoted' }];
+  const nodes: NodeExtra[] = [{ id: 'priced', label: `Priced ${river.priced}`, color: '#8a8378', kind: 'priced' }];
   const links: { source: string; target: string; value: number; color: string }[] = [];
 
-  if (river.won > 0) {
-    nodes.push({ id: 'won', label: `Won ${river.won} · ${moneyShort(river.wonCents)}`, color: FREE_GREEN, kind: 'won' });
-    links.push({ source: 'quoted', target: 'won', value: river.won, color: FREE_GREEN });
-  }
-  if (river.open > 0) {
-    nodes.push({ id: 'open', label: `Still open ${river.open}`, color: brandVar, kind: 'open' });
-    links.push({ source: 'quoted', target: 'open', value: river.open, color: brandVar });
-  }
-  // Zero-lost omits the node entirely so the river never renders an empty slice.
-  if (river.lost > 0) {
-    nodes.push({ id: 'lost', label: `Lost ${river.lost}`, color: LOST_BROWN, kind: 'lost' });
-    links.push({ source: 'quoted', target: 'lost', value: river.lost, color: LOST_BROWN });
+  // One branch per pipeline stage. A zero-count stage is omitted entirely so
+  // the river never renders an empty slice.
+  const branches = [
+    { kind: 'open' as const, count: river.open, label: `Still open ${river.open}` },
+    { kind: 'booked' as const, count: river.booked, label: `Booked ${river.booked}` },
+    { kind: 'quoted' as const, count: river.quoted, label: `Quoted ${river.quoted}` },
+    { kind: 'serviced' as const, count: river.serviced, label: `Serviced ${river.serviced} · ${moneyShort(river.servicedCents)}` },
+  ];
+  for (const b of branches) {
+    if (b.count <= 0) continue;
+    const color = STAGE_COLOR[b.kind];
+    nodes.push({ id: b.kind, label: b.label, color, kind: b.kind });
+    links.push({ source: 'priced', target: b.kind, value: b.count, color });
   }
 
   return (

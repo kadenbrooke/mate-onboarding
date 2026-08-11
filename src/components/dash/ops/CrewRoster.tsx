@@ -1,31 +1,63 @@
 // CrewRoster - YOUR CREW card.
-// Each row shows a 34px chip + label + status pill.
-// Chips are initials placeholders; 8-bit glowing character sprites are a future
-// pass pending founder decision (Plan 3).
-// Status mapping: DB values are 'live', 'demo', 'under_construction', 'complete'.
-// Only 'live' (and 'active' for forward-compat) renders the LIVE pill; all else
-// render LOCKED. This matches how capability.ts defines "usable".
+//
+// The roster is the four product agents by their real names, always all four,
+// in fixed order. A client who has only bought two still sees the other two
+// (LOCKED) -- that is the point of the card. Status comes from the client's
+// client_capabilities rows, matched by capability_key (with the legacy
+// first_responder_sms alias); an agent with no row is LOCKED, never assumed
+// live. DB status values are 'live', 'demo', 'under_construction', 'complete';
+// only 'live' (and 'active' for forward-compat) renders the LIVE pill, matching
+// how capability.ts defines "usable".
+//
+// Each row's chip carries a Phosphor icon for the agent's job rather than
+// initials: lightning (instant response), plant (nurture), arrows-clockwise
+// (win-back), star (reviews). Icon language matches the Auto Mate 5 demo.
 
+import type { ReactNode } from 'react';
+import { Lightning, Plant, ArrowsClockwise, Star } from '@phosphor-icons/react';
 import { Card } from '../Card';
 import { FONT_BODY, FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, CARD_FG, CARD_HAIRLINE } from '@/lib/theme';
-import { AGENT_LABELS } from '@/lib/metrics/colors';
 import type { DashCapability } from '../types';
 
-const UNLOCK_HINTS: Record<string, string> = {
-  gbp_reviews: 'unlocks when Google is connected',
-};
-
-function initials(label: string): string {
-  const words = label.trim().split(/\s+/);
-  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
-  return label.slice(0, 2).toUpperCase();
-}
+// Canonical crew, display order fixed. `aliases` are the capability_key values
+// a backend row may legitimately use for this agent.
+const CREW: { key: string; label: string; aliases: string[]; icon: ReactNode; hint: string }[] = [
+  {
+    key: 'first_responder', label: 'First Responder',
+    aliases: ['first_responder', 'first_responder_sms'],
+    icon: <Lightning size={17} weight="fill" />,
+    hint: 'answers every lead in seconds',
+  },
+  {
+    key: 'cultivator', label: 'Cultivator',
+    aliases: ['cultivator'],
+    icon: <Plant size={17} weight="fill" />,
+    hint: 'follows up until they book',
+  },
+  {
+    key: 'reactivator', label: 'Reactivator',
+    aliases: ['reactivator'],
+    icon: <ArrowsClockwise size={17} weight="bold" />,
+    hint: 'coming soon',
+  },
+  {
+    key: 'reputation_manager', label: 'Reputation Manager',
+    aliases: ['reputation_manager', 'reputation_builder', 'reputation', 'gbp_reviews'],
+    icon: <Star size={17} weight="fill" />,
+    hint: 'coming soon',
+  },
+];
 
 function isLive(status: string): boolean {
   return status === 'live' || status === 'active';
 }
 
-function CrewChip({ label, live }: { label: string; live: boolean }) {
+/** True when one of this agent's capability rows says it is live. */
+function agentIsLive(aliases: string[], capabilities: DashCapability[]): boolean {
+  return capabilities.some(c => aliases.includes(c.key) && isLive(c.status));
+}
+
+function CrewChip({ icon, live }: { icon: ReactNode; live: boolean }) {
   const bg = live
     ? `radial-gradient(circle at 40% 35%, ${brandVar}, #a0340f)`
     : CARD_TRACK;
@@ -41,14 +73,10 @@ function CrewChip({ label, live }: { label: string; live: boolean }) {
         alignItems: 'center',
         justifyContent: 'center',
         flexShrink: 0,
-        fontSize: 11,
-        fontWeight: 700,
-        fontFamily: FONT_BODY,
         color: live ? '#fff' : CARD_MUTED,
-        letterSpacing: 0.5,
       }}
     >
-      {initials(label)}
+      {icon}
     </div>
   );
 }
@@ -92,15 +120,14 @@ function StatusPill({ live }: { live: boolean }) {
   );
 }
 
-function CrewRow({ cap }: { cap: DashCapability }) {
-  const live = isLive(cap.status);
-  const hint = live ? null : (UNLOCK_HINTS[cap.key] ?? 'unlocks soon');
-  // Plain-language name when the key matches one of the four agents (see
-  // AGENT_LABELS); falls back to whatever the backend sent for anything
-  // else (e.g. 'gbp_reviews'), so this never blanks out on unknown keys.
-  const displayLabel = AGENT_LABELS[cap.key] ?? cap.label;
+function CrewRow({ agent, live }: {
+  agent: (typeof CREW)[number];
+  live: boolean;
+}) {
   return (
     <div
+      data-testid={`crew-row-${agent.key}`}
+      data-live={live ? 'true' : 'false'}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -109,7 +136,7 @@ function CrewRow({ cap }: { cap: DashCapability }) {
         marginTop: 10,
       }}
     >
-      <CrewChip label={displayLabel} live={live} />
+      <CrewChip icon={agent.icon} live={live} />
       <div style={{ flex: 1, minWidth: 0 }}>
         <div
           style={{
@@ -120,20 +147,18 @@ function CrewRow({ cap }: { cap: DashCapability }) {
             lineHeight: '1.2',
           }}
         >
-          {displayLabel}
+          {agent.label}
         </div>
-        {hint && (
-          <div
-            style={{
-              fontSize: 10,
-              opacity: 0.55,
-              fontFamily: FONT_BODY,
-              marginTop: 2,
-            }}
-          >
-            {hint}
-          </div>
-        )}
+        <div
+          style={{
+            fontSize: 10,
+            opacity: 0.55,
+            fontFamily: FONT_BODY,
+            marginTop: 2,
+          }}
+        >
+          {agent.hint}
+        </div>
       </div>
       <StatusPill live={live} />
     </div>
@@ -141,21 +166,11 @@ function CrewRow({ cap }: { cap: DashCapability }) {
 }
 
 export function CrewRoster({ capabilities }: { capabilities: DashCapability[] }) {
-  const body =
-    capabilities.length === 0 ? (
-      <div
-        style={{
-          opacity: 0.45,
-          fontSize: 12,
-          fontFamily: FONT_BODY,
-          marginTop: 10,
-        }}
-      >
-        Your crew assembles as each agent goes live
-      </div>
-    ) : (
-      capabilities.map((cap) => <CrewRow key={cap.key} cap={cap} />)
-    );
-
-  return <Card label="YOUR CREW">{body}</Card>;
+  return (
+    <Card label="YOUR CREW">
+      {CREW.map(agent => (
+        <CrewRow key={agent.key} agent={agent} live={agentIsLive(agent.aliases, capabilities)} />
+      ))}
+    </Card>
+  );
 }

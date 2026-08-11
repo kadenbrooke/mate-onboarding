@@ -215,7 +215,7 @@ export function DashboardView({ session, leads, data, locks }: {
     // in case it comes back.
     leads: [
       { id: 'm-trend', node: <TrendCard leads={leads} /> },
-      { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/leads`} label="Open full leads table" /> },
+      { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/pipeline`} label="Open full pipeline table" /> },
       { id: 'm-source', node: <SourceDonut leads={leads} /> },
       { id: 'm-area', node: <AreaBars leads={leads} /> },
       { id: 'm-dayclock', node: dayClockCard },
@@ -253,7 +253,7 @@ export function DashboardView({ session, leads, data, locks }: {
           grid cells so the IconRail scroll anchors still resolve. */}
       <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <MonthOverviewBanner overview={overview} reputation={data.reputation} ads={data.ads} />
-        <HeroStrip {...hero} series={series} recovered={recovered} />
+        <HeroStrip {...hero} series={series} recovered={recovered} leads={leads} />
         <Ticker events={data.events} />
         <MovableDashGrid
           sessionId={session.id}
@@ -279,7 +279,7 @@ export function DashboardView({ session, leads, data, locks }: {
             {view === 'home' && (
               <>
                 <MonthOverviewBanner overview={overview} reputation={data.reputation} ads={data.ads} />
-                <HeroStrip {...hero} series={series} recovered={recovered} />
+                <HeroStrip {...hero} series={series} recovered={recovered} leads={leads} />
                 <Ticker events={data.events} />
               </>
             )}

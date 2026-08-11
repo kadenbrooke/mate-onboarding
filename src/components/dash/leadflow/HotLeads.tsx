@@ -71,7 +71,7 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
           {hot.map(l => (
             <Link
               key={l.id}
-              href={`/dash/${sessionId}/leads?spotlight=${l.id}`}
+              href={`/dash/${sessionId}/pipeline?spotlight=${l.id}`}
               // minHeight 44: each row is a full-size touch target on mobile
               style={{
                 display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none',

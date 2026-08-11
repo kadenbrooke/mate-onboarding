@@ -8,8 +8,8 @@ const NOW = new Date('2026-07-28T12:00:00');
 
 function makePoints() {
   const leads = [{
-    id: 'l1', name: 'X', city: null, service: null, source: 'referral',
-    referrer_name: null, score: 80, status: 'won', quote_cents: 465_976,
+    id: 'l1', name: 'X', city: null, service: null, phone: null, source: 'referral',
+    referrer_name: null, score: 80, status: 'serviced', quote_cents: 465_976,
     contacted: true, after_hours: false, first_reply_seconds: null,
     created_at: new Date(NOW.getTime() - 3 * 86_400_000).toISOString(),
   }] as Lead[];

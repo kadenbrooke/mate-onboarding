@@ -85,7 +85,7 @@ describe('HotLeads (with merged quality gauge)', () => {
     render(<HotLeads leads={[lead({ score: 92 })]} sessionId="s1" />);
     // score appears in the row and in the average gauge
     expect(screen.getAllByText('92').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByRole('link')).toHaveAttribute('href', expect.stringContaining('/dash/s1/leads?spotlight='));
+    expect(screen.getByRole('link')).toHaveAttribute('href', expect.stringContaining('/dash/s1/pipeline?spotlight='));
   });
 
   it('shows the average quality arc on the same card', () => {

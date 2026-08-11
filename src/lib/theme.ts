@@ -72,6 +72,36 @@ export function scoreColor(score: number): string {
 
 export const brandVar = 'var(--brand-primary, #e14d1a)';
 
+// ---------------------------------------------------------------------------
+// Pipeline stage colors (open -> booked -> quoted -> serviced).
+// A cool-to-warm-to-green progression so the funnel reads left to right without
+// labels. Deliberately NOT brand orange: the pipeline is a white-label surface
+// and the client's brand color already carries the 'open / on the table' state.
+// ---------------------------------------------------------------------------
+
+/** Booked: the free on-site estimate is on the calendar. */
+export const STAGE_BOOKED = '#3d7ea6';
+/** Quoted: the estimate is done and the price is out. */
+export const STAGE_QUOTED = '#c08a0a';
+/** Serviced: job done and paid (successor to the old WON green). */
+export const STAGE_SERVICED = FREE_GREEN;
+/** Open: nothing scheduled yet. Uses the client's brand color. */
+export const STAGE_OPEN = brandVar;
+
+export const STAGE_COLOR = {
+  open: STAGE_OPEN,
+  booked: STAGE_BOOKED,
+  quoted: STAGE_QUOTED,
+  serviced: STAGE_SERVICED,
+} as const;
+
+export const STAGE_LABEL = {
+  open: 'OPEN',
+  booked: 'BOOKED',
+  quoted: 'QUOTED',
+  serviced: 'SERVICED',
+} as const;
+
 /** Driver / handler semantics on the leads table.
  *  Green = Mate's agent is auto-handling; amber = a human (the client) has taken over.
  *  Deliberately semantic (reuses the success green), NOT brand orange -- this is a

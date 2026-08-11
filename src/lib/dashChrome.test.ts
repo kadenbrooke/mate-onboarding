@@ -7,15 +7,15 @@ describe('activeNavKey', () => {
     expect(activeNavKey('/dash/abc-123/')).toBe('dashboard');
   });
 
-  it('marks leads active on the leads page', () => {
-    expect(activeNavKey('/dash/abc-123/leads')).toBe('leads');
-    expect(activeNavKey('/dash/abc-123/leads/')).toBe('leads');
+  it('marks pipeline active on the pipeline page', () => {
+    expect(activeNavKey('/dash/abc-123/pipeline')).toBe('pipeline');
+    expect(activeNavKey('/dash/abc-123/pipeline/')).toBe('pipeline');
   });
 });
 
 describe('activeNavKey assistant', () => {
   it('detects assistant', () => { expect(activeNavKey('/dash/abc/assistant')).toBe('assistant'); });
-  it('detects leads', () => { expect(activeNavKey('/dash/abc/leads')).toBe('leads'); });
+  it('detects pipeline', () => { expect(activeNavKey('/dash/abc/pipeline')).toBe('pipeline'); });
   it('defaults to dashboard', () => { expect(activeNavKey('/dash/abc')).toBe('dashboard'); });
 });
 

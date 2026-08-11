@@ -75,7 +75,10 @@ const NAMES = ['Mike R.','Dana W.','Carl B.','Joe M.','Karen B.','Todd R.','Amy 
 if (!skipLeads) {
   const rows = Array.from({ length: 40 }, (_, i) => {
     const daysAgo = Math.floor(Math.random() * 42);
-    const status = Math.random() < 0.22 ? 'won' : Math.random() < 0.12 ? 'lost' : 'open';
+    // Pipeline stages (2026-08-11): open -> booked -> quoted -> serviced.
+    // Weighted like a real funnel so every stage renders on a seeded demo.
+    const roll = Math.random();
+    const status = roll < 0.18 ? 'serviced' : roll < 0.36 ? 'quoted' : roll < 0.52 ? 'booked' : 'open';
     return {
       session_id: sessionId,
       name: NAMES[i % NAMES.length],
