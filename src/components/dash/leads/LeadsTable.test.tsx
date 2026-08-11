@@ -240,4 +240,63 @@ describe('LeadsTable row -> thread navigation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'quoted Mike R.' }));
     expect(pushMock).not.toHaveBeenCalled();
   });
+
+  // The row click IS the way into a lead's SMS thread. Every per-row control
+  // added to the pipeline table has to stopPropagation or it swallows that
+  // click, so each one is pinned here on BOTH breakpoints.
+  it('clicking a mobile card opens the thread too', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable leads={[lead({})]} sessionId="s1" spotlightId={null} />);
+    fireEvent.click(screen.getByTestId('lead-card-l1'));
+    expect(pushMock).toHaveBeenCalledWith('/dash/s1/pipeline?spotlight=l1');
+  });
+
+  it('no per-row control on the desktop row swallows or hijacks the row click', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable
+      leads={[lead({ phone: '+18015551234', email: 'm@x.com', address: '12 Main St' })]}
+      sessionId="s1" spotlightId={null}
+    />);
+    for (const el of [
+      screen.getByRole('button', { name: 'booked Mike R.' }),
+      screen.getByTestId('contact-dots-l1-phone'),
+      screen.getByTestId('driver-pill-l1'),
+      screen.getByTestId('delete-lead-l1'),
+    ]) {
+      fireEvent.click(el);
+      expect(pushMock).not.toHaveBeenCalled();
+    }
+    // ...and the row itself still navigates afterwards.
+    fireEvent.click(screen.getByTestId('lead-row-l1'));
+    expect(pushMock).toHaveBeenCalledWith('/dash/s1/pipeline?spotlight=l1');
+  });
+
+  it('no per-row control on the mobile card swallows or hijacks the card click', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable
+      leads={[lead({ phone: '+18015551234', email: 'm@x.com' })]}
+      sessionId="s1" spotlightId={null}
+    />);
+    for (const el of [
+      screen.getByRole('button', { name: 'mark serviced Mike R.' }),
+      screen.getByTestId('contact-dots-card-l1-phone'),
+      screen.getByTestId('driver-pill-card-l1'),
+      screen.getByTestId('delete-lead-card-l1'),
+    ]) {
+      fireEvent.click(el);
+      expect(pushMock).not.toHaveBeenCalled();
+    }
+    fireEvent.click(screen.getByTestId('lead-card-l1'));
+    expect(pushMock).toHaveBeenCalledWith('/dash/s1/pipeline?spotlight=l1');
+  });
+
+  it('clicking a different row while one is spotlighted switches threads', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable
+      leads={[lead({ id: 'l1' }), lead({ id: 'l2', name: 'Dana W.' })]}
+      sessionId="s1" spotlightId="l1"
+    />);
+    fireEvent.click(screen.getByTestId('lead-row-l2'));
+    expect(pushMock).toHaveBeenCalledWith('/dash/s1/pipeline?spotlight=l2');
+  });
 });

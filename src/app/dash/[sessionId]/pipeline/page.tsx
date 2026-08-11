@@ -27,14 +27,21 @@ export default async function PipelinePage({ params, searchParams }: {
     .order('contacted', { ascending: true }).order('score', { ascending: false })
     .limit(500);
 
-  let thread: { messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string } | null = null;
+  let thread: {
+    messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null;
+  } | null = null;
   if (spotlight) {
     const { data: lead } = await supabase.from('client_leads')
-      .select('id, handler').eq('id', spotlight).eq('session_id', sessionId).single();
+      .select('id, handler, name').eq('id', spotlight).eq('session_id', sessionId).single();
     if (lead) {
       const { data: messages } = await supabase.from('lead_messages')
         .select('*').eq('lead_id', spotlight).eq('session_id', sessionId).order('created_at', { ascending: true }).limit(200);
-      thread = { messages: (messages ?? []) as LeadMessage[], handler: (lead.handler ?? 'agent') as 'agent' | 'human', leadId: lead.id };
+      thread = {
+        messages: (messages ?? []) as LeadMessage[],
+        handler: (lead.handler ?? 'agent') as 'agent' | 'human',
+        leadId: lead.id,
+        leadName: (lead.name ?? null) as string | null,
+      };
     }
   }
 
@@ -46,7 +53,13 @@ export default async function PipelinePage({ params, searchParams }: {
       </div>
       {thread && (
         <div style={{ marginBottom: 12 }}>
-          <LeadThread leadId={thread.leadId} sessionId={sessionId} handler={thread.handler} messages={thread.messages} />
+          <LeadThread
+            leadId={thread.leadId}
+            sessionId={sessionId}
+            handler={thread.handler}
+            messages={thread.messages}
+            leadName={thread.leadName}
+          />
         </div>
       )}
       <div style={{ background: BG_CARD, borderRadius: 16, padding: 8, boxShadow: CARD_SHADOW }}>

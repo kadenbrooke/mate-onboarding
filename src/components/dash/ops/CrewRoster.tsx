@@ -14,7 +14,7 @@
 // (win-back), star (reviews). Icon language matches the Auto Mate 5 demo.
 
 import type { ReactNode } from 'react';
-import { Lightning, Plant, ArrowsClockwise, Star } from '@phosphor-icons/react';
+import { Lightning, Plant, SquaresFour, ArrowsClockwise, Star } from '@phosphor-icons/react';
 import { Card } from '../Card';
 import { FONT_BODY, FREE_GREEN, brandVar, CARD_TRACK, CARD_MUTED, CARD_FG, CARD_HAIRLINE } from '@/lib/theme';
 import { CREW_AGENTS, isAgentLive } from '@/lib/metrics/crew';
@@ -26,8 +26,11 @@ import type { DashCapability } from '../types';
 const PRESENTATION: Record<string, { icon: ReactNode; hint: string }> = {
   first_responder: { icon: <Lightning size={17} weight="fill" />, hint: 'answers every lead in seconds' },
   cultivator: { icon: <Plant size={17} weight="fill" />, hint: 'follows up until they book' },
+  // SquaresFour is already the Dashboard icon in the top bar; Command Center is
+  // that dashboard, so it carries the same glyph.
+  command_center: { icon: <SquaresFour size={17} weight="fill" />, hint: 'this dashboard, your whole operation' },
   reactivator: { icon: <ArrowsClockwise size={17} weight="bold" />, hint: 'coming soon' },
-  reputation_manager: { icon: <Star size={17} weight="fill" />, hint: 'coming soon' },
+  reputation_builder: { icon: <Star size={17} weight="fill" />, hint: 'coming soon' },
 };
 
 function CrewChip({ icon, live }: { icon: ReactNode; live: boolean }) {
@@ -143,7 +146,7 @@ export function CrewRoster({ capabilities }: { capabilities: DashCapability[] })
   return (
     <Card label="YOUR CREW">
       {CREW_AGENTS.map(agent => (
-        <CrewRow key={agent.key} agent={agent} live={isAgentLive(agent.aliases, capabilities)} />
+        <CrewRow key={agent.key} agent={agent} live={isAgentLive(agent, capabilities)} />
       ))}
     </Card>
   );
