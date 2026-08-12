@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import type { Metadata } from 'next';
 import 'react-grid-layout/css/styles.css';
 import { redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -20,6 +21,18 @@ async function signOutAction() {
 interface DashLayoutProps {
   children: ReactNode;
   params: Promise<{ sessionId: string }>;
+}
+
+// Point every dash at its OWN manifest, overriding the root layout's static
+// `/manifest.json`. Android Chrome installs a WebAPK from the manifest and
+// launches its `start_url`, ignoring the page the user tapped from -- the static
+// manifest's `start_url: /onboard` therefore dumped every installed client on
+// the login gate. See src/app/api/manifest/route.ts.
+export async function generateMetadata({ params }: DashLayoutProps): Promise<Metadata> {
+  const { sessionId } = await params;
+  // Pass the raw segment through: the route validates it and keeps the "demo"
+  // alias intact so a /dash/demo install reads as /dash/demo.
+  return { manifest: `/api/manifest?session=${encodeURIComponent(sessionId)}` };
 }
 
 export default async function DashLayout({ children, params }: DashLayoutProps) {

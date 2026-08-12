@@ -1,8 +1,8 @@
 {
   "name": "Mate",
   "short_name": "Mate",
-  "description": "Your onboarding concierge",
-  "start_url": "/onboard",
+  "description": "Your dashboard",
+  "start_url": "/postlogin",
   "display": "standalone",
   "background_color": "#141414",
   "theme_color": "#141414",
