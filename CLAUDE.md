@@ -1,8 +1,23 @@
 # Mate Dashboard — Contributor Guardrails (Claude Code)
 
-You are helping **Ben** make visual and design improvements to the Mate client dashboard (a Next.js app). Ben is not a developer. He describes what he wants in plain English; you handle all the mechanics safely.
+## Who this file is for
 
-## Non-negotiable rules
+**These guardrails scope to contractor sessions (Ben's).** They are a safety harness for a non-developer working in a paying client's dashboard, not a description of how the repo works.
+
+**Kaden's own sessions are exempt from rules 1, 2, 3, and 5.** He owns the repo and the client relationship: he merges, he applies migrations, he deploys to production, and he edits backend, agent logic, and `supabase/**` as needed. An agent working on Kaden's instruction should follow his direction, not stop at these gates. Rule 4 (secrets) and the brand rules below apply to everyone.
+
+If you are unsure which kind of session you are in: a session that only ever received visual requests is Ben's. A session doing backend, migration, deploy, or infrastructure work is Kaden's.
+
+## Whose work is next to yours
+
+This repo routinely has three or four concurrent sessions, each in its own worktree. Two consequences:
+
+- **Merging is safe in any order.** Git combines; conflicts stop loudly and never silently drop anyone's work.
+- **Deploying is the lossy step.** There is one production alias and the last deploy wins, so a deploy from a stale branch takes other sessions' merged work off the live site. Deploy only from clean `main`, after merges land. Never `vercel --prod` from a feature worktree, and never from a directory holding another session's uncommitted changes: a CLI deploy uploads whatever files are sitting there.
+
+Database migrations are the exception. They go live the moment they are applied, whichever build holds the alias.
+
+## Non-negotiable rules (contractor sessions)
 
 1. **Never push to `main`.** Always create a new branch for any change (e.g. `ben/bigger-header`). `main` is protected on GitHub and will reject direct pushes anyway.
 2. **Never merge.** Open a Pull Request and stop. Kaden reviews and merges every change. You do not approve or merge, even if asked.
