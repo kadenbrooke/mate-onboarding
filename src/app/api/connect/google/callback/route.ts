@@ -1,21 +1,31 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
  *
- * SCAFFOLD ONLY. Exchanges the `code` for tokens at Google's token endpoint and
- * records that the connection succeeded. It does NOT call the GBP data API
- * (access gated on Google approval we lack). The refresh token is stored
- * server-side in the dedicated `google_token_ref` COLUMN (never in `collected`,
- * which the session GET returns to the browser) and is NEVER logged. Only the
- * `collected.google_connected` boolean is surfaced to the UI.
+ * Exchanges the `code` for tokens at Google's token endpoint, records that the
+ * connection succeeded, and kicks a FIRST calendar sync so the client sees real
+ * appointments the moment they land back on the dashboard instead of waiting
+ * for tomorrow's cron. It does NOT call the GBP data API (access gated on
+ * Google approval we lack).
+ *
+ * The refresh token is stored server-side in the dedicated `google_token_ref`
+ * COLUMN (never in `collected`, which the session GET returns to the browser)
+ * and is NEVER logged. Only the `collected.google_connected` boolean is
+ * surfaced to the UI.
  *
  * Any error or missing config redirects back to /onboard with a soft
  * `?google=<reason>` param; we never 500 the user mid-onboarding.
  */
 
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+
+// Ceiling on the first-pull kick. A Google Calendar pull is normally well under
+// a second, but the user is mid-redirect: if Google is slow we abandon the wait
+// and let the daily cron backfill rather than hang the flow.
+const FIRST_SYNC_TIMEOUT_MS = 8000
 
 function backToOnboard(req: NextRequest, status: string): NextResponse {
   const url = new URL("/onboard", req.nextUrl.origin)
@@ -134,6 +144,23 @@ export async function GET(req: NextRequest) {
               },
               { onConflict: "contact_id,capability_key" }
             )
+        }
+
+        // First calendar pull, right now. syncSessionCalendar never throws
+        // (every failure comes back as a result row) and the token is passed
+        // in-memory rather than re-read. Bounded by a timeout race so a slow
+        // Google can never hold the user on this redirect; the daily cron
+        // (/api/calendar/sync) picks up anything this pull misses.
+        if (refreshToken) {
+          let timer: ReturnType<typeof setTimeout> | undefined
+          await Promise.race([
+            syncSessionCalendar(sessionId, refreshToken),
+            new Promise((resolve) => {
+              timer = setTimeout(resolve, FIRST_SYNC_TIMEOUT_MS)
+            }),
+          ])
+          // Do not leave the timer holding the function alive after the race.
+          if (timer) clearTimeout(timer)
         }
       }
     } catch {

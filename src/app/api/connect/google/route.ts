@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from "next/server"
 
 /**
- * GET /api/connect/google?sessionId=... : start the Google Business OAuth flow.
+ * GET /api/connect/google?sessionId=... : start the Google OAuth flow.
  *
- * SCAFFOLD ONLY. Google Business Profile API access requires Google approval we
- * do NOT have, so this route builds the consent URL and hands off the callback;
- * it never calls the GBP data API. `business.manage` is requested but a denial
- * is tolerated (the account stays Under Construction).
+ * This is the real connection behind the Calendar zone: `calendar.readonly` is
+ * the scope that matters, and the callback's first sync plus the daily cron
+ * (/api/calendar/sync) turn the client's `primary` calendar into the booked
+ * jobs on their dashboard.
+ *
+ * `business.manage` is still requested for Google Business Profile (reviews),
+ * but GBP data access is gated on Google approval we do NOT have, so a denial
+ * of that one scope is tolerated -- the reputation zone stays Under
+ * Construction while the calendar works.
  *
  * If the OAuth env is not fully configured, we return `{ configured: false }`
  * (HTTP 200) so the UI can show "connect later" and the capability stays Under
@@ -18,7 +23,10 @@ const SCOPES = [
   "openid",
   "email",
   "profile",
-  // Requested but optional; GBP access is gated on Google approval we lack.
+  // The calendar read scope: this is what the Calendar zone actually needs.
+  "https://www.googleapis.com/auth/calendar.readonly",
+  // Requested but optional; GBP access is gated on Google approval we lack, so
+  // a denial here must not break the calendar connection.
   "https://www.googleapis.com/auth/business.manage",
 ].join(" ")
 
