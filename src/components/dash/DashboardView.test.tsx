@@ -132,7 +132,8 @@ describe('DashboardView', () => {
   it('renders the Mercury-style recovered chart as the dark hero card', () => {
     renderDash({ session, leads: noLeads, data: emptyDash });
     expect(screen.getAllByTestId('recovered-chart').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByTestId('recovered-delta').length).toBeGreaterThanOrEqual(1);
+    // Zero-delta weeks hide the WoW chip entirely (a "$0 up" chip reads as a glitch).
+    expect(screen.queryByTestId('recovered-delta')).toBeNull();
   });
 
   it('mobile agents tab contains SETUP stub', () => {

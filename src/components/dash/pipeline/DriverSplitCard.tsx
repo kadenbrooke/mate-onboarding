@@ -19,12 +19,18 @@ export function DriverSplitCard({ leads, showLabel = true }: { leads: Lead[]; sh
   const s = driverSplit(leads);
 
   return (
-    <Card label={showLabel ? 'MANUAL VS. AUTOMATED' : undefined} themeKey="manual-vs-automated">
-      <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+    <Card
+      label={showLabel ? 'MANUAL VS. AUTOMATED' : undefined}
+      themeKey="manual-vs-automated"
+      style={{ flex: 1, display: 'flex', flexDirection: 'column' }}
+    >
+      {/* flex:1 + centering: the card is stretched to the hero row's height,
+          so the gauge sits mid-card instead of leaving a void below it. */}
+      <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
         <RingStat
           variant="half"
           idPrefix="driver"
-          size={132}
+          size={160}
           caption="CONVERSATIONS"
           segments={[
             {
@@ -33,7 +39,6 @@ export function DriverSplitCard({ leads, showLabel = true }: { leads: Lead[]; sh
               value: s.agent,
               display: String(s.agent),
               color: AGENT_GREEN,
-              legendSub: `${s.agentPct}%`,
               sub: `${s.agentPct}% handled by Mate`,
             },
             {
@@ -42,7 +47,6 @@ export function DriverSplitCard({ leads, showLabel = true }: { leads: Lead[]; sh
               value: s.human,
               display: String(s.human),
               color: HUMAN_AMBER,
-              legendSub: `${s.humanPct}%`,
               sub: `${s.humanPct}% you took over`,
             },
           ]}

@@ -103,7 +103,7 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
                 fill="none"
                 stroke={segColor.get(s.key) ?? SPEND_RAMP[i % SPEND_RAMP.length]}
                 strokeWidth={11}
-                strokeLinecap={segSource.length > 1 ? 'round' : 'butt'}
+                strokeLinecap="butt"
                 strokeDasharray={`${s.dash} ${C}`}
                 strokeDashoffset={s.offset}
               />
@@ -142,8 +142,11 @@ export function AdPerformanceZone({ ads, showLabel = true }: {
                   display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
                   gap: 10, padding: '7px 10px', borderRadius: 10, cursor: 'pointer',
                   textAlign: 'left', width: '100%',
-                  border: `1px solid ${active ? accent : CARD_HAIRLINE}`,
-                  background: active ? `color-mix(in srgb, ${accent} 8%, transparent)` : 'transparent',
+                  // Selected = same inset grey as the breakdown rows plus a
+                  // softened accent hairline. The old full-strength accent
+                  // border + tint read as an alert, not a selection.
+                  border: `1px solid ${active ? `color-mix(in srgb, ${accent} 45%, transparent)` : CARD_HAIRLINE}`,
+                  background: active ? CARD_INSET : 'transparent',
                 }}
               >
                 <span style={{ fontSize: 10, letterSpacing: 1.2, color: CARD_MUTED, fontFamily: FONT_BODY, fontWeight: 600 }}>

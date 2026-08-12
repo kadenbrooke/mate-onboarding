@@ -171,16 +171,20 @@ export function DashboardView({ session, leads, data, locks, glance }: {
     { id: 'zone-followup', x: 6, y: 2, w: 6, node: (
       <SectionCard title="Follow-up engine" locked={lockFor('zone-followup')}><FollowUpZone reactivation={data.reactivation} wins={data.wins} showLabel={false} /></SectionCard>
     ) },
-    { id: 'zone-pipeline', x: 0, y: 3, w: 6, node: (
+    // Pipeline lives in the RIGHT column: the left stack (Lead flow + Speed +
+    // Ads + Revenue) runs much taller than the right (Follow-up + Reputation +
+    // Operations), and the imbalance rendered as a grey void under the right
+    // column. Pipeline over there roughly evens the two columns out.
+    { id: 'zone-pipeline', x: 6, y: 3, w: 6, node: (
       <SectionCard title="Pipeline"><TwinRings leads={leads} showLabel={false} /></SectionCard>
     ) },
-    { id: 'zone-reputation', x: 6, y: 3, w: 6, node: (
+    { id: 'zone-reputation', x: 6, y: 4, w: 6, node: (
       <SectionCard title="Reputation" locked={lockFor('zone-reputation')}><ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} /></SectionCard>
     ) },
-    { id: 'zone-ads', x: 0, y: 4, w: 6, node: (
+    { id: 'zone-ads', x: 0, y: 3, w: 6, node: (
       <SectionCard title="Ad performance" locked={lockFor('zone-ads')}><AdPerformanceZone ads={data.ads} showLabel={false} /></SectionCard>
     ) },
-    { id: 'zone-operations', x: 6, y: 4, w: 6, node: (
+    { id: 'zone-operations', x: 6, y: 5, w: 6, node: (
       <SectionCard title="Operations" locked={lockFor('zone-operations')}>
         <div style={{ display: 'grid', gap: 10 }}>
           <CrewRoster capabilities={data.capabilities} />
@@ -189,7 +193,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
         </div>
       </SectionCard>
     ) },
-    { id: 'zone-money', x: 0, y: 5, w: 6, node: (
+    { id: 'zone-money', x: 0, y: 4, w: 6, node: (
       <SectionCard title="Revenue" locked={lockFor('zone-money')}><MoneyZone money={data.money} showLabel={false} /></SectionCard>
     ) },
     // Setup checklist: always visible (never gated -- it is the thing that tells

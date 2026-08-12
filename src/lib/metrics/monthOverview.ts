@@ -28,7 +28,11 @@ export type MonthOverview = {
 function monthBounds(now: Date) {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
   const prevStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return { start, prevStart };
+  // Same elapsed span of the prior month, not the whole month: comparing
+  // 12 days of August against all 31 days of July made every early-month
+  // trend pill read deeply negative regardless of how the month was going.
+  const prevEnd = new Date(prevStart.getTime() + (now.getTime() - start.getTime()));
+  return { start, prevStart, prevEnd };
 }
 
 function inRange(iso: string, start: Date, end: Date): boolean {
@@ -50,9 +54,9 @@ function avgReplySeconds(leads: Lead[]): number {
 }
 
 export function monthOverview(leads: Lead[], events: ClientEvent[], now = new Date()): MonthOverview {
-  const { start, prevStart } = monthBounds(now);
+  const { start, prevStart, prevEnd } = monthBounds(now);
   const thisMonth = leads.filter(l => inRange(l.created_at, start, now));
-  const prevMonth = leads.filter(l => inRange(l.created_at, prevStart, start));
+  const prevMonth = leads.filter(l => inRange(l.created_at, prevStart, prevEnd));
 
   const servicedThisMonth = thisMonth.filter(isServiced);
   const servicedPrevMonth = prevMonth.filter(isServiced);
@@ -70,7 +74,7 @@ export function monthOverview(leads: Lead[], events: ClientEvent[], now = new Da
     : 0;
 
   const callsThisMonth = events.filter(e => inRange(e.created_at, start, now)).length;
-  const callsPrevMonth = events.filter(e => inRange(e.created_at, prevStart, start)).length;
+  const callsPrevMonth = events.filter(e => inRange(e.created_at, prevStart, prevEnd)).length;
 
   const respThisMonth = avgReplySeconds(thisMonth);
   const respPrevMonth = avgReplySeconds(prevMonth);

@@ -89,15 +89,19 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span data-testid="recovered-delta" style={{
-            display: 'inline-flex', alignItems: 'center', gap: 2,
-            fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
-            color: up ? SCORE_GREEN : SCORE_RED,
-            background: CARD_CHIP, borderRadius: 99, padding: '3px 8px',
-          }}>
-            <DeltaArrow size={11} weight="bold" aria-hidden />
-            {moneyShort(Math.abs(deltaCents))}
-          </span>
+          {/* A "$0 up" chip reads as a glitch next to a big total; a flat week
+              simply shows no delta. */}
+          {deltaCents !== 0 && (
+            <span data-testid="recovered-delta" style={{
+              display: 'inline-flex', alignItems: 'center', gap: 2,
+              fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
+              color: up ? SCORE_GREEN : SCORE_RED,
+              background: CARD_CHIP, borderRadius: 99, padding: '3px 8px',
+            }}>
+              <DeltaArrow size={11} weight="bold" aria-hidden />
+              {moneyShort(Math.abs(deltaCents))}
+            </span>
+          )}
           <CardModeStar dark={dark} onToggle={toggle} />
         </div>
       </div>

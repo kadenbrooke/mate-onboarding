@@ -1,6 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import type { Lead } from '@/lib/metrics/leads';
-import { searchLeads, cycleSort, applySort, nextStatus, type SortEntry } from './leadsControls';
+import { searchLeads, cycleSort, applySort, nextStatus, loadControls, saveControls, type SortEntry } from './leadsControls';
 
 const mk = (o: Partial<Lead>): Lead => ({
   id: o.id ?? Math.random().toString(36).slice(2),
@@ -138,5 +138,31 @@ describe('nextStatus (stage toggle -> deselect to open)', () => {
     expect(nextStatus('booked', 'serviced')).toBe('serviced');
     expect(nextStatus('serviced', 'booked')).toBe('booked');
     expect(nextStatus('quoted', 'booked')).toBe('booked');
+  });
+});
+
+describe('controls persistence (sessionStorage)', () => {
+  beforeEach(() => window.sessionStorage.clear());
+
+  it('round-trips query + sort per session', () => {
+    saveControls('s1', { query: 'mike', sort: [{ key: 'quote', dir: 'asc' }] });
+    expect(loadControls('s1')).toEqual({ query: 'mike', sort: [{ key: 'quote', dir: 'asc' }] });
+    expect(loadControls('s2')).toBeNull();
+  });
+
+  it('rejects corrupt or foreign shapes instead of crashing', () => {
+    window.sessionStorage.setItem('mate:pipeline:controls:v1:s1', 'not json');
+    expect(loadControls('s1')).toBeNull();
+    window.sessionStorage.setItem('mate:pipeline:controls:v1:s1', JSON.stringify({ query: 1, sort: [] }));
+    expect(loadControls('s1')).toBeNull();
+    window.sessionStorage.setItem('mate:pipeline:controls:v1:s1', JSON.stringify({ query: '', sort: [{ key: 'nope', dir: 'asc' }] }));
+    expect(loadControls('s1')).toBeNull();
+  });
+
+  it('dedupes repeated sort keys, keeping first occurrence', () => {
+    window.sessionStorage.setItem('mate:pipeline:controls:v1:s1', JSON.stringify({
+      query: '', sort: [{ key: 'score', dir: 'asc' }, { key: 'score', dir: 'desc' }, { key: 'status', dir: 'asc' }],
+    }));
+    expect(loadControls('s1')).toEqual({ query: '', sort: [{ key: 'score', dir: 'asc' }, { key: 'status', dir: 'asc' }] });
   });
 });

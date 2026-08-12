@@ -1,4 +1,5 @@
 'use client';
+import { WarningCircle } from '@phosphor-icons/react';
 import { FONT_BODY, TEXT_DARK, TEXT_MUTED, BG_SECTION, SCORE_RED } from '@/lib/theme';
 import type { ZoneCta } from '@/lib/dash/locks';
 
@@ -11,7 +12,11 @@ import type { ZoneCta } from '@/lib/dash/locks';
  * reintroduce that ambiguity in visual form.
  *
  * SCORE_RED is the existing lead-score alert red, reused here rather than
- * adding a colour to the palette.
+ * adding a colour to the palette. The alert is an eyebrow tag, not a
+ * headline: four of these can sit on one screen, and a 31px red block
+ * repeated four times shouted louder than any real data on the page
+ * (founder cosmetics pass, 2026-08-12). The tinted SectionCard already
+ * signals the alert state; the cover's job is to name the fix.
  */
 export function MissingInfo({ zoneLabel, reason, cta }: {
   zoneLabel: string;
@@ -25,12 +30,14 @@ export function MissingInfo({ zoneLabel, reason, cta }: {
       padding: '22px 6px', minHeight: 180,
     }}>
       <div style={{
-        fontFamily: FONT_BODY, fontWeight: 800, fontSize: 31, lineHeight: 0.95,
-        letterSpacing: -0.5, color: SCORE_RED,
+        display: 'inline-flex', alignItems: 'center', gap: 5,
+        fontFamily: FONT_BODY, fontWeight: 700, fontSize: 11,
+        letterSpacing: 1.5, color: SCORE_RED,
       }}>
-        MISSING<br />INFO
+        <WarningCircle size={14} weight="bold" aria-hidden />
+        MISSING INFO
       </div>
-      <div style={{ fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, color: TEXT_DARK }}>
+      <div style={{ fontFamily: FONT_BODY, fontWeight: 700, fontSize: 16, color: TEXT_DARK }}>
         {zoneLabel}
       </div>
       <div style={{ fontFamily: FONT_BODY, fontSize: 12.5, color: TEXT_MUTED, maxWidth: '31ch' }}>
