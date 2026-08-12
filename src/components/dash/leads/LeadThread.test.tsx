@@ -66,4 +66,34 @@ describe('LeadThread', () => {
     render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={[]} leadName="Mike R." />);
     expect(screen.getByText(/no messages with mike r\. yet/i)).toBeTruthy();
   });
+
+  // Migration 0011 mirrors jc_sms_conversations.messages into lead_messages, so a
+  // real J&C thread is now a long alternating run of lead/agent turns arriving in
+  // created_at order. The panel is only correct if it renders that order verbatim
+  // and attributes each side right -- an agent turn shown as the lead's would put
+  // words in the customer's mouth.
+  it('renders a full J&C thread in order, with each side attributed correctly', () => {
+    const turns: LeadMessage[] = Array.from({ length: 10 }, (_, i) => ({
+      id: `jc${i}`, lead_id: 'l1', session_id: 's1',
+      direction: i % 2 === 0 ? 'inbound' : 'outbound',
+      author: i % 2 === 0 ? 'lead' : 'agent',
+      channel: 'sms',
+      body: `turn ${i}`,
+      created_at: new Date(Date.UTC(2026, 6, 22, 18, i)).toISOString(),
+    }));
+    render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={turns} leadName="Steven M." />);
+
+    const bodies = turns.map(t => screen.getByText(t.body));
+    expect(bodies).toHaveLength(10);
+    // Each bubble carries the author label as its immediately preceding sibling.
+    bodies.forEach((el, i) => {
+      expect(el.previousElementSibling?.textContent).toBe(i % 2 === 0 ? 'Lead' : 'Mate');
+    });
+    // DOM order must match the order the rows came out of the query.
+    for (let i = 1; i < bodies.length; i++) {
+      expect(
+        bodies[i - 1].compareDocumentPosition(bodies[i]) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+  });
 });
