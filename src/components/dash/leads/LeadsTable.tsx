@@ -8,7 +8,8 @@ import {
   NUM_TABLE, NUM_DISPLAY, FONT_BODY, scoreColor, STAGE_COLOR, STAGE_LABEL,
 } from '@/lib/theme';
 import {
-  searchLeads, applySort, cycleSort, nextStatus, SORT_CHIPS, type SortEntry,
+  searchLeads, applySort, cycleSort, nextStatus, SORT_CHIPS,
+  loadControls, saveControls, type SortEntry,
 } from './leadsControls';
 import { DriverPill } from './DriverPill';
 import { ContactDots } from './ContactDots';
@@ -69,6 +70,22 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
     { key: 'status', dir: 'asc' },
     { key: 'score', dir: 'desc' },
   ]);
+  // Opening a thread (?spotlight=) remounts this table; restore the search +
+  // sort the client had, from sessionStorage. Mount effect, not useState
+  // initializer, so SSR HTML and the first client render stay identical.
+  const restored = useRef(false);
+  useEffect(() => {
+    const stored = loadControls(sessionId);
+    if (stored) {
+      setQuery(stored.query);
+      setSort(stored.sort);
+    }
+    restored.current = true;
+  }, [sessionId]);
+  useEffect(() => {
+    if (!restored.current) return; // don't clobber storage with defaults pre-restore
+    saveControls(sessionId, { query, sort });
+  }, [sessionId, query, sort]);
   const visible = useMemo(
     () => applySort(searchLeads(rows, query), sort),
     [rows, query, sort],

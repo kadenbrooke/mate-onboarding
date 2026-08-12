@@ -91,3 +91,51 @@ export const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: 'captured', label: 'Date captured' },
   { key: 'driver', label: 'Driver' },
 ];
+
+// --- Controls persistence -------------------------------------------------
+// Opening a lead's thread navigates to ?spotlight=<id>, which re-renders the
+// page and remounts the table -- without persistence that navigation wiped the
+// search box and sort chips every time. Controls are stored per session in
+// sessionStorage: they survive the thread round-trip (and back/forward) but
+// reset on a fresh visit, so a stale week-old search can't silently hide leads.
+// Restore happens in a mount effect, never in the useState initializer, so the
+// SSR and first client render agree (same hydration posture as useDashLayout).
+
+export interface LeadsControls { query: string; sort: SortEntry[] }
+
+const CONTROLS_PREFIX = 'mate:pipeline:controls:v1:';
+const controlsKey = (sessionId: string) => CONTROLS_PREFIX + sessionId;
+
+const SORT_KEYS = new Set<string>(SORT_CHIPS.map(c => c.key));
+
+function isSortEntry(v: unknown): v is SortEntry {
+  if (!v || typeof v !== 'object') return false;
+  const o = v as Record<string, unknown>;
+  return typeof o.key === 'string' && SORT_KEYS.has(o.key) && (o.dir === 'asc' || o.dir === 'desc');
+}
+
+/** Parse stored controls; null when absent, corrupt, or storage unavailable. */
+export function loadControls(sessionId: string): LeadsControls | null {
+  try {
+    const raw = window.sessionStorage.getItem(controlsKey(sessionId));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    if (typeof parsed.query !== 'string' || !Array.isArray(parsed.sort) || !parsed.sort.every(isSortEntry)) {
+      return null;
+    }
+    // Dedupe by key defensively: applySort trusts entry order.
+    const seen = new Set<string>();
+    const sort = (parsed.sort as SortEntry[]).filter(e => !seen.has(e.key) && seen.add(e.key));
+    return { query: parsed.query, sort };
+  } catch {
+    return null; // private mode / bad JSON: fall back to defaults, never crash
+  }
+}
+
+export function saveControls(sessionId: string, controls: LeadsControls): void {
+  try {
+    window.sessionStorage.setItem(controlsKey(sessionId), JSON.stringify(controls));
+  } catch {
+    /* storage unavailable: session-only, no-op */
+  }
+}
