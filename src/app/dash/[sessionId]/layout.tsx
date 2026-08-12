@@ -121,9 +121,11 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
            standalone sub-pages (leads table, assistant) that aren't wrapped
            by DashboardView's own copy of this rule. */
         @media (min-width: 641px) { .dash-nav { display: none !important; } }
-        /* Mid widths: shift content right so the fixed rail never overlaps it.
-           !important because the base padding is set inline. */
-        @media (min-width: 641px) and (max-width: 1260px) { .dash-shell { padding-left: 70px !important; } }
+        /* The fixed rail (left:14 + 40px chips) needs ~68px of clearance until
+           the centered 1480px shell's own margin provides it, i.e. up to
+           1480 + 2*(68-12) = ~1600px viewports. Symmetric padding keeps the
+           content column centered. !important because base padding is inline. */
+        @media (min-width: 641px) and (max-width: 1600px) { .dash-shell { padding-left: 70px !important; padding-right: 70px !important; } }
         /* Touch-target slop: extends the effective hit area of small controls
            (range chips, ring legend buttons, calendar dots) without changing
            their visual size. */

@@ -30,7 +30,7 @@ import { CARD_TRACK, CARD_MUTED, NUM_TABLE, FONT_NUM, FONT_BODY } from '@/lib/th
 // half ring is still the same component and not a second look.
 
 const R = 40;
-const GAP_DEG = 2;
+const GAP_DEG = 2.5;
 const CIRC = 2 * Math.PI * R;
 
 type RingVariant = 'full' | 'half';
@@ -43,6 +43,7 @@ const GEO = {
     rotate: -90,
     viewBox: '0 0 100 100',
     heightRatio: 1,
+    fontSize: 19,
     value: { withSub: 44, plain: 47 },
     label: { withSub: 58, plain: 61 },
     sub: 69,
@@ -52,8 +53,9 @@ const GEO = {
     rotate: 180,
     viewBox: '0 0 100 62',
     heightRatio: 0.62,
-    value: { withSub: 38, plain: 42 },
-    label: { withSub: 48, plain: 53 },
+    fontSize: 16,
+    value: { withSub: 34, plain: 40 },
+    label: { withSub: 48, plain: 52 },
     sub: 58,
   },
 } as const satisfies Record<RingVariant, unknown>;
@@ -146,7 +148,7 @@ export function RingStat({
                 fill="none"
                 stroke={seg.color}
                 strokeWidth={focus === s.key ? 14 : 12}
-                strokeLinecap="round"
+                strokeLinecap="butt"
                 strokeDasharray={`${s.dash} ${CIRC}`}
                 strokeDashoffset={s.offset}
                 style={{ cursor: 'pointer' }}
@@ -163,7 +165,7 @@ export function RingStat({
           y={hasSub ? geo.value.withSub : geo.value.plain}
           textAnchor="middle"
           dominantBaseline="middle"
-          fontSize={19}
+          fontSize={geo.fontSize}
           fontWeight={300}
           fontFamily={FONT_NUM}
           fill={shown.color}

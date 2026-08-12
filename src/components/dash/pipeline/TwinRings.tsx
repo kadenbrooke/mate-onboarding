@@ -13,7 +13,11 @@ export function TwinRings({ leads, showLabel = true }: { leads: Lead[]; showLabe
   const t = pipelineTotals(leads);
   const avgJob = t.counts.serviced ? Math.round(t.cents.serviced / t.counts.serviced) : 0;
   const stages = PIPELINE_STATUSES as readonly LeadStatus[];
-  const rateSub = `${t.serviceRate}% of engaged leads serviced`;
+  // Center subs must fit inside the donut hole (~14 chars at this size);
+  // longer strings render across the arcs.
+  const engaged = t.counts.booked + t.counts.quoted + t.counts.serviced;
+  const rateSub = `of ${engaged} engaged`;
+  const revSub = `of ${moneyShort(t.totalCents)}`;
 
   return (
     <Card label={showLabel ? 'THE PIPELINE' : undefined} themeKey="the-pipeline">
@@ -28,13 +32,13 @@ export function TwinRings({ leads, showLabel = true }: { leads: Lead[]; showLabe
             value: t.cents[k],
             display: moneyShort(t.cents[k]),
             color: STAGE_COLOR[k],
-            sub: k === 'serviced' ? `of ${moneyShort(t.totalCents)} in the pipeline` : undefined,
+            sub: k === 'serviced' ? revSub : undefined,
           }))}
           center={{
             label: STAGE_LABEL.serviced,
             display: moneyShort(t.cents.serviced),
             color: STAGE_COLOR.serviced,
-            sub: `of ${moneyShort(t.totalCents)} in the pipeline`,
+            sub: revSub,
           }}
           ariaLabel={stages.map(k => `${STAGE_LABEL[k].toLowerCase()} ${moneyShort(t.cents[k])}`).join(', ')}
         />
