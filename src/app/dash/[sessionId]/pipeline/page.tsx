@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Lead } from '@/lib/metrics/leads';
 import { LeadsTable } from '@/components/dash/leads/LeadsTable';
 import { LeadThread } from '@/components/dash/leads/LeadThread';
+import { leadLabel } from '@/components/dash/leads/leadName';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, CARD_SHADOW } from '@/lib/theme';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
@@ -31,8 +32,10 @@ export default async function PipelinePage({ params, searchParams }: {
     messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null;
   } | null = null;
   if (spotlight) {
+    // phone + source come along so a nameless lead's thread header can fall back
+    // to its number instead of reading "this lead" (see leadName.ts).
     const { data: lead } = await supabase.from('client_leads')
-      .select('id, handler, name').eq('id', spotlight).eq('session_id', sessionId).single();
+      .select('id, handler, name, phone, source').eq('id', spotlight).eq('session_id', sessionId).single();
     if (lead) {
       const { data: messages } = await supabase.from('lead_messages')
         .select('*').eq('lead_id', spotlight).eq('session_id', sessionId).order('created_at', { ascending: true }).limit(200);
@@ -40,7 +43,7 @@ export default async function PipelinePage({ params, searchParams }: {
         messages: (messages ?? []) as LeadMessage[],
         handler: (lead.handler ?? 'agent') as 'agent' | 'human',
         leadId: lead.id,
-        leadName: (lead.name ?? null) as string | null,
+        leadName: leadLabel(lead),
       };
     }
   }
