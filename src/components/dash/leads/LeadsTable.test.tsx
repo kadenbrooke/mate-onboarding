@@ -299,4 +299,28 @@ describe('LeadsTable row -> thread navigation', () => {
     fireEvent.click(screen.getByTestId('lead-row-l2'));
     expect(pushMock).toHaveBeenCalledWith('/dash/s1/pipeline?spotlight=l2');
   });
+
+  // A blank NAME cell made a call lead's row read as a continuation of the row
+  // above it, so its CAPTURED date got attributed to the wrong lead.
+  it('renders a nameless call lead as its formatted phone, flagged as un-named', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable
+      leads={[lead({ id: 'l9', name: null, phone: '+18019007550', source: 'call' })]}
+      sessionId="s1" spotlightId={null}
+    />);
+    const row = screen.getByTestId('lead-row-l9');
+    expect(row).toHaveTextContent('(801) 900-7550');
+    expect(row.querySelector('[data-named="false"]')).not.toBeNull();
+    // The identity also reaches the controls, so no affordance says "this lead".
+    expect(screen.getByRole('button', { name: 'booked (801) 900-7550' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open conversation with (801) 900-7550' })).toBeInTheDocument();
+  });
+
+  it('leaves a real name untouched and marks it named', () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+    render(<LeadsTable leads={[lead({ phone: '+18017931734' })]} sessionId="s1" spotlightId={null} />);
+    const row = screen.getByTestId('lead-row-l1');
+    expect(row.querySelector('[data-named="true"]')).toHaveTextContent('Mike R.');
+    expect(row).not.toHaveTextContent('(801) 793-1734');
+  });
 });

@@ -14,6 +14,7 @@ import {
 import { DriverPill } from './DriverPill';
 import { ContactDots } from './ContactDots';
 import { DeleteLeadButton } from './DeleteLeadButton';
+import { leadIdentity } from './leadName';
 import { normalizeHandler, toggleHandler, type HandlerState } from './driverToggle';
 
 // Stage toggle button styling. All three stages are always shown; the one the
@@ -197,7 +198,9 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
           </tr>
         </thead>
         <tbody>
-          {visible.map(l => (
+          {visible.map(l => {
+          const who = leadIdentity(l);
+          return (
             <tr key={l.id} data-testid={`lead-row-${l.id}`} data-status={l.status}
               data-handler={normalizeHandler(l.handler)}
               data-spotlight={l.id === spotlightId ? 'true' : 'false'}
@@ -210,7 +213,11 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               }}>
               {/* Score: tnum Geist 400 -- column of aligned numerics */}
               <td style={{ padding: 8, ...NUM_TABLE, color: l.score != null ? scoreColor(l.score) : undefined, fontWeight: l.score != null ? 600 : undefined }}>{l.score ?? ''}</td>
-              <td>{l.name}</td>
+              {/* Never blank: a nameless row falls back to its phone (see leadName.ts). */}
+              <td data-named={who.named ? 'true' : 'false'}
+                style={who.named ? undefined : { color: TEXT_MUTED, fontStyle: 'italic', whiteSpace: 'nowrap' }}>
+                {who.label}
+              </td>
               <td><ContactDots lead={l} testId={`contact-dots-${l.id}`} /></td>
               <td>{l.service}</td><td>{l.city}</td>
               <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>{l.source.replaceAll('_', ' ')}</td>
@@ -218,7 +225,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               <td>
                 <DriverPill
                   handler={normalizeHandler(l.handler)}
-                  name={l.name}
+                  name={who.label}
                   busy={driverBusy[l.id]}
                   error={driverErr[l.id]}
                   onToggle={() => toggleDriver(l.id)}
@@ -234,7 +241,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                   {STAGE_STATUSES.map(stage => (
                     <button key={stage} type="button"
                       onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, stage)); }}
-                      aria-label={`${stage} ${l.name}`} aria-pressed={l.status === stage}
+                      aria-label={`${stage} ${who.label}`} aria-pressed={l.status === stage}
                       style={stageBtnStyle(stage, l.status === stage, 'desktop')}>{STAGE_LABEL[stage]}</button>
                   ))}
                 </span>
@@ -243,24 +250,27 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                   opens its thread (keyboard-accessible affordance). */}
               <td style={{ textAlign: 'right', paddingRight: 6, whiteSpace: 'nowrap' }}>
                 <DeleteLeadButton
-                  leadId={l.id} sessionId={sessionId} name={l.name}
+                  leadId={l.id} sessionId={sessionId} name={who.label}
                   onDeleted={() => removeRow(l.id)} testId={`delete-lead-${l.id}`}
                 />
                 <button type="button" className="lead-open"
                   onClick={(e) => { e.stopPropagation(); openThread(l.id); }}
-                  aria-label={`Open conversation with ${l.name?.trim() || 'this lead'}`}
+                  aria-label={`Open conversation with ${who.label}`}
                   style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: TEXT_FAINT, display: 'inline-flex', padding: 4 }}>
                   <CaretRight size={14} weight="bold" aria-hidden />
                 </button>
               </td>
             </tr>
-          ))}
+          );
+          })}
         </tbody>
       </table>
 
       {/* Mobile card list */}
       <div className="leads-mobile" style={{ display: 'flex', flexDirection: 'column' }}>
-        {visible.map((l, i) => (
+        {visible.map((l, i) => {
+        const who = leadIdentity(l);
+        return (
           <div
             key={l.id}
             data-testid={`lead-card-${l.id}`}
@@ -288,7 +298,10 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, display: 'flex', alignItems: 'baseline', gap: 8 }}>
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
+                <span data-named={who.named ? 'true' : 'false'} style={{
+                  overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  ...(who.named ? {} : { color: TEXT_MUTED, fontStyle: 'italic' }),
+                }}>{who.label}</span>
                 {l.quote_cents != null && (
                   <span style={{ ...NUM_TABLE, fontSize: 12, color: TEXT_MUTED, flexShrink: 0 }}>{dollars(l.quote_cents)}</span>
                 )}
@@ -308,7 +321,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
                 <DriverPill
                   handler={normalizeHandler(l.handler)}
-                  name={l.name}
+                  name={who.label}
                   busy={driverBusy[l.id]}
                   error={driverErr[l.id]}
                   onToggle={() => toggleDriver(l.id)}
@@ -316,7 +329,7 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
                 />
                 <ContactDots lead={l} testId={`contact-dots-card-${l.id}`} />
                 <DeleteLeadButton
-                  leadId={l.id} sessionId={sessionId} name={l.name}
+                  leadId={l.id} sessionId={sessionId} name={who.label}
                   onDeleted={() => removeRow(l.id)} testId={`delete-lead-card-${l.id}`}
                 />
               </div>
@@ -329,12 +342,13 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
               {STAGE_STATUSES.map(stage => (
                 <button key={stage} type="button"
                   onClick={(e) => { e.stopPropagation(); mark(l.id, nextStatus(l.status, stage)); }}
-                  aria-label={`mark ${stage} ${l.name}`} aria-pressed={l.status === stage}
+                  aria-label={`mark ${stage} ${who.label}`} aria-pressed={l.status === stage}
                   style={stageBtnStyle(stage, l.status === stage, 'mobile')}>{STAGE_LABEL[stage]}</button>
               ))}
             </span>
           </div>
-        ))}
+        );
+        })}
       </div>
     </>
   );
