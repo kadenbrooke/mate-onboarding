@@ -1,4 +1,4 @@
-import { isServiced, type Lead } from './leads';
+import { isServiced, revenueAt, type Lead } from './leads';
 
 // ---------------------------------------------------------------------------
 // Recovered-$ interactive area chart (Mercury-style) -- pure math layer.
@@ -22,6 +22,9 @@ function dayStart(d: Date): number {
  * Cumulative recovered-$ per day over the trailing `days` window (oldest
  * first, today last). Each point carries the running total INCLUDING wins
  * before the window, so the last point equals total recovered to date.
+ *
+ * Days are keyed by when the job was serviced (revenueAt), not when the lead
+ * arrived, so a win lands on the day it was actually earned.
  */
 export function recoveredDailySeries(leads: Lead[], days = 30, now = new Date()): DailyPoint[] {
   const todayStart = dayStart(now);
@@ -32,7 +35,7 @@ export function recoveredDailySeries(leads: Lead[], days = 30, now = new Date())
   for (const l of leads) {
     if (!isServiced(l)) continue;
     const cents = l.quote_cents ?? 0;
-    const t = dayStart(new Date(l.created_at));
+    const t = dayStart(new Date(revenueAt(l)));
     if (t < windowStart) base += cents;
     else if (t <= todayStart) perDay[Math.round((t - windowStart) / DAY_MS)] += cents;
   }
@@ -46,14 +49,15 @@ export function recoveredDailySeries(leads: Lead[], days = 30, now = new Date())
   return points;
 }
 
-/** Recovered-$ this trailing week minus the week before, in cents. */
+/** Recovered-$ this trailing week minus the week before, in cents. Weeks are
+ *  measured from when each job was serviced (revenueAt), not lead arrival. */
 export function recoveredWowDeltaCents(leads: Lead[], now = new Date()): number {
   const t = now.getTime();
   let cur = 0;
   let prev = 0;
   for (const l of leads) {
     if (!isServiced(l)) continue;
-    const age = t - new Date(l.created_at).getTime();
+    const age = t - new Date(revenueAt(l)).getTime();
     if (age < 0) continue;
     if (age < WEEK_MS) cur += l.quote_cents ?? 0;
     else if (age < 2 * WEEK_MS) prev += l.quote_cents ?? 0;

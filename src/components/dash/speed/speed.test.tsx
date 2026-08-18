@@ -11,15 +11,26 @@ import { hourBuckets, peakBucketRange } from '@/lib/metrics/speed';
 // instead of as one fixed group. Each card is tested standalone below.
 
 describe('RaceCard', () => {
-  it('shows warming-up copy when avgReplySeconds === 0', () => {
-    render(<RaceCard avgReplySeconds={0} />);
+  it('shows warming-up copy when no leads have arrived at all', () => {
+    render(<RaceCard avgReplySeconds={null} leadCount={0} />);
     expect(screen.getByText('waiting for your first lead')).toBeInTheDocument();
     expect(screen.getByText(/78% of jobs go to the first responder/)).toBeInTheDocument();
     expect(screen.queryByText(/beat the average company/i)).not.toBeInTheDocument();
   });
 
+  it('says response time is untracked when leads exist but none are timed', () => {
+    // The J&C case: 101 leads, zero with first_reply_seconds. "Waiting for your
+    // first lead" would be false, and "0 sec" would be a fabricated brag.
+    render(<RaceCard avgReplySeconds={null} leadCount={101} />);
+    expect(screen.getByText('response time not tracked yet')).toBeInTheDocument();
+    expect(screen.getByText('no reply times recorded')).toBeInTheDocument();
+    expect(screen.queryByText('waiting for your first lead')).not.toBeInTheDocument();
+    expect(screen.queryByText(/0 sec/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/beat the average company/i)).not.toBeInTheDocument();
+  });
+
   it('shows time and beat-average copy when avgReplySeconds > 0', () => {
-    render(<RaceCard avgReplySeconds={45} />);
+    render(<RaceCard avgReplySeconds={45} leadCount={10} />);
     expect(screen.getByText('45 sec')).toBeInTheDocument();
     expect(screen.getByText(/beat the average company/i)).toBeInTheDocument();
     expect(screen.queryByText('waiting for your first lead')).not.toBeInTheDocument();
@@ -31,6 +42,15 @@ describe('RescueRing (big-number card)', () => {
     render(<RescueRing rescued={3} missedTotal={5} />);
     expect(screen.getByText('3')).toBeInTheDocument();
     expect(screen.getByText(/of 5 missed calls became text conversations/i)).toBeInTheDocument();
+  });
+
+  it('renders an empty state instead of a rate when nothing counts missed calls', () => {
+    // Was "7 of 7 missed calls became text conversations" -- a 100% rescue rate
+    // manufactured from a denominator that collapsed onto its own numerator.
+    render(<RescueRing rescued={7} missedTotal={null} />);
+    expect(screen.getByText(/not tracking missed calls yet/i)).toBeInTheDocument();
+    expect(screen.queryByText('7')).not.toBeInTheDocument();
+    expect(screen.queryByText(/missed calls became text conversations/i)).not.toBeInTheDocument();
   });
 });
 

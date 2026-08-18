@@ -1,14 +1,26 @@
-import { isServiced, type Lead } from './leads';
+import { isServiced, revenueAt, type Lead } from './leads';
 import type { ClientEvent } from './events';
 
+/**
+ * Hero stats. `recoveredCents` is AGENT-ATTRIBUTED revenue (serviced leads the
+ * agent worked), deliberately NOT total business revenue: `roiMultiple` divides
+ * it by what the client pays us, so feeding it QuickBooks' whole-business
+ * revenue would produce a meaningless ROI. The QBO number is a separate stat
+ * with its own tile (see monthRevenue in monthOverview.ts).
+ *
+ * `monthlyRetainerCents` is null when the retainer is unknown (no linked
+ * contact, or no amount on it). roiMultiple is then null too, because "0x what
+ * you pay" is a claim we cannot make without knowing what they pay.
+ */
 export function heroStats(leads: Lead[], opts: {
-  monthlyRetainerCents: number; actionsThisWeek: number; minutesPerAction: number;
+  monthlyRetainerCents: number | null; actionsThisWeek: number; minutesPerAction: number;
 }) {
   const recoveredCents = leads.filter(isServiced)
     .reduce((a, l) => a + (l.quote_cents ?? 0), 0);
+  const retainer = opts.monthlyRetainerCents;
   return {
     recoveredCents,
-    roiMultiple: opts.monthlyRetainerCents ? recoveredCents / opts.monthlyRetainerCents : 0,
+    roiMultiple: retainer != null && retainer > 0 ? recoveredCents / retainer : null,
     actions: opts.actionsThisWeek,
     hoursSaved: Math.round((opts.actionsThisWeek * opts.minutesPerAction) / 60),
   };
@@ -55,9 +67,11 @@ export function heroSeries(
   opts: { minutesPerAction: number },
   now = new Date(),
 ): { recovered: HeroSeries; hours: HeroSeries; actions: HeroSeries } {
+  // Dated by when the job was serviced (revenueAt), not when the lead arrived:
+  // a June lead serviced last week belongs in last week's bucket.
   const servicedItems = leads
     .filter(isServiced)
-    .map(l => ({ at: l.created_at, value: l.quote_cents ?? 0 }));
+    .map(l => ({ at: revenueAt(l), value: l.quote_cents ?? 0 }));
   const actionItems = events.map(e => ({ at: e.created_at, value: 1 }));
 
   const recoveredBuckets = weeklyBuckets(servicedItems, 8, now);

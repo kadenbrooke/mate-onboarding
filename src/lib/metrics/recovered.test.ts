@@ -78,6 +78,37 @@ describe('recoveredWowDeltaCents', () => {
   });
 });
 
+describe('recovered-$ is dated by service completion, not lead arrival', () => {
+  /** A lead that arrived long ago and was serviced `servicedDaysAgo` ago. */
+  function servicedLate(cents: number, arrivedDaysAgo: number, servicedDaysAgo: number): Lead {
+    return {
+      ...serviced(cents, arrivedDaysAgo),
+      status_updated_at: new Date(NOW.getTime() - servicedDaysAgo * 86_400_000).toISOString(),
+    } as Lead;
+  }
+
+  it('counts an old lead serviced this week in this week, not its arrival week', () => {
+    // Arrived 60 days ago (outside the 30-day window), serviced 2 days ago.
+    // Dated by created_at this was baseline money predating the chart; dated by
+    // completion it is a win that happened inside the window.
+    const leads = [servicedLate(80_000, 60, 2)];
+    const pts = recoveredDailySeries(leads, 30, NOW);
+    expect(pts[0].cents).toBe(0);
+    expect(pts[29].cents).toBe(80_000);
+  });
+
+  it('measures the week-over-week delta from the service date', () => {
+    // Both arrived 40 days ago; one was serviced this week, one last week.
+    const leads = [servicedLate(10_000, 40, 2), servicedLate(4_000, 40, 10)];
+    expect(recoveredWowDeltaCents(leads, NOW)).toBe(6_000);
+  });
+
+  it('still dates rows with no status stamp by created_at', () => {
+    const leads = [{ ...serviced(5_000, 2), status_updated_at: null } as Lead];
+    expect(recoveredWowDeltaCents(leads, NOW)).toBe(5_000);
+  });
+});
+
 describe('splitDollarsCents', () => {
   it('splits dollars and pads cents', () => {
     expect(splitDollarsCents(465_976)).toEqual({ dollars: '4,659', cents: '76' });

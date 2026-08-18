@@ -17,14 +17,36 @@ export type DriverSplit = {
   agentPct: number;
   /** Share a human took over, 0-100. Always agentPct's complement when total > 0. */
   humanPct: number;
+  /** True when the split was narrowed to the agent-live window (see `since`). */
+  windowed: boolean;
 };
 
-export function driverSplit(leads: Lead[]): DriverSplit {
+/**
+ * `since` anchors the split to conversations the agent could actually have
+ * driven: leads created on/after that instant, normally the session's own
+ * created_at (when the client came online with us).
+ *
+ * Without it, any pre-agent history imported into client_leads is counted as
+ * conversations the agent failed to handle. J&C is the live example: 84 of its
+ * 101 rows are a deliberate historical backfill left at handler='human', which
+ * dragged the card to 8% automated when the agent's real post-launch share is
+ * 42%. Backfilled history is not agent performance.
+ *
+ * Omit `since` (or pass null) to score every lead, which is right for a session
+ * whose leads all postdate the agent.
+ */
+export function driverSplit(leads: Lead[], since?: string | null): DriverSplit {
+  const sinceMs = since ? new Date(since).getTime() : NaN;
+  const windowed = !Number.isNaN(sinceMs);
+  const scored = windowed
+    ? leads.filter(l => new Date(l.created_at).getTime() >= sinceMs)
+    : leads;
+
   let human = 0;
-  for (const l of leads) if (l.handler === 'human') human++;
-  const total = leads.length;
+  for (const l of scored) if (l.handler === 'human') human++;
+  const total = scored.length;
   const agent = total - human;
   // Round one side and derive the other, so the two never add up to 101.
   const agentPct = total === 0 ? 0 : Math.round((agent / total) * 100);
-  return { agent, human, total, agentPct, humanPct: total === 0 ? 0 : 100 - agentPct };
+  return { agent, human, total, agentPct, humanPct: total === 0 ? 0 : 100 - agentPct, windowed };
 }

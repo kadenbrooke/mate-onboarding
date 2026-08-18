@@ -19,6 +19,28 @@ describe('heroStats', () => {
     expect(out.actions).toBe(212);
     expect(out.hoursSaved).toBe(18); // 212 * 5 / 60 rounded
   });
+
+  it('returns a null ROI when the retainer is unknown, never a 0x', () => {
+    // The retainer is read from the client's CRM contact. No contact, no
+    // retainer, no ROI claim: dividing recovered revenue by a guessed retainer
+    // is how the hardcoded $1,000 default produced a right-by-luck multiple.
+    for (const retainer of [null, 0]) {
+      const out = heroStats(
+        [lead({ status: 'serviced', quote_cents: 500000 })],
+        { monthlyRetainerCents: retainer, actionsThisWeek: 0, minutesPerAction: 5 },
+      );
+      expect(out.recoveredCents).toBe(500000);
+      expect(out.roiMultiple).toBeNull();
+    }
+  });
+
+  it('scales the ROI multiple with the actual retainer on the contact', () => {
+    const leads = [lead({ status: 'serviced', quote_cents: 1000000 })];
+    expect(heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: 0, minutesPerAction: 5 }).roiMultiple)
+      .toBeCloseTo(10);
+    expect(heroStats(leads, { monthlyRetainerCents: 250000, actionsThisWeek: 0, minutesPerAction: 5 }).roiMultiple)
+      .toBeCloseTo(4);
+  });
 });
 
 describe('weeklyBuckets + trendPct', () => {
@@ -59,5 +81,25 @@ describe('heroSeries', () => {
     expect(s.recovered.trendPct).toBe(100);
     expect(s.actions.buckets[7]).toBe(1);
     expect(s.hours.buckets[7]).toBeCloseTo(0.5);
+  });
+
+  it('buckets revenue by when the job was serviced, not when the lead arrived', () => {
+    const now = new Date('2026-07-28T12:00:00Z');
+    const leads = [
+      // Arrived 5 weeks ago, serviced this week: the money is this week's.
+      lead({
+        status: 'serviced', quote_cents: 300000,
+        created_at: '2026-06-22T12:00:00Z', status_updated_at: '2026-07-27T12:00:00Z',
+      }),
+    ];
+    const s = heroSeries(leads, [], { minutesPerAction: 30 }, now);
+    expect(s.recovered.buckets[7]).toBe(300000);
+    expect(s.recovered.buckets[2]).toBe(0);
+  });
+
+  it('falls back to created_at for serviced rows with no status stamp', () => {
+    const now = new Date('2026-07-28T12:00:00Z');
+    const leads = [lead({ status: 'serviced', quote_cents: 150000, created_at: '2026-07-27T12:00:00Z', status_updated_at: null })];
+    expect(heroSeries(leads, [], { minutesPerAction: 30 }, now).recovered.buckets[7]).toBe(150000);
   });
 });

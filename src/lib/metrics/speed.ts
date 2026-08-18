@@ -34,9 +34,12 @@ export function peakBucketRange(buckets: TimeBucket[]): string | null {
 
 export function speedStats(leads: Lead[], totalMissedCalls?: number) {
   const replied = leads.filter(l => l.first_reply_seconds != null);
+  // null, not 0: "no lead has a measured reply time" is not "we replied in
+  // zero seconds". A 0 here rendered as an instant-response brag built out of
+  // missing data.
   const avgReplySeconds = replied.length
     ? Math.round(replied.reduce((a, l) => a + l.first_reply_seconds!, 0) / replied.length)
-    : 0;
+    : null;
   const afterHoursCount = leads.filter(l => l.after_hours).length;
   const hourCounts = new Array(24).fill(0) as number[];
   for (const l of leads) hourCounts[new Date(l.created_at).getHours()]++;
@@ -49,8 +52,16 @@ export function speedStats(leads: Lead[], totalMissedCalls?: number) {
   // 'call' covers the answered-call-notify-operator path; 'missed_call' is the
   // pre-2026-08-05 name for the same bucket, kept for any still-unmigrated rows.
   const rescued = leads.filter(l => l.source === 'call' || l.source === 'missed_call').length;
+  // The denominator MUST come from an independent missed-call signal (client_events).
+  // The old `Math.max(totalMissedCalls ?? rescued, rescued)` collapsed it onto the
+  // numerator whenever that signal was absent, so a session with no missed-call
+  // data at all rendered "7 of 7 rescued" -- a 100% rescue rate manufactured out
+  // of its own numerator. null means "we do not know how many calls were missed",
+  // and the card must say that instead of drawing a rate.
+  const missedTotal = totalMissedCalls == null ? null : Math.max(totalMissedCalls, rescued);
   return {
-    avgReplySeconds, afterHoursCount, hourCounts, streakDays,
-    rescued, missedTotal: Math.max(totalMissedCalls ?? rescued, rescued),
+    avgReplySeconds, repliedCount: replied.length, leadCount: leads.length,
+    afterHoursCount, hourCounts, streakDays,
+    rescued, missedTotal,
   };
 }

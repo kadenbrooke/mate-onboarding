@@ -33,6 +33,11 @@ export type Lead = {
   handler?: 'agent' | 'human' | null;
   contacted: boolean; after_hours: boolean; first_reply_seconds: number | null;
   created_at: string;
+  // When `status` last changed, stamped by trg_client_leads_status_ts. For a
+  // serviced lead this is when the job COMPLETED, which is the date the money
+  // belongs to. Optional + nullable: rows whose status predates the trigger
+  // have none, and those fall back to created_at (see revenueAt).
+  status_updated_at?: string | null;
 };
 
 /** Money is real once the job is serviced. This is the successor to the old
@@ -40,6 +45,20 @@ export type Lead = {
  *  used by the hero stats, the recovered-$ chart, and the month banner. */
 export function isServiced(l: Lead): boolean {
   return l.status === 'serviced';
+}
+
+/**
+ * The date a serviced lead's money belongs to: when it reached 'serviced', not
+ * when the lead arrived. Bucketing revenue by created_at booked a June lead
+ * serviced in August as June revenue, which back-dated every win into the month
+ * its lead happened to come in. Falls back to created_at for rows with no
+ * status stamp so pre-trigger history still lands somewhere real.
+ *
+ * The SINGLE definition of "when did this revenue happen", shared by the hero
+ * series, the recovered-$ chart, and the month overview.
+ */
+export function revenueAt(l: Lead): string {
+  return l.status_updated_at ?? l.created_at;
 }
 
 /** Anything past 'open': the lead has moved somewhere in the pipeline. */
@@ -291,11 +310,19 @@ export function outcomesInRange(leads: Lead[], startISO: string, endISO: string)
   return tallyOutcomes(leadsInRange(leads, startISO, endISO));
 }
 
-export function scoreStats(leads: Lead[]) {
+/**
+ * Lead-quality stats. `avg` is null and `hot` is empty when NOTHING is scored:
+ * an unscored book of leads is not a book of zero-quality leads, and an empty
+ * hot list means "no scores exist" rather than "nothing is hot". `scoredCount`
+ * is what lets the card tell those two apart and say so.
+ */
+export function scoreStats(leads: Lead[]): {
+  avg: number | null; hot: Lead[]; scoredCount: number;
+} {
   const scored = leads.filter(l => l.score != null);
   // avg spans ALL scored leads (portfolio quality); hot is the action queue (open + uncontacted).
-  const avg = scored.length ? Math.round(scored.reduce((a, l) => a + l.score!, 0) / scored.length) : 0;
+  const avg = scored.length ? Math.round(scored.reduce((a, l) => a + l.score!, 0) / scored.length) : null;
   const hot = leads.filter(l => !l.contacted && l.status === 'open' && l.score != null)
     .sort((a, b) => b.score! - a.score!).slice(0, 5);
-  return { avg, hot };
+  return { avg, hot, scoredCount: scored.length };
 }

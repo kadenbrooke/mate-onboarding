@@ -15,8 +15,15 @@ import { AGENT_GREEN, HUMAN_AMBER, CARD_MUTED, FONT_BODY } from '@/lib/theme';
 // Colors are the Driver pill's, so the card and the pipeline table's DRIVER
 // column say the same thing in the same green and amber.
 
-export function DriverSplitCard({ leads, showLabel = true }: { leads: Lead[]; showLabel?: boolean }) {
-  const s = driverSplit(leads);
+export function DriverSplitCard({ leads, since, showLabel = true }: {
+  leads: Lead[];
+  /** Agent-live instant (the session's created_at). Leads older than this are
+   *  pre-agent history and are excluded: a backfilled book of human-handled
+   *  rows is not the agent declining to handle them. */
+  since?: string | null;
+  showLabel?: boolean;
+}) {
+  const s = driverSplit(leads, since);
 
   return (
     <Card
@@ -63,9 +70,15 @@ export function DriverSplitCard({ leads, showLabel = true }: { leads: Lead[]; sh
           }
         />
       </div>
-      {s.total === 0 && (
+      {s.total === 0 ? (
         <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: CARD_MUTED, fontFamily: FONT_BODY }}>
-          Your split shows up here as conversations come in
+          {s.windowed && leads.length > 0
+            ? 'No conversations since your agent went live'
+            : 'Your split shows up here as conversations come in'}
+        </div>
+      ) : s.windowed && (
+        <div style={{ textAlign: 'center', marginTop: 8, fontSize: 11, color: CARD_MUTED, fontFamily: FONT_BODY }}>
+          since your agent went live
         </div>
       )}
     </Card>

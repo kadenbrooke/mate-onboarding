@@ -4,15 +4,19 @@ import {
 } from '@phosphor-icons/react';
 import { useCountUp } from './useCountUp';
 import { FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
+import { moneyShort } from '@/lib/metrics/format';
 import { AUTO_MATE_AGENT_COUNT } from '@/lib/metrics/crew';
-import type { MonthOverview } from '@/lib/metrics/monthOverview';
+import type { MonthOverview, MonthRevenue } from '@/lib/metrics/monthOverview';
 
-// Sits above the Hero strip: the "CEO glance" zone. Six stats that cover the
-// questions an owner actually asks in the first 30 seconds -- are we busy, how
-// much of the crew is working, what needs me, are customers happy. No revenue
-// headline here: the dark Recovered card directly below already owns that
-// number, so this stays the activity/crew/reputation summary instead of
-// repeating it.
+// Sits above the Hero strip: the "CEO glance" zone. A revenue headline plus six
+// supporting stats that cover the questions an owner actually asks in the first
+// 30 seconds -- how much did the business make, are we busy, how much of the
+// crew is working, what needs me, are customers happy.
+//
+// The revenue headline is the BUSINESS's revenue (QuickBooks when connected).
+// The dark Recovered card directly below is AGENT-ATTRIBUTED revenue, which it
+// divides by the retainer for the ROI multiple. Two genuinely different numbers,
+// each labelled with where it came from; do not collapse them into one.
 //
 // 2026-08-11 tile swap: CALLS HANDLED -> AGENTS ACTIVE, AVG RESPONSE ->
 // NEEDS ATTENTION, RATING -> REVIEWS COLLECTED, COST / LEAD -> HOURS SAVED.
@@ -74,8 +78,14 @@ function CountedNumber({ value }: { value: number }) {
   return <>{Math.round(n)}</>;
 }
 
-export function MonthOverviewBanner({ overview, activeAgents, reviewsCollected, hoursSaved }: {
+export function MonthOverviewBanner({
+  overview, revenue, activeAgents, reviewsCollected, hoursSaved,
+}: {
   overview: MonthOverview;
+  /** Business revenue for the month: QuickBooks when connected, the
+   *  serviced-lead sum (labelled as such) when not. Distinct from the hero
+   *  Recovered card, which stays agent-attributed for the ROI math. */
+  revenue: MonthRevenue;
   /** Live agents out of AUTO_MATE_AGENT_COUNT. Counted from the client's own
    *  capability rows BEFORE zone gating (see page.tsx), so a locked Operations
    *  zone cannot make the crew look smaller than it is. */
@@ -102,6 +112,23 @@ export function MonthOverviewBanner({ overview, activeAgents, reviewsCollected, 
         <span style={{ fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY, opacity: 0.85 }}>
           {overview.monthLabel}
         </span>
+      </div>
+
+      {/* Revenue headline. Always carries its source underneath, so a
+          pipeline-derived figure is never mistaken for the books. */}
+      <div data-testid="month-revenue" style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 34, lineHeight: 1.05, ...NUM_DISPLAY }}>
+          {moneyShort(revenue.cents)}
+        </div>
+        <div style={{
+          fontSize: 10.5, letterSpacing: 0.5, fontWeight: 600, fontFamily: FONT_BODY,
+          opacity: 0.85, marginTop: 5,
+        }}>
+          REVENUE THIS MONTH
+        </div>
+        <div style={{ fontSize: 10.5, fontFamily: FONT_BODY, opacity: 0.75, marginTop: 2 }}>
+          {revenue.sourceLabel}
+        </div>
       </div>
 
       {/* Six supporting stats: activity, crew, attention, reputation */}

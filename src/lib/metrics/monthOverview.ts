@@ -1,5 +1,6 @@
-import { isServiced, type Lead } from './leads';
+import { isServiced, revenueAt, type Lead } from './leads';
 import type { ClientEvent } from './events';
+import { moneyPeriodLabel, type MoneyTotals } from './money';
 
 // ---------------------------------------------------------------------------
 // Month Overview banner -- pure math layer. Calendar-month-to-date vs the
@@ -24,6 +25,42 @@ export type MonthOverview = {
   callsHandled: MonthStat;
   avgResponseSeconds: MonthStat;
 };
+
+/** Where the month-revenue tile's number came from, so the card can say. */
+export type MonthRevenue = {
+  cents: number;
+  source: 'quickbooks' | 'pipeline';
+  /** Sub-label spelling the source out under the number. */
+  sourceLabel: string;
+};
+
+/**
+ * The client's BUSINESS revenue for the month.
+ *
+ * QuickBooks is the source of truth when it is connected: it books every job,
+ * including the ones that never touched a lead row. The serviced-lead sum is a
+ * fallback, and it is labelled as pipeline-derived so nobody reads an
+ * agent-attributed subtotal as whole-business revenue.
+ *
+ * NOT the same number as the hero Recovered card, which stays agent-attributed
+ * (serviced leads only) because it divides by the monthly retainer to show ROI.
+ * The QBO figure carries its own period label rather than being asserted as
+ * "this month", so a stale snapshot reads as stale instead of as current.
+ */
+export function monthRevenue(overview: MonthOverview, money: MoneyTotals | null): MonthRevenue {
+  if (money) {
+    return {
+      cents: money.revenue_cents,
+      source: 'quickbooks',
+      sourceLabel: `from QuickBooks · ${moneyPeriodLabel(money)}`,
+    };
+  }
+  return {
+    cents: overview.revenueEarned.value,
+    source: 'pipeline',
+    sourceLabel: 'from jobs marked serviced · connect QuickBooks for full revenue',
+  };
+}
 
 function monthBounds(now: Date) {
   const start = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -55,22 +92,33 @@ function avgReplySeconds(leads: Lead[]): number {
 
 export function monthOverview(leads: Lead[], events: ClientEvent[], now = new Date()): MonthOverview {
   const { start, prevStart, prevEnd } = monthBounds(now);
+  // Two different clocks, on purpose:
+  //   ARRIVAL cohort (created_at)  -- leads acquired, response time, quoted $,
+  //                                   service rate: all questions about the
+  //                                   leads that came in this month.
+  //   REVENUE date (revenueAt)     -- revenue earned, jobs completed: questions
+  //                                   about work FINISHED this month, whenever
+  //                                   its lead happened to arrive.
   const thisMonth = leads.filter(l => inRange(l.created_at, start, now));
   const prevMonth = leads.filter(l => inRange(l.created_at, prevStart, prevEnd));
 
-  const servicedThisMonth = thisMonth.filter(isServiced);
-  const servicedPrevMonth = prevMonth.filter(isServiced);
+  const serviced = leads.filter(isServiced);
+  const servicedThisMonth = serviced.filter(l => inRange(revenueAt(l), start, now));
+  const servicedPrevMonth = serviced.filter(l => inRange(revenueAt(l), prevStart, prevEnd));
   const revenueEarnedCents = servicedThisMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
   const revenueEarnedPrevCents = servicedPrevMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
 
   const quotedThisMonthCents = thisMonth.reduce((a, l) => a + (l.quote_cents ?? 0), 0);
 
+  // Cohort conversion: of the leads that ARRIVED this month and got somewhere,
+  // how many closed. Both sides must come from the same cohort, so this counts
+  // serviced-within-the-arrival-cohort, not the revenue-dated set above.
   // Denominator is every lead that got somewhere (booked/quoted/serviced), not
   // won+lost: 'open' leads have not had their shot yet, so counting them would
   // punish a healthy month with lots of fresh leads.
   const engagedThisMonth = thisMonth.filter(l => l.status !== 'open');
   const serviceRatePct = engagedThisMonth.length
-    ? Math.round((servicedThisMonth.length / engagedThisMonth.length) * 100)
+    ? Math.round((thisMonth.filter(isServiced).length / engagedThisMonth.length) * 100)
     : 0;
 
   const callsThisMonth = events.filter(e => inRange(e.created_at, start, now)).length;
