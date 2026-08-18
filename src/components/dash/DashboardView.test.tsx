@@ -26,6 +26,7 @@ const emptyDash: DashData = {
   capabilities: [],
   incidents: [],
   weekActionCount: 0,
+  missedCallCount: 0,
   ads: null,
   money: null,
 };
@@ -179,5 +180,45 @@ describe('DashboardView', () => {
     fireEvent.click(screen.getByRole('button', { name: /money/i }));
     const mobile = screen.getByTestId('view-money');
     expect(mobile).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // RescueRing's denominator. Before client_events carried anything for a real
+  // client, EVERY production session hit the empty state. These cover the
+  // transition out of it, and the reason the count is a separate field: the
+  // `events` list is capped at 50 rows for the Ticker while the numerator
+  // counts across up to 500 leads.
+  // -------------------------------------------------------------------------
+  const callLeads = (n: number) => Array.from({ length: n }, (_, i) => ({
+    id: `c${i}`, name: null, city: 'Orem', service: 'Driveway', source: 'call',
+    referrer_name: null, score: 50, status: 'open', quote_cents: null, contacted: false,
+    after_hours: false, first_reply_seconds: null, created_at: new Date().toISOString(),
+  })) as never[];
+
+  it('RescueRing stays in its empty state while nothing records missed calls', () => {
+    renderDash({ session, leads: callLeads(3), data: { ...emptyDash, missedCallCount: 0 } });
+    expect(screen.getAllByText(/not tracking missed calls yet/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/missed calls became text conversations/i)).not.toBeInTheDocument();
+  });
+
+  it('RescueRing leaves the empty state and renders a real rate once missed-call events exist', () => {
+    renderDash({ session, leads: callLeads(3), data: { ...emptyDash, missedCallCount: 9 } });
+    expect(screen.queryByText(/not tracking missed calls yet/i)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/of 9 missed calls became text conversations/i).length)
+      .toBeGreaterThanOrEqual(1);
+  });
+
+  // The bug this replaces: the denominator was `events.filter(kind==='missed_call').length`
+  // off a 50-row fetch, so a session with 60 missed calls and 55 rescued leads
+  // rendered "55 of 50" (or, after the Math.max clamp, a flat 100%).
+  it('the denominator is the session-wide count, not a slice of the capped events list', () => {
+    const events = Array.from({ length: 4 }, (_, i) => ({
+      id: `e${i}`, agent: 'first_responder' as const, kind: 'missed_call',
+      message: 'x', created_at: new Date().toISOString(),
+    }));
+    renderDash({ session, leads: callLeads(55), data: { ...emptyDash, events, missedCallCount: 60 } });
+    expect(screen.getAllByText(/of 60 missed calls became text conversations/i).length)
+      .toBeGreaterThanOrEqual(1);
+    expect(screen.queryByText(/of 4 missed calls/i)).not.toBeInTheDocument();
   });
 });

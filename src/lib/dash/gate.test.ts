@@ -15,6 +15,7 @@ const FULL: DashData = {
   capabilities: [{ key: 'sms', label: 'SMS', status: 'live' }],
   incidents: [],
   weekActionCount: 4,
+  missedCallCount: 0,
   ads: null,
   money: null,
 };

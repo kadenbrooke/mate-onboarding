@@ -67,6 +67,13 @@ export type DashData = {
   capabilities: DashCapability[];
   incidents: Incident[];
   weekActionCount: number;
+  /**
+   * Every missed-call event this session has recorded, from a count query
+   * rather than from `events` (which is capped at 50 for the Ticker). It is
+   * RescueRing's denominator and the numerator counts across 500 leads, so a
+   * capped denominator would understate the rescue rate.
+   */
+  missedCallCount: number;
   ads: AdTotals | null;
   money: MoneyTotals | null;
 };

@@ -142,8 +142,13 @@ export function DashboardView({ session, leads, data, locks, glance }: {
   // Speed cards (2026-07: no longer one bundled "Speed to lead" group --
   // Reply Time moved to Crew, Missed Calls Rescued + When Leads Arrive
   // reordered relative to City on the Leads tab).
-  const missedCallEvents = data.events.filter(e => e.kind === 'missed_call').length;
-  const totalMissedCalls = missedCallEvents > 0 ? missedCallEvents : undefined;
+  // Denominator comes from the session-wide count query (data.missedCallCount),
+  // NOT from data.events: that list is capped at 50 rows for the Ticker while
+  // `rescued` counts across up to 500 leads, so counting it here silently
+  // clamped the rate. 0 means nothing records missed calls for this session,
+  // which RescueRing renders as an explicit "not tracking" state rather than
+  // as a rate built out of its own numerator.
+  const totalMissedCalls = data.missedCallCount > 0 ? data.missedCallCount : undefined;
   const speed = speedStats(leads, totalMissedCalls);
   const raceCard = <RaceCard avgReplySeconds={speed.avgReplySeconds} leadCount={speed.leadCount} />;
   const rescueCard = <RescueRing rescued={speed.rescued} missedTotal={speed.missedTotal} />;

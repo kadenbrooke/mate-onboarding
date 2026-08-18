@@ -8,13 +8,26 @@ const inserts: [string, unknown][] = [];
 // Captures deletes as [table, eqArgs] so the ignore path is observable.
 const deletes: [string, unknown[][]][] = [];
 let deleteError: { message: string } | null = null;
+// Captures the derived ticker rows the route emits into client_events.
+const emitted: Record<string, unknown>[] = [];
 
 function tableStub(table: string) {
   return {
-    select: () => ({ eq: () => ({ eq: () => ({ maybeSingle, single, order: () => ({ limit: () => ({ maybeSingle }) }) }), maybeSingle, single }) }),
+    select: () => table === 'jc_sms_conversations'
+      // The quote path looks the lead's name up by from_number. Its own stub so
+      // it cannot consume a maybeSingle a test queued for the postcall lookup.
+      ? { eq: () => ({ maybeSingle: () => Promise.resolve({ data: { lead_name: 'Wes Bayles' }, error: null }) }) }
+      : { eq: () => ({ eq: () => ({ maybeSingle, single, order: () => ({ limit: () => ({ maybeSingle }) }) }), maybeSingle, single }) },
     insert: (v: unknown) => {
       inserts.push([table, v]);
-      return { select: () => ({ single: () => Promise.resolve({ data: { id: 'new-lead', session_id: 's1', phone: '+18015551234' }, error: null }) }) };
+      const row = table === 'lead_postcall'
+        ? { id: 'pc-new', opened_at: '2026-08-17T18:00:00.000Z' }
+        : { id: 'new-lead', session_id: 's1', phone: '+18015551234', name: null };
+      return { select: () => ({ single: () => Promise.resolve({ data: row, error: null }) }) };
+    },
+    upsert: (v: unknown) => {
+      emitted.push(v as Record<string, unknown>);
+      return Promise.resolve({ error: null });
     },
     update: (v: unknown) => { void v; return { eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }; },
     delete: () => {
@@ -43,6 +56,7 @@ beforeEach(() => {
   maybeSingle.mockReset();
   inserts.length = 0;
   deletes.length = 0;
+  emitted.length = 0;
   deleteError = null;
   applyNoteToLead.mockClear();
 });
@@ -128,6 +142,52 @@ describe('POST /api/agent/postcall - Ignore (choice 4) on the call menu', () => 
     const res = await post('action=operator_reply&k=tok', { session_id: 's1', text: '4 he is a supplier' });
     expect(res.status).toBe(200);
     expect(await res.json()).not.toMatchObject({ deleted_lead: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Activity feed. client_events used to be demo-only, so the Ticker, Hours
+// Saved, Calls Handled, Agent Activity and the hero sparklines were dead for
+// every real client. These paths are half of what fills them.
+// ---------------------------------------------------------------------------
+describe('POST /api/agent/postcall - client_events emission', () => {
+  it('fire emits a call event keyed on the new lead_postcall row', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18012240797', name: null }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18019414398', onboarding_form_url: null, faq_url: null }, error: null });
+    await post('action=fire&k=tok', { session_id: 's1', caller: '+18012240797' });
+    expect(emitted).toEqual([expect.objectContaining({
+      session_id: 's1', agent: 'first_responder', kind: 'call',
+      message: 'Checked in after your call with (801) 224-0797',
+      source_key: 'postcall:pc-new:opened',
+    })]);
+  });
+
+  it('an answered menu emits what the agent actually sent', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'pc1', lead_id: 'l1', kind: 'call', jc_conversation_id: null, created_by_fire: false }, error: null });
+    single.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18012240797', name: 'Ron Hobbs' }, error: null });
+    single.mockResolvedValueOnce({ data: { onboarding_form_url: 'https://f', faq_url: null }, error: null });
+    await post('action=operator_reply&k=tok', { session_id: 's1', text: '1' });
+    expect(emitted).toEqual([expect.objectContaining({
+      kind: 'reply', message: 'Sent Ron Hobbs the onboarding form', source_key: 'postcall:pc1:resolved',
+    })]);
+  });
+
+  it('a quote outcome is credited to the cultivator', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'pc1', lead_id: null, kind: 'quote', jc_conversation_id: '+18018915463' }, error: null });
+    await post('action=operator_reply&k=tok', { session_id: 's1', text: '1' });
+    expect(emitted).toEqual([expect.objectContaining({
+      agent: 'cultivator', kind: 'won',
+      message: 'The estimate for Wes Bayles came back a win',
+      source_key: 'postcall:pc1:quote',
+    })]);
+  });
+
+  it('choice 4 emits nothing: nobody was contacted', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'pc1', lead_id: 'l1', kind: 'call', jc_conversation_id: null, created_by_fire: false }, error: null });
+    single.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18012240797', name: null }, error: null });
+    single.mockResolvedValueOnce({ data: { onboarding_form_url: null, faq_url: null }, error: null });
+    await post('action=operator_reply&k=tok', { session_id: 's1', text: '4' });
+    expect(emitted).toHaveLength(0);
   });
 });
 

@@ -39,6 +39,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     capabilitiesResult,
     incidentsResult,
     weekActionCountResult,
+    missedCallCountResult,
     adMetricsResult,
     money,
     contactResult,
@@ -103,6 +104,17 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .select('id', { count: 'exact', head: true })
       .eq('session_id', sessionId)
       .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
+    // RescueRing's denominator: how many missed calls this session has EVER
+    // recorded. A count query, not a slice of the 50-row events fetch above --
+    // that fetch is sized for the Ticker, while the numerator (speedStats'
+    // `rescued`) counts across up to 500 leads, so deriving the denominator
+    // from it capped the ratio below the numerator and understated the rescue
+    // rate. Only the number is needed, so head:true ships no rows.
+    supabase
+      .from('client_events')
+      .select('id', { count: 'exact', head: true })
+      .eq('session_id', sessionId)
+      .eq('kind', 'missed_call'),
     // Ad Performance zone: latest daily snapshot per platform (Meta + Google
     // share this one card). Ordered date desc so the newest rows come first.
     supabase
@@ -174,6 +186,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     capabilities,
     incidents: incidentsResult.data ?? [],
     weekActionCount: weekActionCountResult.count ?? 0,
+    missedCallCount: missedCallCountResult.count ?? 0,
     ads,
     money,
   };

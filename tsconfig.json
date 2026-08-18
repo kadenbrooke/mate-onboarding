@@ -11,6 +11,10 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
+    // scripts/*.ts are run directly by `node --experimental-strip-types`, and
+    // Node's ESM resolver requires the explicit .ts extension on relative
+    // imports. Safe here because the whole project is noEmit (Next compiles).
+    "allowImportingTsExtensions": true,
     "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
