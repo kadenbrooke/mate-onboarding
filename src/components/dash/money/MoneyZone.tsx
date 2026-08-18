@@ -1,7 +1,7 @@
 import { Card } from '../Card';
 import { moneyShort } from '@/lib/metrics/format';
 import { RingStat } from '../RingStat';
-import type { MoneyTotals } from '@/lib/metrics/money';
+import { moneyPeriodLabel, type MoneyTotals } from '@/lib/metrics/money';
 import { brandVar, FREE_GREEN, LOST_BROWN, CARD_MUTED, NUM_DISPLAY, FONT_BODY } from '@/lib/theme';
 
 // Money zone -- QuickBooks Online financials on one card, read-only.
@@ -88,20 +88,8 @@ export function MoneyZone({ money, showLabel = true }: {
       </div>
 
       <div style={{ marginTop: 12, fontSize: 9.5, letterSpacing: 0.5, color: CARD_MUTED, fontFamily: FONT_BODY, textAlign: 'center' }}>
-        {periodLabel(money)} &middot; from QuickBooks &middot; updated {money.date_pulled}
+        {moneyPeriodLabel(money)} &middot; from QuickBooks &middot; updated {money.date_pulled}
       </div>
     </Card>
   );
-}
-
-/** "July 2026" from the period key/range, falling back to the raw period. */
-function periodLabel(money: MoneyTotals): string {
-  const src = money.period_start ?? (money.period ? `${money.period}-01` : null);
-  if (src) {
-    const d = new Date(src);
-    if (!Number.isNaN(d.getTime())) {
-      return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
-    }
-  }
-  return money.period || 'This period';
 }

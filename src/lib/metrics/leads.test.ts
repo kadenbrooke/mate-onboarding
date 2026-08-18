@@ -192,7 +192,23 @@ describe('scoreStats', () => {
       lead({ score: 80, contacted: false }),
     ]);
     expect(out.avg).toBe(73);
+    expect(out.scoredCount).toBe(3);
     expect(out.hot[0].name).toBe('Hot');
     expect(out.hot.every(l => !l.contacted)).toBe(true);
+  });
+
+  it('reports a null average when nothing is scored, not a 0', () => {
+    // 0 rendered as a red "0" on the quality gauge, asserting the worst
+    // possible lead quality for a book of leads nobody has ever scored.
+    const out = scoreStats([lead({ score: null }), lead({ score: null })]);
+    expect(out.avg).toBeNull();
+    expect(out.scoredCount).toBe(0);
+    expect(out.hot).toHaveLength(0);
+  });
+
+  it('separates "nothing scored" from "nothing hot"', () => {
+    const nothingHot = scoreStats([lead({ score: 90, contacted: true })]);
+    expect(nothingHot.hot).toHaveLength(0);
+    expect(nothingHot.scoredCount).toBe(1);
   });
 });

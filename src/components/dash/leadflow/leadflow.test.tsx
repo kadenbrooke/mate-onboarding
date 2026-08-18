@@ -112,6 +112,25 @@ describe('HotLeads (with merged quality gauge)', () => {
     const sweep = arc.querySelectorAll('path')[1];
     expect(sweep.getAttribute('stroke')).toBe('#c08a0a');
   });
+
+  it('says scoring is not running when no lead has a score', () => {
+    // The J&C case: 101 leads, none scored. The card previously swept a red 0
+    // on the gauge and said "No uncontacted leads right now", which reads as
+    // "nothing is hot" rather than "nothing has ever been scored".
+    render(
+      <HotLeads leads={[lead({ score: null }), lead({ score: null })]} sessionId="s1" />,
+    );
+    expect(screen.getByText(/lead scoring is not running yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/your 2 leads are in the pipeline, none of them scored/i)).toBeInTheDocument();
+    expect(screen.queryByTestId('quality-arc')).toBeNull();
+    expect(screen.queryByText(/no uncontacted leads/i)).toBeNull();
+  });
+
+  it('offers the waiting-for-leads copy when there are no leads at all', () => {
+    render(<HotLeads leads={[]} sessionId="s1" />);
+    expect(screen.getByText(/lead scoring is not running yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/once leads come in/i)).toBeInTheDocument();
+  });
 });
 
 describe('SourceDonut', () => {

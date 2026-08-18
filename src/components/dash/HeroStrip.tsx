@@ -12,11 +12,14 @@ export type HeroStripSeries = { recovered: HeroSeries; hours: HeroSeries; action
 // said one estimated thing twice; the driver split counts real rows instead.
 // `series`, `hoursSaved` and `actions` stay in the props for the callers and
 // the recovered chart, which still uses them.
-export function HeroStrip({ recoveredCents, roiMultiple, recovered, leads }: {
-  recoveredCents: number; roiMultiple: number; hoursSaved?: number; actions?: number;
+export function HeroStrip({ recoveredCents, roiMultiple, recovered, leads, agentLiveAt }: {
+  /** null when the client's monthly retainer is unknown: no retainer, no ROI. */
+  recoveredCents: number; roiMultiple: number | null; hoursSaved?: number; actions?: number;
   series?: HeroStripSeries;
   recovered: { points: DailyPoint[]; deltaCents: number };
   leads: Lead[];
+  /** Agent-live instant for the manual/automated split window. */
+  agentLiveAt?: string | null;
 }) {
   return (
     <div className="hero-strip" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -36,7 +39,7 @@ export function HeroStrip({ recoveredCents, roiMultiple, recovered, leads }: {
         points={recovered.points}
       />
       <div className="hero-split" style={{ flex: 1, minWidth: 260, display: 'flex' }}>
-        <DriverSplitCard leads={leads} />
+        <DriverSplitCard leads={leads} since={agentLiveAt} />
       </div>
     </div>
   );

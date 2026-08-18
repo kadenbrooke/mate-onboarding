@@ -50,13 +50,32 @@ function QualityArc({ avg }: { avg: number }) {
 }
 
 export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: string }) {
-  const { hot, avg } = scoreStats(leads);
+  const { hot, avg, scoredCount } = scoreStats(leads);
+
+  // Nothing scored: the gauge would sweep a red 0 and the list would read
+  // "no uncontacted leads", both of which assert lead quality we have never
+  // measured. Say the scoring is not running instead. This is the whole card's
+  // only input, so there is nothing else to render.
+  if (scoredCount === 0) {
+    return (
+      <Card label="HOT RIGHT NOW">
+        <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 12, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
+          lead scoring is not running yet
+          <div style={{ fontSize: 11, marginTop: 4 }}>
+            {leads.length > 0
+              ? `your ${leads.length} leads are in the pipeline, none of them scored`
+              : 'your hottest leads show up here once leads come in'}
+          </div>
+        </div>
+      </Card>
+    );
+  }
 
   return (
     <Card label="HOT RIGHT NOW">
       {/* Average lead quality gauge, merged from the old LEAD QUALITY card */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 10 }}>
-        <QualityArc avg={avg} />
+        <QualityArc avg={avg ?? 0} />
         <div style={{ fontSize: 10, color: CARD_MUTED, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
           avg lead quality
         </div>

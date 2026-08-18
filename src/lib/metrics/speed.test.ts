@@ -46,9 +46,37 @@ describe('speedStats', () => {
     expect(out.missedTotal).toBe(4);
   });
 
-  it('missedTotal defaults to rescued count when no event total supplied', () => {
-    const out = speedStats([lead({ source: 'call' })]);
-    expect(out.missedTotal).toBe(1);
+  it('missedTotal is null when nothing independently counts missed calls', () => {
+    // The bug this replaces: missedTotal fell back to `rescued`, so a session
+    // with no missed-call events rendered "N of N rescued" -- a 100% rescue
+    // rate built entirely out of its own numerator.
+    const out = speedStats([lead({ source: 'call' }), lead({ source: 'call' })]);
+    expect(out.rescued).toBe(2);
+    expect(out.missedTotal).toBeNull();
+  });
+
+  it('never lets the denominator fall below the rescued count', () => {
+    // A missed-call total smaller than the rescues is inconsistent upstream
+    // data; clamping keeps the rate at or below 100% instead of rendering 3/1.
+    const out = speedStats([lead({ source: 'call' }), lead({ source: 'call' }), lead({ source: 'call' })], 1);
+    expect(out.missedTotal).toBe(3);
+  });
+
+  it('avgReplySeconds is null when no lead has a measured reply time', () => {
+    // Not 0: a 0 rendered as an instant-response brag from missing data.
+    const out = speedStats([
+      lead({ first_reply_seconds: null }),
+      lead({ first_reply_seconds: null }),
+    ]);
+    expect(out.avgReplySeconds).toBeNull();
+    expect(out.repliedCount).toBe(0);
+    expect(out.leadCount).toBe(2);
+  });
+
+  it('reports a genuine zero-second average as 0, distinct from null', () => {
+    const out = speedStats([lead({ first_reply_seconds: 0 })]);
+    expect(out.avgReplySeconds).toBe(0);
+    expect(out.repliedCount).toBe(1);
   });
 
   it('rescue: legacy missed_call value still counts (pre-2026-08-05 rows)', () => {

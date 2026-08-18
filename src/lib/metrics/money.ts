@@ -52,6 +52,21 @@ export function moneyTotals(row: QbMetricRecord): MoneyTotals {
   };
 }
 
+/** "July 2026" from the snapshot's period range/key, falling back to the raw
+ *  period string. Shared by the Money zone footer and the Month Overview
+ *  revenue tile so a QBO figure is always shown against the period it covers
+ *  (a July snapshot must never be labelled "this month" in August). */
+export function moneyPeriodLabel(money: MoneyTotals): string {
+  const src = money.period_start ?? (money.period ? `${money.period}-01` : null);
+  if (src) {
+    const d = new Date(src);
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
+    }
+  }
+  return money.period || 'This period';
+}
+
 /** Minimal shape of the query builder we depend on. A real Supabase client and
  *  the test's fake both satisfy it. Chainable, thenable via `maybeSingle`. */
 export type MoneyQuery = {

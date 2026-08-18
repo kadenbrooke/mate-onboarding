@@ -22,7 +22,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   // Load session - also fetch contact_id so we can join client_capabilities
   const { data: session } = await supabase
     .from('onboarding_sessions')
-    .select('id, mate_name, contact_id, collected, agent_enabled, operator_phone')
+    .select('id, mate_name, contact_id, collected, agent_enabled, operator_phone, created_at')
     .eq('id', sessionId)
     .single();
   if (!session) notFound();
@@ -41,6 +41,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     weekActionCountResult,
     adMetricsResult,
     money,
+    contactResult,
   ] = await Promise.all([
     supabase
       .from('client_leads')
@@ -117,6 +118,17 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     // the small MoneyQuery contract needs, and matching them structurally
     // inside this Promise.all tuple trips TS "excessively deep" inference.
     fetchMoneyTotals(supabase as unknown as MoneyQuery, sessionId),
+    // The client's monthly retainer, for the hero ROI multiple. Lives on the
+    // CRM contact the session was linked to at onboarding completion. NOTE:
+    // contacts.monthly_retainer is stored in DOLLARS, unlike every *_cents
+    // column in this schema, so it is converted below.
+    session.contact_id
+      ? supabase
+          .from('contacts')
+          .select('monthly_retainer')
+          .eq('id', session.contact_id as string)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
   ]);
 
   // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
@@ -183,9 +195,22 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     reviewsCollected: rawData.reviews.length,
   };
 
+  // Dollars -> cents. A missing contact, a missing retainer, or a non-positive
+  // one all resolve to null, which suppresses the ROI multiple entirely: a
+  // divide-by-a-guess is worse than no number.
+  const rawRetainer = Number(contactResult.data?.monthly_retainer ?? NaN);
+  const monthlyRetainerCents = Number.isFinite(rawRetainer) && rawRetainer > 0
+    ? Math.round(rawRetainer * 100)
+    : null;
+
   return (
     <DashboardView
-      session={{ id: session.id, mate_name: session.mate_name }}
+      session={{
+        id: session.id,
+        mate_name: session.mate_name,
+        created_at: (session.created_at ?? null) as string | null,
+        monthlyRetainerCents,
+      }}
       leads={(leadsResult.data ?? []) as Lead[]}
       data={data}
       locks={locks}

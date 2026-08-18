@@ -44,11 +44,23 @@ function Lane({ label, fillPct, fillColor, value, valueColor, note }: {
   );
 }
 
-export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
-  const warming = avgReplySeconds === 0;
+/**
+ * `avgReplySeconds` is null when no lead carries a measured reply time. That is
+ * an empty state, not a 0-second response: rendering "0 sec avg response" out
+ * of missing data claimed an instant reply the agent never made.
+ *
+ * `leadCount` separates the two ways the number can be missing, because the
+ * honest copy differs: no leads have arrived yet, versus leads arrived and
+ * nothing timed the replies.
+ */
+export function RaceCard({ avgReplySeconds, leadCount = 0 }: {
+  avgReplySeconds: number | null; leadCount?: number;
+}) {
+  const warming = avgReplySeconds == null;
+  const untracked = warming && leadCount > 0;
   const industrySeconds = INDUSTRY_AVG_MINUTES * 60;
-  const agentFillPct = (avgReplySeconds / industrySeconds) * 100;
-  const multiple = Math.max(1, Math.round(industrySeconds / Math.max(avgReplySeconds, 1)));
+  const agentFillPct = ((avgReplySeconds ?? 0) / industrySeconds) * 100;
+  const multiple = Math.max(1, Math.round(industrySeconds / Math.max(avgReplySeconds ?? 1, 1)));
 
   return (
     <Card label="RESPONSE TIME">
@@ -56,7 +68,7 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
       <div style={{ display: 'flex', alignItems: 'baseline', gap: 6, marginTop: 10 }}>
         {warming ? (
           <span style={{ fontSize: 13, color: CARD_MUTED, fontFamily: FONT_BODY }}>
-            waiting for your first lead
+            {untracked ? 'response time not tracked yet' : 'waiting for your first lead'}
           </span>
         ) : (
           <>
@@ -72,7 +84,7 @@ export function RaceCard({ avgReplySeconds }: { avgReplySeconds: number }) {
           fillColor={brandVar}
           value={warming ? undefined : `${avgReplySeconds} sec`}
           valueColor={brandVar}
-          note={warming ? 'no replies yet' : undefined}
+          note={warming ? (untracked ? 'no reply times recorded' : 'no replies yet') : undefined}
         />
         <Lane
           label="INDUSTRY AVERAGE"

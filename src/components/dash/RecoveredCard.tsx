@@ -33,7 +33,9 @@ function longDate(iso: string): string {
 
 export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
   totalCents: number;
-  roiMultiple: number;
+  /** null when the monthly retainer is unknown: the "Nx what you pay" line is
+   *  simply omitted rather than rendered against a guessed retainer. */
+  roiMultiple: number | null;
   deltaCents: number;
   points: DailyPoint[];
 }) {
@@ -119,7 +121,7 @@ export function RecoveredCard({ totalCents, roiMultiple, deltaCents, points }: {
       </div>
       <div style={{ fontSize: 11, fontFamily: FONT_BODY, marginTop: 5, color: CARD_MUTED }}>
         {points.length > 0 ? longDate(points[points.length - 1].date) : ''}
-        {roiMultiple > 0 ? ` · ${roiMultiple.toFixed(1)}x what you pay` : ''}
+        {roiMultiple != null && roiMultiple > 0 ? ` · ${roiMultiple.toFixed(1)}x what you pay` : ''}
       </div>
 
       {/* Chart + crosshair overlay */}

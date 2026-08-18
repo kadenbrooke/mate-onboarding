@@ -8,7 +8,7 @@ import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/reco
 import { SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MonthOverviewBanner } from './MonthOverviewBanner';
-import { monthOverview } from '@/lib/metrics/monthOverview';
+import { monthOverview, monthRevenue } from '@/lib/metrics/monthOverview';
 import { MobileNav, type MobileView } from './MobileNav';
 import { useDashEditing } from '@/lib/dashEditing';
 import { TrendCard } from './leadflow/TrendCard';
@@ -63,7 +63,17 @@ function LinkCard({ href, label }: { href: string; label: string }) {
 }
 
 export function DashboardView({ session, leads, data, locks, glance }: {
-  session: { id: string; mate_name?: string | null }; leads: Lead[]; data: DashData;
+  session: {
+    id: string; mate_name?: string | null;
+    /** When this client came online with us. Anchors the manual/automated split
+     *  so pre-agent backfilled leads cannot distort a post-agent stat. */
+    created_at?: string | null;
+    /** From contacts.monthly_retainer via the session's contact, converted to
+     *  cents. null when there is no linked contact or no retainer on it, which
+     *  suppresses the ROI multiple rather than inventing one. */
+    monthlyRetainerCents?: number | null;
+  };
+  leads: Lead[]; data: DashData;
   locks: Record<ZoneId, ZoneLock | null>;
   /** Month Overview counts computed server-side from ungated data (page.tsx). */
   glance: { activeAgents: number; reviewsCollected: number };
@@ -96,11 +106,19 @@ export function DashboardView({ session, leads, data, locks, glance }: {
     setView(v);
     try { window.scrollTo({ top: 0 }); } catch { /* non-browser env */ }
   };
-  const hero = heroStats(leads, { monthlyRetainerCents: 100000, actionsThisWeek: data.weekActionCount, minutesPerAction: 5 }); // PLAN3: retainer from session
+  const hero = heroStats(leads, {
+    monthlyRetainerCents: session.monthlyRetainerCents ?? null,
+    actionsThisWeek: data.weekActionCount,
+    minutesPerAction: 5,
+  });
   const series = heroSeries(leads, data.events, { minutesPerAction: 5 });
   // Daily cumulative series + WoW dollar delta for the Mercury-style dark card
   const recovered = { points: recoveredDailySeries(leads), deltaCents: recoveredWowDeltaCents(leads) };
   const overview = monthOverview(leads, data.events);
+  // Business revenue (QBO first). `data.money` is null both when QuickBooks is
+  // unconnected AND when the Money zone is gated, and the pipeline fallback is
+  // the right answer in either case.
+  const revenue = monthRevenue(overview, data.money);
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;
@@ -127,7 +145,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
   const missedCallEvents = data.events.filter(e => e.kind === 'missed_call').length;
   const totalMissedCalls = missedCallEvents > 0 ? missedCallEvents : undefined;
   const speed = speedStats(leads, totalMissedCalls);
-  const raceCard = <RaceCard avgReplySeconds={speed.avgReplySeconds} />;
+  const raceCard = <RaceCard avgReplySeconds={speed.avgReplySeconds} leadCount={speed.leadCount} />;
   const rescueCard = <RescueRing rescued={speed.rescued} missedTotal={speed.missedTotal} />;
   const dayClockCard = <DayClock buckets={hourBuckets(speed.hourCounts)} />;
   // Agent Activity (2026-07): pairs with Reply Time on the Agents tab --
@@ -259,12 +277,19 @@ export function DashboardView({ session, leads, data, locks, glance }: {
           grid cells so the IconRail scroll anchors still resolve. */}
       <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <MonthOverviewBanner
-                  overview={overview}
-                  activeAgents={glance.activeAgents}
-                  reviewsCollected={glance.reviewsCollected}
-                  hoursSaved={hero.hoursSaved}
-                />
-        <HeroStrip {...hero} series={series} recovered={recovered} leads={leads} />
+          overview={overview}
+          revenue={revenue}
+          activeAgents={glance.activeAgents}
+          reviewsCollected={glance.reviewsCollected}
+          hoursSaved={hero.hoursSaved}
+        />
+        <HeroStrip
+          {...hero}
+          series={series}
+          recovered={recovered}
+          leads={leads}
+          agentLiveAt={session.created_at}
+        />
         <Ticker events={data.events} />
         <MovableDashGrid
           sessionId={session.id}
@@ -291,11 +316,18 @@ export function DashboardView({ session, leads, data, locks, glance }: {
               <>
                 <MonthOverviewBanner
                   overview={overview}
+                  revenue={revenue}
                   activeAgents={glance.activeAgents}
                   reviewsCollected={glance.reviewsCollected}
                   hoursSaved={hero.hoursSaved}
                 />
-                <HeroStrip {...hero} series={series} recovered={recovered} leads={leads} />
+                <HeroStrip
+                  {...hero}
+                  series={series}
+                  recovered={recovered}
+                  leads={leads}
+                  agentLiveAt={session.created_at}
+                />
                 <Ticker events={data.events} />
               </>
             )}
