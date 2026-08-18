@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { emitClientEvent } from '@/lib/agent/clientEvents';
+import { handoffSignalEvent } from '@/lib/metrics/eventSources';
 
 // One-shot signal from the e2e preview page (served cross-origin from amos-ui),
 // e.g. "operator-flip ready". Params ride the query string so a no-cors POST
@@ -23,11 +25,25 @@ export async function POST(request: Request) {
   }
   const kind = url.searchParams.get('kind');
   if (!kind) return NextResponse.json({ error: 'kind required' }, { status: 400, headers: CORS });
-  const { error } = await createServiceClient().from('handoff_signals').insert({
-    session_id: url.searchParams.get('session_id'),
+  const supabase = createServiceClient();
+  const sessionId = url.searchParams.get('session_id');
+  // `.select().single()` only so the signal's id can key the ticker event.
+  const { data: signal, error } = await supabase.from('handoff_signals').insert({
+    session_id: sessionId,
     kind,
     note: url.searchParams.get('note'),
-  });
+  }).select('id, created_at').single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500, headers: CORS });
+  // Mirror it into the client's activity feed when the signal describes a real
+  // change of hands. This table is also the sink for internal readiness pings
+  // from the e2e preview page, and handoffSignalEvent returns null for those,
+  // so a client never sees one. Best effort either way: emitClientEvent cannot
+  // throw, and the signal is already recorded above.
+  await emitClientEvent(supabase, handoffSignalEvent({
+    signalId: signal?.id as string,
+    sessionId,
+    kind,
+    at: (signal?.created_at as string | null) ?? new Date().toISOString(),
+  }));
   return NextResponse.json({ ok: true }, { headers: CORS });
 }

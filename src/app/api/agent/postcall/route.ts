@@ -6,6 +6,8 @@ import { applyPostcallChoice } from '@/lib/agent/postcallActions';
 import { applyQuoteOutcome } from '@/lib/agent/quoteOutcome';
 import { logMessage } from '@/lib/agent/messages';
 import { applyNoteToLead } from '@/lib/agent/noteExtract';
+import { emitClientEvent } from '@/lib/agent/clientEvents';
+import { postcallOpenedEvent, postcallResolvedEvent, quoteOutcomeEvent } from '@/lib/metrics/eventSources';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -26,7 +28,7 @@ export async function POST(request: Request) {
   if (action === 'fire') {
     if (!body.session_id || !body.caller) return NextResponse.json({ error: 'session_id and caller required' }, { status: 400 });
     let { data: lead } = await supabase.from('client_leads')
-      .select('id, session_id, phone').eq('session_id', body.session_id).eq('phone', body.caller).maybeSingle();
+      .select('id, session_id, phone, name').eq('session_id', body.session_id).eq('phone', body.caller).maybeSingle();
     // Provenance for the "4 / Ignore" path below: only a lead this call just
     // created may be deleted when the operator says to drop it. A repeat caller
     // with history is never removed.
@@ -40,17 +42,30 @@ export async function POST(request: Request) {
       // (meta/call/text/referral/google).
       const ins = await supabase.from('client_leads')
         .insert({ session_id: body.session_id, phone: body.caller, source: 'call', handler: 'human' })
-        .select('id, session_id, phone').single();
+        .select('id, session_id, phone, name').single();
       lead = ins.data;
     }
     if (!lead) return NextResponse.json({ error: 'could not resolve lead' }, { status: 500 });
     const { data: config } = await supabase.from('onboarding_sessions')
       .select('operator_phone, onboarding_form_url, faq_url').eq('id', body.session_id).single();
     if (!config?.operator_phone) return NextResponse.json({ error: 'no operator_phone configured' }, { status: 409 });
-    await supabase.from('lead_postcall').insert({
+    // `.select().single()` only so the new row's id can key the ticker event.
+    // A failure here is already non-fatal below: no id means no event, and the
+    // operator menu still goes out.
+    const { data: opened } = await supabase.from('lead_postcall').insert({
       lead_id: lead.id, session_id: body.session_id, status: 'awaiting', created_by_fire: createdByFire,
-    });
+    }).select('id, opened_at').single();
     await sendSms(config.operator_phone, buildMenuText(body.caller));
+    if (opened) {
+      await emitClientEvent(supabase, postcallOpenedEvent({
+        postcallId: opened.id as string,
+        sessionId: body.session_id,
+        kind: 'call',
+        leadName: lead.name as string | null,
+        phone: lead.phone,
+        openedAt: (opened.opened_at as string | null) ?? new Date().toISOString(),
+      }));
+    }
     return NextResponse.json({ ok: true, lead_id: lead.id });
   }
 
@@ -76,7 +91,21 @@ export async function POST(request: Request) {
           // Ignore: no state change, schedule one re-ask ~24h later, keep the menu open.
           await supabase.from('lead_postcall').update({ reask_at: new Date(Date.now() + DAY_MS).toISOString() }).eq('id', pc.id);
         } else {
-          await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: new Date().toISOString() }).eq('id', pc.id);
+          const resolvedAt = new Date().toISOString();
+          await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
+          // The lead's name for the ticker line. jc_sms_conversations has no
+          // `id`; jc_conversation_id carries its from_number natural key.
+          const { data: conv } = await supabase.from('jc_sms_conversations')
+            .select('lead_name').eq('from_number', pc.jc_conversation_id).maybeSingle();
+          await emitClientEvent(supabase, quoteOutcomeEvent({
+            postcallId: pc.id as string,
+            sessionId: body.session_id,
+            kind: 'quote',
+            leadName: (conv?.lead_name ?? null) as string | null,
+            phone: pc.jc_conversation_id as string | null,
+            resolvedAt,
+            choice,
+          }));
         }
       } else if (notes) {
         await logNote(notes);
@@ -85,7 +114,7 @@ export async function POST(request: Request) {
     }
 
     const { data: lead } = await supabase.from('client_leads')
-      .select('id, session_id, phone').eq('id', pc.lead_id).single();
+      .select('id, session_id, phone, name').eq('id', pc.lead_id).single();
     const { data: config } = await supabase.from('onboarding_sessions')
       .select('onboarding_form_url, faq_url').eq('id', body.session_id).single();
     const { choice, notes } = classifyReply(body.text);
@@ -111,7 +140,17 @@ export async function POST(request: Request) {
     }
     if (choice && lead) {
       await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms });
-      await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: new Date().toISOString() }).eq('id', pc.id);
+      const resolvedAt = new Date().toISOString();
+      await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
+      await emitClientEvent(supabase, postcallResolvedEvent({
+        postcallId: pc.id as string,
+        sessionId: body.session_id,
+        kind: (pc.kind ?? 'call') as string,
+        leadName: lead.name as string | null,
+        phone: lead.phone,
+        resolvedAt,
+        choice,
+      }));
     }
     return NextResponse.json({ ok: true });
   }
