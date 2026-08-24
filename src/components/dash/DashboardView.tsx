@@ -296,7 +296,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
           leads={leads}
           agentLiveAt={session.created_at}
         />
-        <Ticker events={data.events} />
+        <Ticker events={data.events} sessionId={session.id} />
         <MovableDashGrid
           sessionId={session.id}
           cards={movableCards}
@@ -335,7 +335,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
                   leads={leads}
                   agentLiveAt={session.created_at}
                 />
-                <Ticker events={data.events} />
+                <Ticker events={data.events} sessionId={session.id} />
               </>
             )}
             <SortableStack
