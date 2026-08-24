@@ -1,4 +1,5 @@
 'use client';
+import Link from 'next/link';
 import {
   Wrench, UsersThree, Robot, Warning, Star, Clock, ArrowUpRight, ArrowDownRight,
 } from '@phosphor-icons/react';
@@ -39,15 +40,20 @@ function TrendPill({ pct }: { pct: number }) {
   );
 }
 
-function StatTile({ icon, label, big, sub, trend }: {
+function StatTile({ icon, label, big, sub, trend, href }: {
   icon: React.ReactNode; label: string; big: React.ReactNode; sub?: string;
   trend?: { pct: number };
+  /** When set the whole tile becomes a link to the sheet behind the number
+   *  (NEW LEADS -> the pipeline, newest captured first). Tiles without a
+   *  drill-down stay plain divs -- no hover affordance we can't honor. */
+  href?: string;
 }) {
-  return (
-    <div style={{
-      minWidth: 0, background: 'rgba(255,255,255,0.14)', borderRadius: 14,
-      padding: '12px 14px',
-    }}>
+  const tileStyle: React.CSSProperties = {
+    display: 'block', minWidth: 0, background: 'rgba(255,255,255,0.14)', borderRadius: 14,
+    padding: '12px 14px', color: 'inherit', textDecoration: 'none',
+  };
+  const body = (
+    <>
       {/* Short, whole-word labels that WRAP instead of truncating: a
           2-word eyebrow ("NEW LEADS") stays on one line on any screen
           wide enough for the tile itself; anything longer wraps to a
@@ -69,7 +75,13 @@ function StatTile({ icon, label, big, sub, trend }: {
       {sub && (
         <div style={{ fontSize: 10.5, fontFamily: FONT_BODY, marginTop: 4, opacity: 0.75 }}>{sub}</div>
       )}
-    </div>
+    </>
+  );
+  if (!href) return <div style={tileStyle}>{body}</div>;
+  return (
+    <Link href={href} className="stat-tile-link" style={tileStyle} aria-label={`${label}: open pipeline`}>
+      {body}
+    </Link>
   );
 }
 
@@ -79,9 +91,11 @@ function CountedNumber({ value }: { value: number }) {
 }
 
 export function MonthOverviewBanner({
-  overview, revenue, activeAgents, reviewsCollected, hoursSaved,
+  overview, revenue, activeAgents, reviewsCollected, hoursSaved, sessionId,
 }: {
   overview: MonthOverview;
+  /** Route id for the drill-down links off the tiles (NEW LEADS -> pipeline). */
+  sessionId: string;
   /** Business revenue for the month: QuickBooks when connected, the
    *  serviced-lead sum (labelled as such) when not. Distinct from the hero
    *  Recovered card, which stays agent-attributed for the ROI math. */
@@ -136,6 +150,9 @@ export function MonthOverviewBanner({
         @media (max-width: 640px) {
           .month-overview-grid { grid-template-columns: repeat(2, 1fr) !important; }
         }
+        .stat-tile-link { transition: background 120ms ease; }
+        .stat-tile-link:hover { background: rgba(255,255,255,0.24) !important; }
+        .stat-tile-link:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
       `}</style>
       <div className="month-overview-grid" style={{
         display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14,
@@ -151,6 +168,7 @@ export function MonthOverviewBanner({
           label="NEW LEADS"
           big={<CountedNumber value={overview.leadsAcquired.value} />}
           trend={{ pct: overview.leadsAcquired.pct }}
+          href={`/dash/${sessionId}/pipeline?sort=captured`}
         />
         <StatTile
           icon={<Robot size={13} weight="bold" />}

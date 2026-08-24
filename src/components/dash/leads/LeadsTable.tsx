@@ -56,8 +56,13 @@ const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, tran
 // ?spotlight= param -- the same navigation HotLeads uses -- so the full thread
 // and its Take-over control are reachable straight from the table.
 
-export function LeadsTable({ leads, sessionId, spotlightId }: {
+export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
   leads: Lead[]; sessionId: string; spotlightId: string | null;
+  /** Sort intent carried in from the URL (`?sort=captured`), e.g. the NEW LEADS
+   *  glance tile deep-linking to newest-captured-first. When present it seeds
+   *  the sort AND wins over the stored controls -- an explicit link must not be
+   *  silently overridden by whatever the client last sorted by. */
+  initialSort?: SortEntry[] | null;
 }) {
   const router = useRouter();
   const [rows, setRows] = useState(leads);
@@ -67,21 +72,27 @@ export function LeadsTable({ leads, sessionId, spotlightId }: {
   const [driverErr, setDriverErr] = useState<Record<string, string | null>>({});
   // Default sort: earliest pipeline stage first (open>booked>quoted>serviced),
   // then highest score first.
-  const [sort, setSort] = useState<SortEntry[]>([
+  const [sort, setSort] = useState<SortEntry[]>(initialSort ?? [
     { key: 'status', dir: 'asc' },
     { key: 'score', dir: 'desc' },
   ]);
   // Opening a thread (?spotlight=) remounts this table; restore the search +
   // sort the client had, from sessionStorage. Mount effect, not useState
   // initializer, so SSR HTML and the first client render stay identical.
+  // A URL sort intent skips the restore entirely (see initialSort) but still
+  // persists forward, so the order survives the thread round-trip.
   const restored = useRef(false);
   useEffect(() => {
+    if (initialSort) { restored.current = true; return; }
     const stored = loadControls(sessionId);
     if (stored) {
       setQuery(stored.query);
       setSort(stored.sort);
     }
     restored.current = true;
+    // initialSort is a per-navigation constant; deliberately not a dependency
+    // so a re-render can't re-trigger the restore.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
   useEffect(() => {
     if (!restored.current) return; // don't clobber storage with defaults pre-restore

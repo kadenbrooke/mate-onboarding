@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { Lead } from '@/lib/metrics/leads';
-import { searchLeads, cycleSort, applySort, nextStatus, loadControls, saveControls, type SortEntry } from './leadsControls';
+import { searchLeads, cycleSort, applySort, nextStatus, loadControls, saveControls, parseSortParam, type SortEntry } from './leadsControls';
 
 const mk = (o: Partial<Lead>): Lead => ({
   id: o.id ?? Math.random().toString(36).slice(2),
@@ -164,5 +164,25 @@ describe('controls persistence (sessionStorage)', () => {
       query: '', sort: [{ key: 'score', dir: 'asc' }, { key: 'score', dir: 'desc' }, { key: 'status', dir: 'asc' }],
     }));
     expect(loadControls('s1')).toEqual({ query: '', sort: [{ key: 'score', dir: 'asc' }, { key: 'status', dir: 'asc' }] });
+  });
+});
+
+describe('parseSortParam', () => {
+  it('reads a known key with its default direction', () => {
+    expect(parseSortParam('captured')).toEqual([{ key: 'captured', dir: 'desc' }]);
+    expect(parseSortParam('location')).toEqual([{ key: 'location', dir: 'asc' }]);
+  });
+
+  it('honours an explicit direction', () => {
+    expect(parseSortParam('captured', 'asc')).toEqual([{ key: 'captured', dir: 'asc' }]);
+  });
+
+  it('falls back to the default direction when dir is garbage', () => {
+    expect(parseSortParam('captured', 'sideways')).toEqual([{ key: 'captured', dir: 'desc' }]);
+  });
+
+  it('returns null for absent or unknown keys', () => {
+    expect(parseSortParam(undefined)).toBeNull();
+    expect(parseSortParam('nope')).toBeNull();
   });
 });

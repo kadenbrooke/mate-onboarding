@@ -4,6 +4,7 @@ import type { Lead } from '@/lib/metrics/leads';
 import { LeadsTable } from '@/components/dash/leads/LeadsTable';
 import { LeadThread } from '@/components/dash/leads/LeadThread';
 import { leadLabel } from '@/components/dash/leads/leadName';
+import { parseSortParam } from '@/components/dash/leads/leadsControls';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, CARD_SHADOW } from '@/lib/theme';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
@@ -13,13 +14,16 @@ import { MobileNav } from '@/components/dash/MobileNav';
 
 export default async function PipelinePage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
-  searchParams: Promise<{ spotlight?: string }>;
+  searchParams: Promise<{ spotlight?: string; sort?: string; dir?: string }>;
 }) {
   const { sessionId: rawSessionId } = await params;
   // "demo" alias -> real demo UUID for all DB reads below (uuid column).
   const sessionId = resolveSessionId(rawSessionId);
   await requireDashAccess(sessionId);
-  const { spotlight } = await searchParams;
+  const { spotlight, sort, dir } = await searchParams;
+  // ?sort=captured (&dir=) deep-links a specific order; the NEW LEADS glance
+  // tile on the dashboard lands here with newest-captured first.
+  const initialSort = parseSortParam(sort, dir);
   const supabase = createServiceClient();
   const { data: session } = await supabase.from('onboarding_sessions').select('id').eq('id', sessionId).single();
   if (!session) notFound();
@@ -66,7 +70,12 @@ export default async function PipelinePage({ params, searchParams }: {
         </div>
       )}
       <div style={{ background: BG_CARD, borderRadius: 16, padding: 8, boxShadow: CARD_SHADOW }}>
-        <LeadsTable leads={(leads ?? []) as Lead[]} sessionId={sessionId} spotlightId={spotlight ?? null} />
+        <LeadsTable
+          leads={(leads ?? []) as Lead[]}
+          sessionId={sessionId}
+          spotlightId={spotlight ?? null}
+          initialSort={initialSort}
+        />
       </div>
       <MobileNav sessionId={sessionId} />
     </div>

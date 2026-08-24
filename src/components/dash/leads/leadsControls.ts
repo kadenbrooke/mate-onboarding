@@ -92,6 +92,18 @@ export const SORT_CHIPS: { key: SortKey; label: string }[] = [
   { key: 'driver', label: 'Driver' },
 ];
 
+/** Read a sort intent off the URL (`?sort=captured&dir=desc`). Lets a caller
+ *  deep-link the pipeline in a specific order -- the NEW LEADS glance tile
+ *  links to `?sort=captured`, i.e. newest captured first. Unknown key or bad
+ *  dir returns null, so a hand-typed URL falls back to the table's default
+ *  sort instead of erroring. */
+export function parseSortParam(sort?: string, dir?: string): SortEntry[] | null {
+  if (!sort || !SORT_KEYS.has(sort)) return null;
+  const key = sort as SortKey;
+  const direction: SortDir = dir === 'asc' || dir === 'desc' ? dir : DEFAULT_DIR[key];
+  return [{ key, dir: direction }];
+}
+
 // --- Controls persistence -------------------------------------------------
 // Opening a lead's thread navigates to ?spotlight=<id>, which re-renders the
 // page and remounts the table -- without persistence that navigation wiped the

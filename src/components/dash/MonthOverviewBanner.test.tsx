@@ -28,6 +28,7 @@ const renderBanner = (
   render(
     <MonthOverviewBanner
       overview={overview}
+      sessionId="sess-1"
       revenue={over.revenue ?? pipelineRevenue}
       activeAgents={over.activeAgents ?? 3}
       reviewsCollected={over.reviewsCollected ?? 0}
@@ -40,6 +41,18 @@ describe('MonthOverviewBanner', () => {
     renderBanner();
     expect(screen.getByText('JOBS COMPLETED')).toBeInTheDocument();
     expect(screen.getByText('NEW LEADS')).toBeInTheDocument();
+  });
+
+  it('links the NEW LEADS tile to the pipeline sorted by date captured', () => {
+    renderBanner();
+    const link = screen.getByText('NEW LEADS').closest('a');
+    expect(link).not.toBeNull();
+    expect(link!.getAttribute('href')).toBe('/dash/sess-1/pipeline?sort=captured');
+  });
+
+  it('leaves non-drill-down tiles unlinked', () => {
+    renderBanner();
+    expect(screen.getByText('HOURS SAVED').closest('a')).toBeNull();
   });
 
   it('replaced calls / response / rating / cost-per-lead with the new four', () => {

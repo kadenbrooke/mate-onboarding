@@ -283,6 +283,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
       <div className="dash-desktop" data-testid="dash-desktop" style={{ display: 'grid', gap: 10 }}>
         <MonthOverviewBanner
           overview={overview}
+          sessionId={session.id}
           revenue={revenue}
           activeAgents={glance.activeAgents}
           reviewsCollected={glance.reviewsCollected}
@@ -321,6 +322,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
               <>
                 <MonthOverviewBanner
                   overview={overview}
+                  sessionId={session.id}
                   revenue={revenue}
                   activeAgents={glance.activeAgents}
                   reviewsCollected={glance.reviewsCollected}
