@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import type { Lead } from '@/lib/metrics/leads';
-import { searchLeads, cycleSort, applySort, nextStatus, loadControls, saveControls, parseSortParam, type SortEntry } from './leadsControls';
+import { searchLeads, cycleSort, applySort, nextStatus, loadControls, saveControls, parseSortParam, partitionByRecency, type SortEntry } from './leadsControls';
 
 const mk = (o: Partial<Lead>): Lead => ({
   id: o.id ?? Math.random().toString(36).slice(2),
@@ -184,5 +184,46 @@ describe('parseSortParam', () => {
   it('returns null for absent or unknown keys', () => {
     expect(parseSortParam(undefined)).toBeNull();
     expect(parseSortParam('nope')).toBeNull();
+  });
+});
+
+describe('partitionByRecency', () => {
+  const NOW = Date.parse('2026-08-25T12:00:00Z');
+  const at = (iso: string | null) => mk({ created_at: iso as string });
+
+  it('keeps leads captured inside the window', () => {
+    const { recent, older } = partitionByRecency([at('2026-08-20T00:00:00Z')], NOW);
+    expect(recent).toHaveLength(1);
+    expect(older).toHaveLength(0);
+  });
+
+  it('moves leads captured before the cutoff to older', () => {
+    const { recent, older } = partitionByRecency([at('2026-06-01T00:00:00Z')], NOW);
+    expect(recent).toHaveLength(0);
+    expect(older).toHaveLength(1);
+  });
+
+  it('treats a lead with no capture date as recent, never buried', () => {
+    // mk() coalesces a null created_at to a default, so null it explicitly.
+    const undated = { ...mk({}), created_at: null as unknown as string };
+    const { recent, older } = partitionByRecency([undated], NOW);
+    expect(recent).toHaveLength(1);
+    expect(older).toHaveLength(0);
+  });
+
+  it('treats an unparseable capture date as recent rather than dropping it', () => {
+    const { recent } = partitionByRecency([at('not a date')], NOW);
+    expect(recent).toHaveLength(1);
+  });
+
+  it('splits a mixed pipeline on the 30-day boundary', () => {
+    const { recent, older } = partitionByRecency([
+      at('2026-08-24T00:00:00Z'),
+      at('2026-08-01T00:00:00Z'),
+      at('2026-07-01T00:00:00Z'),
+      at('2026-01-01T00:00:00Z'),
+    ], NOW);
+    expect(recent).toHaveLength(2);
+    expect(older).toHaveLength(2);
   });
 });

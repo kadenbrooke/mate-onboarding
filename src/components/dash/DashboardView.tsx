@@ -8,7 +8,7 @@ import { recoveredDailySeries, recoveredWowDeltaCents } from '@/lib/metrics/reco
 import { SectionCard } from './Card';
 import { HeroStrip } from './HeroStrip';
 import { MonthOverviewBanner } from './MonthOverviewBanner';
-import { monthOverview, monthRevenue } from '@/lib/metrics/monthOverview';
+import { monthOverview } from '@/lib/metrics/monthOverview';
 import { MobileNav, type MobileView } from './MobileNav';
 import { useDashEditing } from '@/lib/dashEditing';
 import { TrendCard } from './leadflow/TrendCard';
@@ -115,10 +115,10 @@ export function DashboardView({ session, leads, data, locks, glance }: {
   // Daily cumulative series + WoW dollar delta for the Mercury-style dark card
   const recovered = { points: recoveredDailySeries(leads), deltaCents: recoveredWowDeltaCents(leads) };
   const overview = monthOverview(leads, data.events);
-  // Business revenue (QBO first). `data.money` is null both when QuickBooks is
-  // unconnected AND when the Money zone is gated, and the pipeline fallback is
-  // the right answer in either case.
-  const revenue = monthRevenue(overview, data.money);
+  // monthRevenue() is no longer called here: the Month Overview banner dropped
+  // its revenue headline (the Recovered card below owns that number). The
+  // helper and its tests stay put for whenever business revenue gets its own
+  // labelled home.
 
   // Calendar zone
   const calendarZone = <BookedCalendar appointments={data.appointments} />;
@@ -284,7 +284,6 @@ export function DashboardView({ session, leads, data, locks, glance }: {
         <MonthOverviewBanner
           overview={overview}
           sessionId={session.id}
-          revenue={revenue}
           activeAgents={glance.activeAgents}
           reviewsCollected={glance.reviewsCollected}
           hoursSaved={hero.hoursSaved}
@@ -296,7 +295,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
           leads={leads}
           agentLiveAt={session.created_at}
         />
-        <Ticker events={data.events} sessionId={session.id} />
+        <Ticker events={data.events} sessionId={session.id} leads={leads} />
         <MovableDashGrid
           sessionId={session.id}
           cards={movableCards}
@@ -323,8 +322,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
                 <MonthOverviewBanner
                   overview={overview}
                   sessionId={session.id}
-                  revenue={revenue}
-                  activeAgents={glance.activeAgents}
+                          activeAgents={glance.activeAgents}
                   reviewsCollected={glance.reviewsCollected}
                   hoursSaved={hero.hoursSaved}
                 />
@@ -335,7 +333,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
                   leads={leads}
                   agentLiveAt={session.created_at}
                 />
-                <Ticker events={data.events} sessionId={session.id} />
+                <Ticker events={data.events} sessionId={session.id} leads={leads} />
               </>
             )}
             <SortableStack

@@ -118,3 +118,52 @@ export function enteringKeys(prev: TickerGroup[], next: TickerGroup[]): Set<stri
   const before = new Set(prev.map(g => g.key));
   return new Set(next.filter(g => !before.has(g.key)).map(g => g.key));
 }
+
+// --- Chip -> lead deep link ------------------------------------------------
+// Clicking a chip opens that lead's conversation on the pipeline sheet. The
+// event row has no lead id, so the phone inside its rollup key is matched
+// against the leads the dash already loaded -- no extra query, and the map is
+// built from the same 500-row fetch the table uses.
+
+/** Digits only, last 10, so +18015551234 / 8015551234 / (801) 555-1234 all
+ *  agree. Country code is dropped rather than compared: the events table
+ *  stores E.164 and client_leads is not guaranteed to. */
+export function phoneDigits(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : null;
+}
+
+export type LeadRef = { id: string; phone?: string | null };
+
+/** phone -> lead id. First lead wins on a duplicate number: the dash fetch is
+ *  ordered newest first, so that is the most recent row for that caller. */
+export function leadPhoneIndex(leads: LeadRef[]): Map<string, string> {
+  const index = new Map<string, string>();
+  for (const l of leads) {
+    const key = phoneDigits(l.phone);
+    if (key && !index.has(key)) index.set(key, l.id);
+  }
+  return index;
+}
+
+/**
+ * Where a chip navigates, or null when it should stay inert.
+ *
+ * Null happens two ways, both honest: the chip is a postcall/signal row with
+ * no lead reference to resolve, or its phone matches no lead the client has
+ * (an event whose lead was deleted). A dead link that lands on an empty
+ * pipeline is worse than a chip that simply is not a link.
+ */
+export function chipHref(
+  group: TickerGroup,
+  sessionId: string,
+  index: Map<string, string>,
+): string | null {
+  if (!group.key.startsWith('phone:')) return null;
+  const key = phoneDigits(group.key.slice('phone:'.length));
+  const leadId = key ? index.get(key) : undefined;
+  if (!leadId) return null;
+  // Same ordering the NEW LEADS tile lands on, with the lead's thread open.
+  return `/dash/${sessionId}/pipeline?sort=captured&spotlight=${leadId}`;
+}

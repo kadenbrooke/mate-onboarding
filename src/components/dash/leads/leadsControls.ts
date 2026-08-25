@@ -24,6 +24,33 @@ export function nextStatus(current: LeadStatus, clicked: StageStatus): LeadStatu
   return current === clicked ? 'open' : clicked;
 }
 
+/** How far back the pipeline shows by default. Older rows are still loaded and
+ *  still searchable; they just sit behind "Show more". */
+export const RECENT_WINDOW_DAYS = 30;
+
+/**
+ * Split leads into the recent window and everything older.
+ *
+ * A lead with no created_at counts as RECENT, not old. Those are legacy/demo
+ * rows with no capture date at all; burying them behind "Show more" would hide
+ * real pipeline behind a control the client has no reason to press.
+ */
+export function partitionByRecency(
+  leads: Lead[],
+  now: number = Date.now(),
+  days: number = RECENT_WINDOW_DAYS,
+): { recent: Lead[]; older: Lead[] } {
+  const cutoff = now - days * 86_400_000;
+  const recent: Lead[] = [];
+  const older: Lead[] = [];
+  for (const l of leads) {
+    if (!l.created_at) { recent.push(l); continue; }
+    const t = new Date(l.created_at).getTime();
+    (Number.isNaN(t) || t >= cutoff ? recent : older).push(l);
+  }
+  return { recent, older };
+}
+
 /** Substring match across the human-facing columns. */
 export function searchLeads(leads: Lead[], query: string): Lead[] {
   const q = query.trim().toLowerCase();

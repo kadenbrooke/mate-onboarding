@@ -218,7 +218,7 @@ export function handoffSignalEvent(src: {
  * `format()`. `eventSources.test.ts` reads the migration and fails if the two
  * ever drift, so this stays the single source of the wording.
  */
-export const SMS_OUTBOUND_MESSAGE_TEMPLATE = 'Texted %s back';
+export const SMS_OUTBOUND_MESSAGE_TEMPLATE = 'Texted %s';
 export const UNKNOWN_LEAD_LABEL = 'a new lead';
 
 export function smsOutboundMessage(who: string): string {

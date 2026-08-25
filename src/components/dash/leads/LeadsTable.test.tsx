@@ -324,3 +324,50 @@ describe('LeadsTable row -> thread navigation', () => {
     expect(row).not.toHaveTextContent('(801) 793-1734');
   });
 });
+
+describe('LeadsTable 30-day window', () => {
+  const daysAgo = (n: number) =>
+    new Date(Date.now() - n * 86_400_000).toISOString();
+  const recentLead = lead({ id: 'fresh', name: 'Fresh Lead', created_at: daysAgo(3) });
+  const oldLead = lead({ id: 'stale', name: 'Stale Lead', created_at: daysAgo(90) });
+
+  beforeEach(() => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
+  });
+
+  it('shows only leads captured in the last 30 days by default', () => {
+    render(<LeadsTable leads={[recentLead, oldLead]} sessionId="s1" spotlightId={null} />);
+    expect(screen.getByTestId('lead-row-fresh')).toBeInTheDocument();
+    expect(screen.queryByTestId('lead-row-stale')).toBeNull();
+  });
+
+  it('offers Show more with a count of what is hidden', () => {
+    render(<LeadsTable leads={[recentLead, oldLead]} sessionId="s1" spotlightId={null} />);
+    expect(screen.getByTestId('toggle-older-leads')).toHaveTextContent(/Show more \(1 older than 30 days\)/);
+  });
+
+  it('reveals the older leads when Show more is pressed', () => {
+    render(<LeadsTable leads={[recentLead, oldLead]} sessionId="s1" spotlightId={null} />);
+    fireEvent.click(screen.getByTestId('toggle-older-leads'));
+    expect(screen.getByTestId('lead-row-stale')).toBeInTheDocument();
+    expect(screen.getByTestId('toggle-older-leads')).toHaveTextContent(/Show less/);
+  });
+
+  it('hides the toggle entirely when nothing is older than the window', () => {
+    render(<LeadsTable leads={[recentLead]} sessionId="s1" spotlightId={null} />);
+    expect(screen.queryByTestId('toggle-older-leads')).toBeNull();
+  });
+
+  it('searches the whole pipeline, not just the visible window', () => {
+    render(<LeadsTable leads={[recentLead, oldLead]} sessionId="s1" spotlightId={null} />);
+    fireEvent.change(screen.getByLabelText('Search pipeline'), { target: { value: 'Stale' } });
+    expect(screen.getByTestId('lead-row-stale')).toBeInTheDocument();
+    // No "show more" while searching: the search already spans everything.
+    expect(screen.queryByTestId('toggle-older-leads')).toBeNull();
+  });
+
+  it('auto-opens the older section when the spotlighted lead is outside the window', () => {
+    render(<LeadsTable leads={[recentLead, oldLead]} sessionId="s1" spotlightId="stale" />);
+    expect(screen.getByTestId('lead-row-stale')).toBeInTheDocument();
+  });
+});

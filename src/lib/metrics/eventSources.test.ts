@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import {
   formatPhone, describeLead,
@@ -181,7 +181,7 @@ describe('smsOutboundEvent', () => {
       session_id: JC_SESSION_ID,
       agent: 'first_responder',
       kind: 'reply',
-      message: 'Texted Wes Bayles back',
+      message: 'Texted Wes Bayles',
       created_at: '2026-08-11T21:44:47.400Z',
       source_key: 'jcsms:+18018915463:out:2026-08-11T21:44:47.400Z',
     });
@@ -190,7 +190,7 @@ describe('smsOutboundEvent', () => {
   it('falls back to the number when the agent has not extracted a name yet', () => {
     expect(smsOutboundEvent({
       fromNumber: '+13855208830', leadName: null, lastOutboundAt: '2026-08-10T14:45:02.946Z',
-    })?.message).toBe('Texted (385) 520-8830 back');
+    })?.message).toBe('Texted (385) 520-8830');
   });
 
   // The dedupe key is the outbound TIMESTAMP, so the trigger firing repeatedly
@@ -215,14 +215,27 @@ describe('smsOutboundEvent', () => {
 // These assertions are the guard rail.
 // ---------------------------------------------------------------------------
 
-describe('migration 0013 parity', () => {
-  const sql = readFileSync(
-    path.join(process.cwd(), 'supabase/migrations/0013_client_events_sources.sql'),
-    'utf8',
-  );
+describe('sms trigger migration parity', () => {
+  // Read the LATEST migration that defines the function, not a hardcoded file.
+  // The wording moved from 0013 to 0014 when "back" was dropped; pinning the
+  // filename would have kept this test green against a superseded definition,
+  // which is the exact failure the parity test exists to catch.
+  const MIGRATIONS = path.join(process.cwd(), 'supabase/migrations');
+  const DEFINES = 'create or replace function public.emit_jc_sms_client_event';
+  const owning = readdirSync(MIGRATIONS)
+    .filter(f => f.endsWith('.sql'))
+    .sort()
+    .filter(f => readFileSync(path.join(MIGRATIONS, f), 'utf8').includes(DEFINES))
+    .pop();
+
+  it('has exactly one migration owning the current definition', () => {
+    expect(owning).toBeDefined();
+  });
+
+  const sql = readFileSync(path.join(MIGRATIONS, owning!), 'utf8');
 
   it('renders the same message template this module exports', () => {
-    expect(SMS_OUTBOUND_MESSAGE_TEMPLATE).toBe('Texted %s back');
+    expect(SMS_OUTBOUND_MESSAGE_TEMPLATE).toBe('Texted %s');
     expect(sql).toContain(`format('${SMS_OUTBOUND_MESSAGE_TEMPLATE}', who)`);
   });
 
@@ -245,6 +258,17 @@ describe('migration 0013 parity', () => {
     expect([e.agent, e.kind]).toEqual(['first_responder', 'reply']);
     expect(sql).toContain(`'first_responder',\n      'reply',`);
   });
+
+});
+
+// The client_events SCHEMA was introduced by 0013 and is not re-declared by
+// later migrations, so these stay pinned to that file. Only the function body
+// above migrates forward.
+describe('client_events schema (migration 0013)', () => {
+  const sql = readFileSync(
+    path.join(process.cwd(), 'supabase/migrations/0013_client_events_sources.sql'),
+    'utf8',
+  );
 
   it('grants the table to service_role (a Management API migration skips the auto grant)', () => {
     expect(sql).toContain('grant all on public.client_events to service_role');

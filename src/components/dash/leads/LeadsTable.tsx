@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { MagnifyingGlass, CaretRight } from '@phosphor-icons/react';
+import { MagnifyingGlass, CaretRight, CaretDown } from '@phosphor-icons/react';
 import { STAGE_STATUSES, type Lead, type LeadStatus, type StageStatus } from '@/lib/metrics/leads';
 import {
   FREE_GREEN, BORDER_SOFT, TEXT_MUTED, TEXT_DARK, TEXT_FAINT, BG_CARD,
@@ -9,7 +9,8 @@ import {
 } from '@/lib/theme';
 import {
   searchLeads, applySort, cycleSort, nextStatus, SORT_CHIPS,
-  loadControls, saveControls, type SortEntry,
+  loadControls, saveControls, partitionByRecency, RECENT_WINDOW_DAYS,
+  type SortEntry,
 } from './leadsControls';
 import { DriverPill } from './DriverPill';
 import { ContactDots } from './ContactDots';
@@ -98,10 +99,28 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
     if (!restored.current) return; // don't clobber storage with defaults pre-restore
     saveControls(sessionId, { query, sort });
   }, [sessionId, query, sort]);
+  // Default view is the last 30 days; older leads sit behind "Show more".
+  const [showOlder, setShowOlder] = useState(false);
+  const searched = useMemo(() => searchLeads(rows, query), [rows, query]);
+  // A search looks across the WHOLE pipeline. Searching and silently matching
+  // only the last 30 days would report "no results" for a lead the client can
+  // see is in the system, which reads as data loss rather than a filter.
+  const searching = query.trim() !== '';
+  const { recent, older } = useMemo(() => partitionByRecency(searched), [searched]);
   const visible = useMemo(
-    () => applySort(searchLeads(rows, query), sort),
-    [rows, query, sort],
+    () => applySort(searching || showOlder ? searched : recent, sort),
+    [searched, recent, searching, showOlder, sort],
   );
+  const hiddenCount = searching ? 0 : older.length;
+  // Landing on a thread for a lead older than the window (a ticker chip, a
+  // shared link) must not show an empty sheet with the row filtered out from
+  // under it. Opens the older section once; the client can still collapse it.
+  useEffect(() => {
+    if (spotlightId && older.some(l => l.id === spotlightId)) setShowOlder(true);
+    // Deliberately keyed on the spotlight only: re-running as `older` changes
+    // would re-expand a section the client just chose to collapse.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spotlightId]);
   const spotRef = useRef<HTMLTableRowElement>(null);
   const spotCardRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -361,6 +380,35 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
         );
         })}
       </div>
+
+      {/* Older leads live behind this rather than being dropped: the rows are
+          already loaded, so revealing them is instant and nothing is hidden
+          from a search. Absent when a search is running (search spans the whole
+          pipeline) or when there is nothing older to show. */}
+      {hiddenCount > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 4px 4px' }}>
+          <button
+            type="button"
+            data-testid="toggle-older-leads"
+            aria-expanded={showOlder}
+            onClick={() => setShowOlder(v => !v)}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              border: `1px solid ${BORDER_SOFT}`, background: BG_CARD,
+              borderRadius: 99, padding: '7px 16px', cursor: 'pointer',
+              fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: TEXT_MUTED,
+            }}
+          >
+            {showOlder
+              ? `Show less`
+              : `Show more (${hiddenCount} older than ${RECENT_WINDOW_DAYS} days)`}
+            <CaretDown
+              size={12} weight="bold" aria-hidden
+              style={{ transform: showOlder ? 'rotate(180deg)' : undefined, transition: 'transform 150ms ease' }}
+            />
+          </button>
+        </div>
+      )}
     </>
   );
 }

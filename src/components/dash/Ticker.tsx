@@ -1,9 +1,11 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import type { ClientEvent } from '@/lib/metrics/events';
 import { FONT_BODY, BG_CARD, CARD_SHADOW } from '@/lib/theme';
 import {
-  rollupEvents, mergeEvents, newestTimestamp, enteringKeys, type TickerGroup,
+  rollupEvents, mergeEvents, newestTimestamp, enteringKeys, leadPhoneIndex,
+  chipHref, type TickerGroup, type LeadRef,
 } from './tickerFeed';
 
 // A STATIC strip, not a marquee. It used to scroll continuously, which meant
@@ -28,14 +30,17 @@ const AGENT_COLOR: Record<ClientEvent['agent'], string> = {
  *  actually being looked at. */
 const POLL_MS = 20_000;
 
-function Chip({ group, entering }: { group: TickerGroup; entering: boolean }) {
+function Chip({ group, entering, href }: {
+  group: TickerGroup; entering: boolean; href: string | null;
+}) {
   const { latest, count } = group;
-  return (
-    <span
-      className={entering ? 'ticker-chip ticker-chip-enter' : 'ticker-chip'}
-      data-testid={`ticker-chip-${group.key}`}
-      style={{ fontSize: 11, opacity: 0.85, flexShrink: 0 }}
-    >
+  const className = [
+    'ticker-chip',
+    entering ? 'ticker-chip-enter' : '',
+    href ? 'ticker-chip-link' : '',
+  ].filter(Boolean).join(' ');
+  const body = (
+    <>
       <span
         aria-hidden
         style={{
@@ -51,16 +56,38 @@ function Chip({ group, entering }: { group: TickerGroup; entering: boolean }) {
           &times;{count}
         </span>
       )}
-    </span>
+    </>
+  );
+  const style: React.CSSProperties = { fontSize: 11, opacity: 0.85, flexShrink: 0 };
+  const testId = `ticker-chip-${group.key}`;
+
+  // Chips with no resolvable lead stay plain text rather than becoming links
+  // that land on an empty pipeline (see chipHref).
+  if (!href) {
+    return <span className={className} data-testid={testId} style={style}>{body}</span>;
+  }
+  return (
+    <Link
+      href={href}
+      className={className}
+      data-testid={testId}
+      style={{ ...style, color: 'inherit', textDecoration: 'none' }}
+      aria-label={`${latest.message}. Open this conversation.`}
+    >
+      {body}
+    </Link>
   );
 }
 
-export function Ticker({ events, sessionId }: {
+export function Ticker({ events, sessionId, leads = [] }: {
   events: ClientEvent[];
-  /** Route id the poll asks against. Omitted in tests and anywhere a live feed
-   *  is not wanted, in which case the strip renders the server snapshot and
-   *  stays put. */
+  /** Route id the poll asks against, and the one chips deep-link into. Omitted
+   *  in tests and anywhere a live feed is not wanted, in which case the strip
+   *  renders the server snapshot, stays put, and its chips are inert. */
   sessionId?: string;
+  /** The pipeline rows the dash already loaded, used to resolve a chip's phone
+   *  to a lead id. Not fetched here: it is the same list the table renders. */
+  leads?: LeadRef[];
 }) {
   // Server snapshot seeds the strip; the poll only ever prepends to it.
   const [held, setHeld] = useState<ClientEvent[]>(events);
@@ -69,6 +96,7 @@ export function Ticker({ events, sessionId }: {
   useEffect(() => { setHeld(events); }, [events]);
 
   const groups = rollupEvents(held);
+  const phoneIndex = useMemo(() => leadPhoneIndex(leads), [leads]);
   // Which chips are new SINCE THE LAST RENDER, so only those animate in. Held
   // in a ref because comparing against previous render output is exactly what a
   // ref is for, and putting it in state would loop.
@@ -134,6 +162,11 @@ export function Ticker({ events, sessionId }: {
           to   { max-width: 640px; opacity: .85; transform: none; }
         }
         .ticker-chip { max-width: none; }
+        .ticker-chip-link { cursor: pointer; transition: opacity 120ms ease; }
+        .ticker-chip-link:hover { opacity: 1 !important; text-decoration: underline; }
+        .ticker-chip-link:focus-visible {
+          outline: 2px solid rgba(20,20,20,.55); outline-offset: 3px; border-radius: 6px;
+        }
         .ticker-chip-enter { animation: ticker-push-in 420ms cubic-bezier(.2,.7,.3,1); }
         @media (prefers-reduced-motion: reduce) {
           .ticker-chip-enter { animation: none !important; }
@@ -147,7 +180,12 @@ export function Ticker({ events, sessionId }: {
         }}
       >
         {groups.map(g => (
-          <Chip key={g.key} group={g} entering={!isFirstPaint && entering.has(g.key)} />
+          <Chip
+            key={g.key}
+            group={g}
+            entering={!isFirstPaint && entering.has(g.key)}
+            href={sessionId ? chipHref(g, sessionId, phoneIndex) : null}
+          />
         ))}
       </div>
     </div>

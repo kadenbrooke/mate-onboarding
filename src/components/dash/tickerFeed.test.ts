@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   rollupKey, rollupEvents, mergeEvents, newestTimestamp, enteringKeys, MAX_HELD,
+  leadPhoneIndex, chipHref, phoneDigits,
 } from './tickerFeed';
 import type { ClientEvent } from '@/lib/metrics/events';
 
@@ -147,5 +148,52 @@ describe('enteringKeys', () => {
     ]);
     expect(next[0].key).toBe('phone:+1001');
     expect(enteringKeys(prev, next).size).toBe(0);
+  });
+});
+
+describe('chip deep links', () => {
+  const idx = leadPhoneIndex([
+    { id: 'lead-ashish', phone: '+16128198700' },
+    { id: 'lead-loose', phone: '(435) 632-3077' },
+  ]);
+
+  it('matches on the last 10 digits regardless of formatting', () => {
+    expect(phoneDigits('+16128198700')).toBe('6128198700');
+    expect(phoneDigits('(612) 819-8700')).toBe('6128198700');
+    expect(phoneDigits('6128198700')).toBe('6128198700');
+  });
+
+  it('is null for anything too short to be a US number', () => {
+    expect(phoneDigits('12345')).toBeNull();
+    expect(phoneDigits(null)).toBeNull();
+  });
+
+  it('links a lead chip to the pipeline with its thread open, newest captured first', () => {
+    const [g] = rollupEvents([sms('+16128198700', '2026-08-21T23:00:00.000Z')]);
+    expect(chipHref(g, 'sess-1', idx))
+      .toBe('/dash/sess-1/pipeline?sort=captured&spotlight=lead-ashish');
+  });
+
+  it('matches a lead whose stored number is formatted differently', () => {
+    const [g] = rollupEvents([sms('+14356323077', '2026-08-21T23:00:00.000Z')]);
+    expect(chipHref(g, 'sess-1', idx)).toContain('spotlight=lead-loose');
+  });
+
+  it('stays inert for a postcall chip, which has no lead to resolve', () => {
+    const [g] = rollupEvents([ev({ source_key: 'postcall:abc:opened' })]);
+    expect(chipHref(g, 'sess-1', idx)).toBeNull();
+  });
+
+  it('stays inert when the phone matches no lead the client has', () => {
+    const [g] = rollupEvents([sms('+19995550000', '2026-08-21T23:00:00.000Z')]);
+    expect(chipHref(g, 'sess-1', idx)).toBeNull();
+  });
+
+  it('keeps the newest row when two leads share a number', () => {
+    const dup = leadPhoneIndex([
+      { id: 'newer', phone: '+18015551234' },
+      { id: 'older', phone: '+18015551234' },
+    ]);
+    expect(dup.get('8015551234')).toBe('newer');
   });
 });
