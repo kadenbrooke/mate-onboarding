@@ -24,12 +24,71 @@ const MERGE_FILLABLE = [
   'name', 'city', 'service', 'referrer_name', 'score', 'quote_cents', 'email', 'address',
 ] as const;
 
+// A returning customer who submits the form again is a live lead, not a closed
+// one, so their status reopens. The hard part is that a genuine new submission
+// and the poller re-delivering an old one arrive down the identical code path,
+// and resetting on every write would drag booked and serviced leads back to
+// `open` every 15 minutes.
+//
+// The discriminator is the submission timestamp the payload carries in
+// `created_at` (Meta's created_time for the form fill) measured against the last
+// time this lead's status actually moved:
+//
+//   * Re-delivery repeats a timestamp we already acted on. The first delivery
+//     set status to `open`, and the trg_client_leads_status_ts trigger stamped
+//     status_updated_at with the processing time — necessarily LATER than the
+//     submission. So a retry is either short-circuited by the status === 'open'
+//     check, or fails the strictly-newer test once the conversation has moved
+//     the lead on to quoted/booked. It can never reopen.
+//   * A genuine new submission carries a NEW, later timestamp, which by
+//     construction post-dates every earlier status change. It reopens.
+//
+// Missing timestamp means we cannot tell the two apart, so we do not reset.
+const REOPEN_STATUS = 'open';
+// `revived` is the Reactivator's own outbound, not the customer coming back.
+const NON_INBOUND_SOURCES = new Set(['revived']);
+
 const UNIQUE_VIOLATION = '23505';
 
 type LeadRow = Record<string, unknown>;
 
 function isBlank(value: unknown): boolean {
   return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
+function toTime(value: unknown): number | null {
+  if (typeof value !== 'string' && !(value instanceof Date)) return null;
+  const ms = new Date(value as string).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/**
+ * Should this submission reopen a lead whose status has already moved on?
+ *
+ * See the REOPEN_STATUS comment above for why the submission timestamp is the
+ * thing that separates a genuine new inbound from a poller re-sync.
+ */
+export function shouldReopen(lead: LeadRow, prior: LeadRow): boolean {
+  if (prior.status === REOPEN_STATUS) return false;
+  if (NON_INBOUND_SOURCES.has(String(lead.source ?? ''))) return false;
+
+  const submittedAt = toTime(lead.created_at);
+  if (submittedAt === null) return false;
+
+  // The whole discriminator rests on a submission always pre-dating the moment
+  // we process it: that is what makes status_updated_at overtake the timestamp
+  // and stops a re-delivery from reopening. A future-dated payload inverts that
+  // and would reopen a booked lead on every retry, so refuse to trust it.
+  // Erring this way costs at most one missed reopen; erring the other way drags
+  // live leads backwards every 15 minutes.
+  if (submittedAt > Date.now()) return false;
+
+  // status_updated_at is null until a status has actually moved; before that the
+  // row's own created_at is the last thing that happened to it.
+  const lastStatusChange = toTime(prior.status_updated_at) ?? toTime(prior.created_at);
+  if (lastStatusChange === null) return false;
+
+  return submittedAt > lastStatusChange;
 }
 
 function tokenValid(token: string | null): boolean {
@@ -102,6 +161,7 @@ export async function POST(request: NextRequest) {
 
   let created = 0;
   let updated = 0;
+  let reopened = 0;
 
   if (anonymous.length > 0) {
     const { error } = await supabase.from('client_leads').insert(anonymous);
@@ -114,6 +174,7 @@ export async function POST(request: NextRequest) {
       const result = await mergeOrInsert(supabase, sessionId, identified);
       created += result.created;
       updated += result.updated;
+      reopened += result.reopened;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return NextResponse.json({ error: message }, { status: 500 });
@@ -122,7 +183,7 @@ export async function POST(request: NextRequest) {
 
   // `inserted` stays the total number of rows written so existing callers that
   // gate on `inserted > 0` keep working; created/updated say which happened.
-  return NextResponse.json({ inserted: created + updated, created, updated });
+  return NextResponse.json({ inserted: created + updated, created, updated, reopened });
 }
 
 /**
@@ -140,7 +201,7 @@ async function mergeOrInsert(
   sessionId: string,
   leads: LeadRow[],
   attempt = 0,
-): Promise<{ created: number; updated: number }> {
+): Promise<{ created: number; updated: number; reopened: number }> {
   const phones = [...new Set(leads.map((r) => String(r.phone)))];
 
   const { data: existing, error: readError } = await supabase
@@ -157,6 +218,7 @@ async function mergeOrInsert(
 
   const toInsert: LeadRow[] = [];
   let updated = 0;
+  let reopened = 0;
 
   for (const lead of leads) {
     const prior = byPhone.get(String(lead.phone));
@@ -170,26 +232,36 @@ async function mergeOrInsert(
       if (!isBlank(lead[field]) && isBlank(prior[field])) patch[field] = lead[field];
     }
 
+    // Lifecycle stays out of MERGE_FILLABLE; status moves only through this
+    // deliberate check, never as a side effect of gap-filling.
+    const reopening = shouldReopen(lead, prior);
+    if (reopening) patch.status = REOPEN_STATUS;
+
     if (Object.keys(patch).length > 0) {
       const { error } = await supabase.from('client_leads').update(patch).eq('id', prior.id);
       if (error) throw new Error(error.message);
+      if (reopening) reopened += 1;
     }
     // A repeat submission that taught us nothing new is still a successful
     // ingest, not a dropped lead — count it either way.
     updated += 1;
   }
 
-  if (toInsert.length === 0) return { created: 0, updated };
+  if (toInsert.length === 0) return { created: 0, updated, reopened };
 
   const { error: insertError } = await supabase.from('client_leads').insert(toInsert);
 
   if (insertError) {
     if (insertError.code === UNIQUE_VIOLATION && attempt === 0) {
       const retry = await mergeOrInsert(supabase, sessionId, toInsert, attempt + 1);
-      return { created: retry.created, updated: updated + retry.updated };
+      return {
+        created: retry.created,
+        updated: updated + retry.updated,
+        reopened: reopened + retry.reopened,
+      };
     }
     throw new Error(insertError.message);
   }
 
-  return { created: toInsert.length, updated };
+  return { created: toInsert.length, updated, reopened };
 }
