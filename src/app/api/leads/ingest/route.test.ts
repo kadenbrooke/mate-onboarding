@@ -78,12 +78,14 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => fakeClient(),
 }));
 
-async function post(body: unknown, token: string = TOKEN) {
+async function post(body: unknown, token: string | null = TOKEN) {
   const { POST } = await import('./route');
   const { NextRequest } = await import('next/server');
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (token !== null) headers['x-ingest-token'] = token;
   const req = new NextRequest('http://localhost/api/leads/ingest', {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-ingest-token': token },
+    headers,
     body: JSON.stringify(body),
   });
   const res = await POST(req);
@@ -399,11 +401,63 @@ describe('status reopens on a genuine new inbound, never on a poller re-sync', (
   });
 });
 
-describe('auth', () => {
+// Cover that predates the merge work. Kept intact so this change cannot quietly
+// narrow the route's contract; only the response assertions moved from toEqual
+// to toMatchObject, because the body now also carries created/updated/reopened.
+describe('request contract', () => {
   it('rejects a bad token before touching the database', async () => {
     const res = await post({ session_id: SESSION, leads: [] }, 'wrong-token');
     expect(res.status).toBe(401);
     expect(calls.reads).toBe(0);
     expect(calls.inserts).toHaveLength(0);
+  });
+
+  it('rejects an absent token header with 401', async () => {
+    const res = await post({ session_id: SESSION, leads: [] }, null);
+    expect(res.status).toBe(401);
+  });
+
+  it('rejects a payload without session_id or leads array with 400', async () => {
+    expect((await post({ leads: [] })).status).toBe(400);
+    expect((await post({ session_id: SESSION })).status).toBe(400);
+  });
+
+  it('inserts rows scoped to session_id and returns a count', async () => {
+    const res = await send([
+      { name: 'Mike R.', source: 'call', score: 92, quote_cents: 1840000, phone: '+18015550101' },
+    ]);
+    expect(res.status).toBe(200);
+    expect(res.json).toMatchObject({ inserted: 1 });
+    expect(calls.inserts[0]).toEqual([
+      expect.objectContaining({ session_id: SESSION, name: 'Mike R.' }),
+    ]);
+  });
+
+  it('strips unknown fields from lead rows', async () => {
+    await send([{ name: 'A', evil: 'drop-me', phone: '+18015550102' }]);
+    expect(calls.inserts[0]![0]).not.toHaveProperty('evil');
+  });
+
+  it('returns 404 for an unknown session_id', async () => {
+    state.session = null;
+    const res = await send([{ name: 'A', phone: '+18015550103' }]);
+    expect(res.status).toBe(404);
+    expect(calls.inserts).toHaveLength(0);
+  });
+
+  it('allows seeding an is_demo session when allow_demo is set', async () => {
+    state.session = { is_demo: true };
+    const res = await send([{ name: 'Todd R.', source: 'call', phone: '+18015550104' }], {
+      allow_demo: true,
+    });
+    expect(res.status).toBe(200);
+    expect(calls.inserts).toHaveLength(1);
+  });
+
+  it('returns 500 with the db error message when the insert fails', async () => {
+    state.onInsert = () => ({ message: 'db failure' });
+    const res = await send([{ name: 'Test', phone: '+18015550105' }]);
+    expect(res.status).toBe(500);
+    expect(res.json).toEqual({ error: 'db failure' });
   });
 });
