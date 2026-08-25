@@ -40,6 +40,9 @@ export type ClientEventInsert = {
   created_at: string;
   /** Deterministic dedupe key. Unique index in migration 0013. */
   source_key: string;
+  /** The lead this row is about (normalised phone). Migration 0015. Null when
+   *  the row is not about a specific lead, or no number was recorded. */
+  lead_key: string | null;
 };
 
 /** The J&C tenant. jc_sms_conversations is single-tenant, same as 0010/0011. */
@@ -56,6 +59,21 @@ export function formatPhone(raw: string | null | undefined): string | null {
   const ten = digits.length === 11 && digits.startsWith('1') ? digits.slice(1) : digits;
   if (ten.length !== 10) return raw.trim() || null;
   return `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}`;
+}
+
+/**
+ * The value stored in client_events.lead_key: last 10 digits of a phone.
+ *
+ * Canonical implementation. Mirrored by normalise_lead_phone() in migration
+ * 0015 (the n8n trigger path) and re-exported as phoneDigits() for the Ticker,
+ * so all three agree on what "the same lead" means. Null for anything too
+ * short to be a US number, which groups with nothing rather than colliding
+ * every short/garbage value into one bucket.
+ */
+export function leadKeyFromPhone(raw: string | null | undefined): string | null {
+  if (!raw) return null;
+  const digits = raw.replace(/\D/g, '');
+  return digits.length >= 10 ? digits.slice(-10) : null;
 }
 
 /** How a lead is named in ticker copy: their name, else their number. */
@@ -109,6 +127,7 @@ export function postcallOpenedEvent(
     message: `Checked in after your call with ${describeLead(src.leadName, src.phone)}`,
     created_at: at,
     source_key: `postcall:${src.postcallId}:opened`,
+    lead_key: leadKeyFromPhone(src.phone),
   };
 }
 
@@ -137,6 +156,7 @@ export function postcallResolvedEvent(
     message,
     created_at: at,
     source_key: `postcall:${src.postcallId}:resolved`,
+    lead_key: leadKeyFromPhone(src.phone),
   };
 }
 
@@ -168,6 +188,7 @@ export function quoteOutcomeEvent(
     message: mapped.message,
     created_at: at,
     source_key: `postcall:${src.postcallId}:quote`,
+    lead_key: leadKeyFromPhone(src.phone),
   };
 }
 
@@ -206,6 +227,9 @@ export function handoffSignalEvent(src: {
     message,
     created_at: at,
     source_key: `signal:${src.signalId}`,
+    // A handoff is about the conversation changing hands, not a nameable
+    // lead; the signal row carries no phone to key on.
+    lead_key: null,
   };
 }
 
@@ -249,5 +273,6 @@ export function smsOutboundEvent(src: {
     message: smsOutboundMessage(describeLead(src.leadName, src.fromNumber)),
     created_at: at,
     source_key: `jcsms:${src.fromNumber}:out:${at}`,
+    lead_key: leadKeyFromPhone(src.fromNumber),
   };
 }

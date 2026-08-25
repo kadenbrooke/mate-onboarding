@@ -54,6 +54,7 @@ describe('postcallOpenedEvent', () => {
       message: 'Checked in after your call with (801) 224-0797',
       created_at: '2026-08-11T19:27:31.648Z',
       source_key: 'postcall:pc1:opened',
+      lead_key: '8012240797',
     });
   });
 
@@ -154,6 +155,8 @@ describe('handoffSignalEvent', () => {
       message: 'Handed the conversation over to your team',
       created_at: '2026-08-17T18:00:00.000Z',
       source_key: 'signal:sig1',
+      // A handoff is not about a nameable lead.
+      lead_key: null,
     });
   });
   it('maps the agent resuming', () => {
@@ -184,6 +187,7 @@ describe('smsOutboundEvent', () => {
       message: 'Texted Wes Bayles',
       created_at: '2026-08-11T21:44:47.400Z',
       source_key: 'jcsms:+18018915463:out:2026-08-11T21:44:47.400Z',
+      lead_key: '8018915463',
     });
   });
 

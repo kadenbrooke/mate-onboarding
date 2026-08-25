@@ -52,7 +52,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .limit(500),
     supabase
       .from('client_events')
-      .select('id, agent, kind, message, created_at, source_key')
+      .select('id, agent, kind, message, created_at, source_key, lead_key')
       .eq('session_id', sessionId)
       .order('created_at', { ascending: false })
       .limit(50),

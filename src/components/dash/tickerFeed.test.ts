@@ -13,6 +13,7 @@ const ev = (o: Partial<ClientEvent> = {}): ClientEvent => ({
   message: o.message ?? 'Texted someone back',
   created_at: o.created_at ?? '2026-08-23T10:00:00.000Z',
   source_key: o.source_key,
+  lead_key: o.lead_key,
 });
 
 const sms = (phone: string, at: string, extra: Partial<ClientEvent> = {}) =>
@@ -21,7 +22,7 @@ const sms = (phone: string, at: string, extra: Partial<ClientEvent> = {}) =>
 describe('rollupKey', () => {
   it('groups SMS rows by the phone inside source_key', () => {
     expect(rollupKey(sms('+18015551234', '2026-08-23T10:00:00.000Z')))
-      .toBe('phone:+18015551234');
+      .toBe('phone:8015551234');
   });
 
   it('leaves postcall and signal rows ungrouped, keyed by their own id', () => {
@@ -37,14 +38,31 @@ describe('rollupKey', () => {
   it('does not group on a malformed jcsms key with no phone segment', () => {
     expect(rollupKey(ev({ id: 'x5', source_key: 'jcsms:' }))).toBe('id:x5');
   });
+
+  it('refuses to group a number too short to identify anyone', () => {
+    // Every garbage/short value would otherwise collide into one bucket and
+    // roll unrelated leads into a single chip.
+    expect(rollupKey(ev({ id: 'x6', source_key: 'jcsms:+1612:out:x' }))).toBe('id:x6');
+  });
+
+  it('prefers lead_key over parsing source_key', () => {
+    expect(rollupKey(ev({ id: 'x7', lead_key: '8015551234', source_key: 'postcall:abc:opened' })))
+      .toBe('phone:8015551234');
+  });
+
+  it('normalises lead_key and source_key to the same shape', () => {
+    const viaKey = rollupKey(ev({ id: 'a', lead_key: '6128198700' }));
+    const viaSource = rollupKey(ev({ id: 'b', source_key: 'jcsms:+16128198700:out:x' }));
+    expect(viaKey).toBe(viaSource);
+  });
 });
 
 describe('rollupEvents', () => {
   it('collapses one lead into a single counted chip', () => {
     const groups = rollupEvents([
-      sms('+1612', '2026-08-21T23:00:00.000Z'),
-      sms('+1612', '2026-08-21T22:00:00.000Z'),
-      sms('+1612', '2026-08-21T21:00:00.000Z'),
+      sms('+16128198700', '2026-08-21T23:00:00.000Z'),
+      sms('+16128198700', '2026-08-21T22:00:00.000Z'),
+      sms('+16128198700', '2026-08-21T21:00:00.000Z'),
     ]);
     expect(groups).toHaveLength(1);
     expect(groups[0].count).toBe(3);
@@ -52,33 +70,33 @@ describe('rollupEvents', () => {
 
   it('shows the newest message for a rolled-up lead', () => {
     const groups = rollupEvents([
-      sms('+1612', '2026-08-21T21:00:00.000Z', { message: 'older' }),
-      sms('+1612', '2026-08-21T23:00:00.000Z', { message: 'newest' }),
+      sms('+16128198700', '2026-08-21T21:00:00.000Z', { message: 'older' }),
+      sms('+16128198700', '2026-08-21T23:00:00.000Z', { message: 'newest' }),
     ]);
     expect(groups[0].latest.message).toBe('newest');
   });
 
   it('positions a re-texted lead at the front, vacating its old slot', () => {
     const groups = rollupEvents([
-      sms('+1001', '2026-08-20T10:00:00.000Z'),
-      sms('+1002', '2026-08-21T10:00:00.000Z'),
-      sms('+1003', '2026-08-22T10:00:00.000Z'),
-      sms('+1001', '2026-08-23T10:00:00.000Z'), // the re-text
+      sms('+18015550001', '2026-08-20T10:00:00.000Z'),
+      sms('+18015550002', '2026-08-21T10:00:00.000Z'),
+      sms('+18015550003', '2026-08-22T10:00:00.000Z'),
+      sms('+18015550001', '2026-08-23T10:00:00.000Z'), // the re-text
     ]);
-    expect(groups.map(g => g.key)).toEqual(['phone:+1001', 'phone:+1003', 'phone:+1002']);
+    expect(groups.map(g => g.key)).toEqual(['phone:8015550001', 'phone:8015550003', 'phone:8015550002']);
     expect(groups[0].count).toBe(2);
   });
 
   it('caps the strip at MAX_HELD chips', () => {
     const many = Array.from({ length: MAX_HELD + 10 }, (_, i) =>
-      sms(`+${i}`, new Date(Date.UTC(2026, 7, 1, 0, i)).toISOString()));
+      sms(`+1801555${String(i).padStart(4, '0')}`, new Date(Date.UTC(2026, 7, 1, 0, i)).toISOString()));
     expect(rollupEvents(many)).toHaveLength(MAX_HELD);
   });
 
   it('orders deterministically when timestamps tie', () => {
     const at = '2026-08-22T22:45:00.762Z';
-    const once = rollupEvents([sms('+1003', at), sms('+1001', at), sms('+1002', at)]);
-    const twice = rollupEvents([sms('+1002', at), sms('+1003', at), sms('+1001', at)]);
+    const once = rollupEvents([sms('+18015550003', at), sms('+18015550001', at), sms('+18015550002', at)]);
+    const twice = rollupEvents([sms('+18015550002', at), sms('+18015550003', at), sms('+18015550001', at)]);
     expect(once.map(g => g.key)).toEqual(twice.map(g => g.key));
   });
 
@@ -128,25 +146,25 @@ describe('newestTimestamp', () => {
 
 describe('enteringKeys', () => {
   it('flags only chips that were not there before', () => {
-    const prev = rollupEvents([sms('+1001', '2026-08-22T10:00:00.000Z')]);
+    const prev = rollupEvents([sms('+18015550001', '2026-08-22T10:00:00.000Z')]);
     const next = rollupEvents([
-      sms('+1001', '2026-08-22T10:00:00.000Z'),
-      sms('+1002', '2026-08-23T10:00:00.000Z'),
+      sms('+18015550001', '2026-08-22T10:00:00.000Z'),
+      sms('+18015550002', '2026-08-23T10:00:00.000Z'),
     ]);
-    expect([...enteringKeys(prev, next)]).toEqual(['phone:+1002']);
+    expect([...enteringKeys(prev, next)]).toEqual(['phone:8015550002']);
   });
 
   it('does not flag a lead that merely moved to the front', () => {
     const prev = rollupEvents([
-      sms('+1001', '2026-08-20T10:00:00.000Z'),
-      sms('+1002', '2026-08-21T10:00:00.000Z'),
+      sms('+18015550001', '2026-08-20T10:00:00.000Z'),
+      sms('+18015550002', '2026-08-21T10:00:00.000Z'),
     ]);
     const next = rollupEvents([
-      sms('+1001', '2026-08-20T10:00:00.000Z'),
-      sms('+1002', '2026-08-21T10:00:00.000Z'),
-      sms('+1001', '2026-08-23T10:00:00.000Z'),
+      sms('+18015550001', '2026-08-20T10:00:00.000Z'),
+      sms('+18015550002', '2026-08-21T10:00:00.000Z'),
+      sms('+18015550001', '2026-08-23T10:00:00.000Z'),
     ]);
-    expect(next[0].key).toBe('phone:+1001');
+    expect(next[0].key).toBe('phone:8015550001');
     expect(enteringKeys(prev, next).size).toBe(0);
   });
 });

@@ -322,9 +322,11 @@ export function DashboardView({ session, leads, data, locks, glance }: {
                 <MonthOverviewBanner
                   overview={overview}
                   sessionId={session.id}
-                          activeAgents={glance.activeAgents}
+                  activeAgents={glance.activeAgents}
                   reviewsCollected={glance.reviewsCollected}
                   hoursSaved={hero.hoursSaved}
+                  variant="mobile"
+                  onSelectView={switchView}
                 />
                 <HeroStrip
                   {...hero}

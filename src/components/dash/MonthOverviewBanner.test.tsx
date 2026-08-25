@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MonthOverviewBanner } from './MonthOverviewBanner';
 import type { MonthOverview } from '@/lib/metrics/monthOverview';
 
@@ -79,5 +79,45 @@ describe('MonthOverviewBanner revenue', () => {
     renderBanner();
     expect(screen.queryByTestId('month-revenue')).toBeNull();
     expect(screen.queryByText(/REVENUE THIS MONTH/i)).toBeNull();
+  });
+});
+
+describe('MonthOverviewBanner tile drill-downs', () => {
+  it('scrolls to the zone that owns the number on desktop', () => {
+    const scrollIntoView = vi.fn();
+    const target = document.createElement('div');
+    target.id = 'zone-operations';
+    (target as HTMLElement).scrollIntoView = scrollIntoView;
+    document.body.appendChild(target);
+
+    renderBanner();
+    fireEvent.click(screen.getByRole('button', { name: /AGENTS ACTIVE/i }));
+    expect(scrollIntoView).toHaveBeenCalled();
+    document.body.removeChild(target);
+  });
+
+  it('switches tab instead of scrolling on mobile', () => {
+    const onSelectView = vi.fn();
+    render(
+      <MonthOverviewBanner
+        overview={overview}
+        sessionId="sess-1"
+        activeAgents={3}
+        reviewsCollected={0}
+        hoursSaved={12}
+        variant="mobile"
+        onSelectView={onSelectView}
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /AGENTS ACTIVE/i }));
+    expect(onSelectView).toHaveBeenCalledWith('crew');
+    fireEvent.click(screen.getByRole('button', { name: /REVIEWS COLLECTED/i }));
+    expect(onSelectView).toHaveBeenCalledWith('money');
+  });
+
+  it('leaves NEEDS ATTENTION inert while it is still coming soon', () => {
+    renderBanner();
+    expect(screen.queryByRole('button', { name: /NEEDS ATTENTION/i })).toBeNull();
+    expect(screen.getByText('NEEDS ATTENTION').closest('a')).toBeNull();
   });
 });

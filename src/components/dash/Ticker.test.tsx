@@ -11,6 +11,7 @@ const ev = (message: string, o: Partial<ClientEvent> = {}): ClientEvent => ({
   message,
   created_at: o.created_at ?? new Date().toISOString(),
   source_key: o.source_key,
+  lead_key: o.lead_key,
   ...o,
 });
 
@@ -53,7 +54,7 @@ describe('Ticker', () => {
       sms('+16128198700', '2026-08-21T21:20:00.000Z', 'Texted Ashish Garg back'),
     ]} />);
     expect(screen.getAllByText(/Texted Ashish Garg back/)).toHaveLength(1);
-    expect(screen.getByTestId('ticker-count-phone:+16128198700')).toHaveTextContent('3');
+    expect(screen.getByTestId('ticker-count-phone:6128198700')).toHaveTextContent('3');
   });
 
   it('a re-texted lead moves to the front instead of appearing twice', () => {

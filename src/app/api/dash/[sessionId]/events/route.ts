@@ -49,7 +49,7 @@ export async function GET(
   const supabase = createServiceClient();
   const { data, error } = await supabase
     .from('client_events')
-    .select('id, agent, kind, message, created_at, source_key')
+    .select('id, agent, kind, message, created_at, source_key, lead_key')
     .eq('session_id', sessionId)
     .gt('created_at', new Date(sinceMs).toISOString())
     .order('created_at', { ascending: false })

@@ -1,4 +1,5 @@
 import type { ClientEvent } from '@/lib/metrics/events';
+import { leadKeyFromPhone } from '@/lib/metrics/eventSources';
 
 // The Ticker is a shift register ROLLED UP BY LEAD: one chip per lead, newest
 // activity at the LEFT, older leads trailing off to the right. A lead who is
@@ -18,21 +19,21 @@ const ms = (e: ClientEvent) => new Date(e.created_at).getTime();
 /**
  * The lead a row belongs to, for rollup purposes.
  *
- * `client_events` has no lead foreign key, so identity has to come out of
- * `source_key`. The SMS rows -- the ones that actually repeat, 75 of J&C's 92
- * -- are keyed `jcsms:<phone>:out:<iso>`, so the phone groups them exactly.
+ * `lead_key` (migration 0015, normalised phone) is the real answer and covers
+ * SMS and call/quote rows alike, so a lead who both called and texted owns one
+ * chip.
  *
- * Everything else (postcall:<uuid>:opened|resolved|quote, signal:<uuid>) is
- * keyed by an id that is unique per event, carries no lead reference, and so
- * falls back to grouping with nothing but itself. Consequence, deliberate: a
- * lead who both called and texted still shows two chips. Closing that needs a
- * real `lead_key` column on client_events, which is a migration on a live
- * client table, not something to infer from message text -- parsing the name
- * back out of client-facing copy would break the moment the copy changed.
+ * The source_key fallback below stays for rows written before 0015 by a path
+ * that has not been redeployed -- it only ever handled the SMS shape. Rows with
+ * neither group with nothing but themselves, which is the honest outcome for a
+ * handoff signal (not about a nameable lead) or an event whose number was never
+ * recorded.
  */
 export function rollupKey(e: ClientEvent): string {
+  if (e.lead_key) return `phone:${e.lead_key}`;
   const parts = (e.source_key ?? '').split(':');
-  if (parts[0] === 'jcsms' && parts[1]) return `phone:${parts[1]}`;
+  const legacy = parts[0] === 'jcsms' ? leadKeyFromPhone(parts[1]) : null;
+  if (legacy) return `phone:${legacy}`;
   return `id:${e.id}`;
 }
 
@@ -126,13 +127,9 @@ export function enteringKeys(prev: TickerGroup[], next: TickerGroup[]): Set<stri
 // built from the same 500-row fetch the table uses.
 
 /** Digits only, last 10, so +18015551234 / 8015551234 / (801) 555-1234 all
- *  agree. Country code is dropped rather than compared: the events table
- *  stores E.164 and client_leads is not guaranteed to. */
-export function phoneDigits(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const digits = raw.replace(/\D/g, '');
-  return digits.length >= 10 ? digits.slice(-10) : null;
-}
+ *  agree. Re-exported from eventSources so the write path (lead_key), the SQL
+ *  normaliser, and this lookup cannot drift apart. */
+export const phoneDigits = leadKeyFromPhone;
 
 export type LeadRef = { id: string; phone?: string | null };
 

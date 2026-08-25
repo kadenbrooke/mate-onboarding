@@ -140,7 +140,7 @@ describe('DashboardView', () => {
   it('mobile agents tab contains SETUP stub', () => {
     renderDash({ session, leads: noLeads, data: emptyDash });
     // Navigate to agents tab where SETUP stub lives
-    fireEvent.click(screen.getByRole('button', { name: /agents/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }));
     expect(screen.getByTestId('view-crew')).toBeInTheDocument();
     expect(screen.getAllByText('SETUP').length).toBeGreaterThanOrEqual(1);
   });
@@ -160,7 +160,7 @@ describe('DashboardView', () => {
     expect(screen.getByTestId('view-leads')).toBeInTheDocument();
 
     // Switch to agents tab
-    fireEvent.click(screen.getByRole('button', { name: /agents/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Agents' }));
     expect(screen.getByTestId('view-crew')).toBeInTheDocument();
   });
 

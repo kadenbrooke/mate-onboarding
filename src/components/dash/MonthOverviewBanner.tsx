@@ -7,6 +7,7 @@ import { useCountUp } from './useCountUp';
 import { FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
 import { AUTO_MATE_AGENT_COUNT } from '@/lib/metrics/crew';
 import type { MonthOverview } from '@/lib/metrics/monthOverview';
+import type { MobileView } from './MobileNav';
 
 // Sits above the Hero strip: the "CEO glance" zone. Six stats covering the
 // questions an owner actually asks in the first 30 seconds -- are we busy, how
@@ -36,13 +37,14 @@ function TrendPill({ pct }: { pct: number }) {
   );
 }
 
-function StatTile({ icon, label, big, sub, trend, href }: {
+function StatTile({ icon, label, big, sub, trend, href, onActivate }: {
   icon: React.ReactNode; label: string; big: React.ReactNode; sub?: string;
   trend?: { pct: number };
-  /** When set the whole tile becomes a link to the sheet behind the number
-   *  (NEW LEADS -> the pipeline, newest captured first). Tiles without a
-   *  drill-down stay plain divs -- no hover affordance we can't honor. */
+  /** Navigates to another route (NEW LEADS -> the pipeline sheet). */
   href?: string;
+  /** Moves to the card on THIS page that owns the number: scrolls to the zone
+   *  on desktop, switches tab on mobile. Ignored when href is set. */
+  onActivate?: () => void;
 }) {
   const tileStyle: React.CSSProperties = {
     display: 'block', minWidth: 0, background: 'rgba(255,255,255,0.14)', borderRadius: 14,
@@ -73,12 +75,29 @@ function StatTile({ icon, label, big, sub, trend, href }: {
       )}
     </>
   );
-  if (!href) return <div style={tileStyle}>{body}</div>;
-  return (
-    <Link href={href} className="stat-tile-link" style={tileStyle} aria-label={`${label}: open pipeline`}>
-      {body}
-    </Link>
-  );
+  // Tiles with no destination stay plain divs -- no hover affordance we cannot
+  // honour. NEEDS ATTENTION is the current example: still "coming soon".
+  if (href) {
+    return (
+      <Link href={href} className="stat-tile-link" style={tileStyle} aria-label={`${label}: open pipeline`}>
+        {body}
+      </Link>
+    );
+  }
+  if (onActivate) {
+    return (
+      <button
+        type="button"
+        onClick={onActivate}
+        className="stat-tile-link"
+        style={{ ...tileStyle, textAlign: 'left', border: 'none', font: 'inherit', cursor: 'pointer' }}
+        aria-label={`${label}: jump to details`}
+      >
+        {body}
+      </button>
+    );
+  }
+  return <div style={tileStyle}>{body}</div>;
 }
 
 function CountedNumber({ value }: { value: number }) {
@@ -86,12 +105,29 @@ function CountedNumber({ value }: { value: number }) {
   return <>{Math.round(n)}</>;
 }
 
+// Each tile drills into the card that already owns its number. Desktop scrolls
+// to the zone anchor MovableDashGrid renders; mobile has no such anchor (zones
+// live on separate tabs) so it switches tab instead. NEEDS ATTENTION has no
+// entry: it is still "coming soon", so there is nothing to jump to.
+const TILE_TARGETS = {
+  jobs:     { zoneId: 'zone-pipeline',   view: 'money' as MobileView },
+  agents:   { zoneId: 'zone-operations', view: 'crew'  as MobileView },
+  reviews:  { zoneId: 'zone-reputation', view: 'money' as MobileView },
+  hours:    { zoneId: 'zone-operations', view: 'crew'  as MobileView },
+};
+
 export function MonthOverviewBanner({
   overview, activeAgents, reviewsCollected, hoursSaved, sessionId,
+  variant = 'desktop', onSelectView,
 }: {
   overview: MonthOverview;
   /** Route id for the drill-down links off the tiles (NEW LEADS -> pipeline). */
   sessionId: string;
+  /** Which surface this instance is rendered on. The banner renders twice (the
+   *  desktop grid and the mobile home tab) and the two drill down differently. */
+  variant?: 'desktop' | 'mobile';
+  /** Mobile only: switch to the tab holding the card behind a tile. */
+  onSelectView?: (v: MobileView) => void;
   /** Live agents out of AUTO_MATE_AGENT_COUNT. Counted from the client's own
    *  capability rows BEFORE zone gating (see page.tsx), so a locked Operations
    *  zone cannot make the crew look smaller than it is. */
@@ -102,6 +138,13 @@ export function MonthOverviewBanner({
    *  carried, same calculation (actions x minutes-per-action). */
   hoursSaved: number;
 }) {
+  // Desktop scrolls the zone into view (same mechanism as the IconRail);
+  // mobile hands the tab switch back to DashboardView, which owns that state.
+  const activate = (target: { zoneId: string; view: MobileView }) => () => {
+    if (variant === 'mobile') { onSelectView?.(target.view); return; }
+    document.getElementById(target.zoneId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
   return (
     <div style={{
       borderRadius: 24, padding: '20px 20px 20px', color: '#fff',
@@ -145,6 +188,7 @@ export function MonthOverviewBanner({
           label="JOBS COMPLETED"
           big={<CountedNumber value={overview.jobsCompleted.value} />}
           trend={{ pct: overview.jobsCompleted.pct }}
+          onActivate={activate(TILE_TARGETS.jobs)}
         />
         <StatTile
           icon={<UsersThree size={13} weight="bold" />}
@@ -158,6 +202,7 @@ export function MonthOverviewBanner({
           label="AGENTS ACTIVE"
           big={<>{activeAgents}/{AUTO_MATE_AGENT_COUNT}</>}
           sub="of your Auto Mate crew"
+          onActivate={activate(TILE_TARGETS.agents)}
         />
         {/* Placeholder until the attention queue exists. Deliberately not "0":
             a zero would claim nothing needs the client, which we cannot yet
@@ -171,12 +216,14 @@ export function MonthOverviewBanner({
           icon={<Star size={13} weight="fill" />}
           label="REVIEWS COLLECTED"
           big={<CountedNumber value={reviewsCollected} />}
+          onActivate={activate(TILE_TARGETS.reviews)}
         />
         <StatTile
           icon={<Clock size={13} weight="bold" />}
           label="HOURS SAVED"
           big={<>{Math.round(hoursSaved)}h</>}
           sub="handled while you worked, this week"
+          onActivate={activate(TILE_TARGETS.hours)}
         />
       </div>
     </div>

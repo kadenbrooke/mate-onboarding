@@ -9,6 +9,7 @@ const event: ClientEventInsert = {
   message: 'Checked in after your call with (801) 224-0797',
   created_at: '2026-08-11T19:27:31.648Z',
   source_key: 'postcall:pc1:opened',
+  lead_key: '8012240797',
 };
 
 function sink(result: { error: { message: string } | null } | Error) {
