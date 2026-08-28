@@ -4,7 +4,9 @@ import 'react-grid-layout/css/styles.css';
 import { redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
-import { brandToCssVars, BG_PAGE, TEXT_DARK } from '@/lib/theme';
+import {
+  brandToCssVars, BG_PAGE, TEXT_DARK, DASH_DESKTOP_MIN, MQ_DASH_MOBILE, MQ_DASH_DESKTOP,
+} from '@/lib/theme';
 import type { Brand } from '@/lib/research/website';
 import { TopBar } from '@/components/dash/chrome/TopBar';
 import { IconRail } from '@/components/dash/chrome/IconRail';
@@ -128,17 +130,17 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
            Class-based so env() survives (CSSOM drops it from inline styles in
            some engines). */
         .dash-shell { padding: 4px 12px calc(90px + env(safe-area-inset-bottom, 0px)); }
-        /* Icon rail is desktop chrome; below 641px the bottom MobileNav owns nav. */
-        @media (max-width: 640px) { .dash-rail { display: none !important; } }
+        /* Icon rail is desktop chrome; on the phone layout the bottom MobileNav owns nav. */
+        ${MQ_DASH_MOBILE} { .dash-rail { display: none !important; } }
         /* MobileNav is mobile-only chrome everywhere it renders, including
            standalone sub-pages (leads table, assistant) that aren't wrapped
            by DashboardView's own copy of this rule. */
-        @media (min-width: 641px) { .dash-nav { display: none !important; } }
+        ${MQ_DASH_DESKTOP} { .dash-nav { display: none !important; } }
         /* The fixed rail (left:14 + 40px chips) needs ~68px of clearance until
            the centered 1480px shell's own margin provides it, i.e. up to
            1480 + 2*(68-12) = ~1600px viewports. Symmetric padding keeps the
            content column centered. !important because base padding is inline. */
-        @media (min-width: 641px) and (max-width: 1600px) { .dash-shell { padding-left: 70px !important; padding-right: 70px !important; } }
+        @media (min-width: ${DASH_DESKTOP_MIN}px) and (max-width: 1600px) { .dash-shell { padding-left: 70px !important; padding-right: 70px !important; } }
         /* Touch-target slop: extends the effective hit area of small controls
            (range chips, ring legend buttons, calendar dots) without changing
            their visual size. */

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { HeroStrip } from './HeroStrip';
 import type { Lead } from '@/lib/metrics/leads';
+import { DASH_MOBILE_MAX } from '@/lib/theme';
 
 const recovered = {
   points: [{ date: '2026-07-01', cents: 1000 }, { date: '2026-07-02', cents: 2500 }],
@@ -25,7 +26,7 @@ describe('HeroStrip', () => {
     expect(container.querySelector('.hero-strip .hero-dark')).toBeTruthy();
     expect(container.querySelector('.hero-strip .hero-split')).toBeTruthy();
     const css = strip!.querySelector('style')?.textContent ?? '';
-    expect(css).toContain('max-width: 640px');
+    expect(css).toContain(`max-width: ${DASH_MOBILE_MAX}px`);
     expect(css).toContain('.hero-strip .hero-dark');
     expect(css).toContain('flex: 1 1 100%');
   });

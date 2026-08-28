@@ -177,3 +177,30 @@ export const NUM_TABLE: React.CSSProperties = {
   fontFeatureSettings: '"tnum" 1',
   fontWeight: 400,
 };
+
+// ---------------------------------------------------------------------------
+// Dash layout breakpoint
+// ---------------------------------------------------------------------------
+
+/**
+ * Phone/desktop split for the whole dash surface.
+ *
+ * Measured, not guessed: the desktop chrome does not fit below ~790px. The top
+ * bar alone needs 756px (logo up to 220px + pill nav + right chips) and pushed
+ * the avatar off-screen under that; the 12-column card grid squeezed its
+ * 6-column cells until card contents overflowed. It used to switch at 640px,
+ * which left every viewport from 641-789px -- foldables, big phones in
+ * landscape, small tablets -- on a desktop layout that ran off the screen.
+ *
+ * 900 rather than 790 so a wide tenant logo and longer nav labels keep room.
+ * Anything narrower gets the phone layout, which has no lower bound.
+ *
+ * Import these instead of hardcoding a pixel value: nine surfaces have to agree
+ * on the switch or the chrome and the content disagree about which layout is up.
+ */
+export const DASH_MOBILE_MAX = 899;
+export const DASH_DESKTOP_MIN = 900;
+/** `@media` prefix matching the phone layout. */
+export const MQ_DASH_MOBILE = `@media (max-width: ${DASH_MOBILE_MAX}px)`;
+/** `@media` prefix matching the desktop layout. */
+export const MQ_DASH_DESKTOP = `@media (min-width: ${DASH_DESKTOP_MIN}px)`;

@@ -82,6 +82,35 @@ describe('MonthOverviewBanner revenue', () => {
   });
 });
 
+// Regression: on Android Chrome (wider fallback body font, OS text scaling) a
+// four-digit stat plus its trend pill blew the tile wider than its column, and
+// the whole banner ran off the right edge of the phone. Every track and every
+// box in the tile has to be allowed to shrink below its content.
+describe('MonthOverviewBanner cannot outgrow the screen', () => {
+  const grid = (c: HTMLElement) => c.querySelector('.month-overview-grid') as HTMLElement;
+
+  it('sizes the tile columns with minmax(0, 1fr) so a wide stat cannot widen the track', () => {
+    const { container } = renderBanner();
+    expect(grid(container).style.gridTemplateColumns).toBe('repeat(3, minmax(0, 1fr))');
+    const css = container.querySelector('style')!.textContent!;
+    expect(css).toContain('repeat(2, minmax(0, 1fr))');
+  });
+
+  it('lets the stat row wrap so the non-shrinking trend pill never pushes past the tile', () => {
+    const { container } = renderBanner();
+    const statRow = grid(container).children[0].children[1] as HTMLElement;
+    expect(statRow.style.flexWrap).toBe('wrap');
+    expect(statRow.style.minWidth).toBe('0px');
+  });
+
+  it('clips at the banner as a last resort', () => {
+    const { container } = renderBanner();
+    const banner = grid(container).parentElement as HTMLElement;
+    expect(banner.style.overflow).toBe('hidden');
+    expect(banner.style.maxWidth).toBe('100%');
+  });
+});
+
 describe('MonthOverviewBanner tile drill-downs', () => {
   it('scrolls to the zone that owns the number on desktop', () => {
     const scrollIntoView = vi.fn();

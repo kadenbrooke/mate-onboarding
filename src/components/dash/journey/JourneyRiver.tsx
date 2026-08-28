@@ -3,7 +3,10 @@ import type { Lead } from '@/lib/metrics/leads';
 import { journeyRiver } from '@/lib/metrics/journey';
 import { moneyShort } from '@/lib/metrics/format';
 import { Card } from '../Card';
-import { STAGE_COLOR, FONT_BODY, CARD_MUTED, CARD_TRACK, CARD_HAIRLINE } from '@/lib/theme';
+import {
+  STAGE_COLOR, FONT_BODY, CARD_MUTED, CARD_TRACK, CARD_HAIRLINE,
+  MQ_DASH_MOBILE, MQ_DASH_DESKTOP,
+} from '@/lib/theme';
 
 // d3-sankey layout over: Quoted -> Won / Still open / Lost. Source-level
 // detail (web form, missed call, etc.) now lives entirely in the Source
@@ -11,7 +14,8 @@ import { STAGE_COLOR, FONT_BODY, CARD_MUTED, CARD_TRACK, CARD_HAIRLINE } from '@
 // instead of a source-by-source breakdown. Runs server-side (pure math, no
 // hooks). Nodes are rounded rects tinted for the light theme.
 //
-// Two SVG variants (desktop 640u / mobile 360u viewBox), CSS-toggled at 640px:
+// Two SVG variants (desktop 640u / mobile 360u viewBox), CSS-toggled on the
+// shared dash breakpoint:
 // a single viewBox stretched to a ~360px phone scales 10-unit text down to
 // ~5px rendered, which was unreadable. The narrower mobile viewBox keeps
 // rendered text at ~9px.
@@ -156,8 +160,8 @@ export function JourneyRiver({ leads, showLabel = true }: { leads: Lead[]; showL
   return (
     <Card label={label} themeKey="lead-journey">
       <style>{`
-        @media (max-width: 640px) { .jr-desktop { display: none !important; } }
-        @media (min-width: 641px) { .jr-mobile { display: none !important; } }
+        ${MQ_DASH_MOBILE} { .jr-desktop { display: none !important; } }
+        ${MQ_DASH_DESKTOP} { .jr-mobile { display: none !important; } }
       `}</style>
       <RiverSvg nodes={nodes} links={links} geo={DESKTOP} variant="desktop" />
       <RiverSvg nodes={nodes} links={links} geo={MOBILE} variant="mobile" />

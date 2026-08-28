@@ -4,7 +4,7 @@ import {
   Wrench, UsersThree, Robot, Warning, Star, Clock, ArrowUpRight, ArrowDownRight,
 } from '@phosphor-icons/react';
 import { useCountUp } from './useCountUp';
-import { FONT_BODY, NUM_DISPLAY } from '@/lib/theme';
+import { FONT_BODY, NUM_DISPLAY, MQ_DASH_MOBILE } from '@/lib/theme';
 import { AUTO_MATE_AGENT_COUNT } from '@/lib/metrics/crew';
 import type { MonthOverview } from '@/lib/metrics/monthOverview';
 import type { MobileView } from './MobileNav';
@@ -26,7 +26,7 @@ function TrendPill({ pct }: { pct: number }) {
   const Arrow = up ? ArrowUpRight : ArrowDownRight;
   return (
     <span style={{
-      display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0,
+      display: 'inline-flex', alignItems: 'center', gap: 2, flexShrink: 0, maxWidth: '100%',
       fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
       background: 'rgba(255,255,255,0.22)',
       borderRadius: 99, padding: '3px 8px',
@@ -47,8 +47,13 @@ function StatTile({ icon, label, big, sub, trend, href, onActivate }: {
   onActivate?: () => void;
 }) {
   const tileStyle: React.CSSProperties = {
-    display: 'block', minWidth: 0, background: 'rgba(255,255,255,0.14)', borderRadius: 14,
-    padding: '12px 14px', color: 'inherit', textDecoration: 'none',
+    display: 'block', minWidth: 0, maxWidth: '100%', background: 'rgba(255,255,255,0.14)',
+    borderRadius: 14, padding: '12px 14px', color: 'inherit', textDecoration: 'none',
+    // Nothing inside a tile may push the card past the screen edge. Long words
+    // break rather than widen the track (Android Chrome's fallback body font +
+    // the OS text-scaling setting both make these labels wider than they are on
+    // iOS, which is how the whole banner ended up spilling off a Pixel).
+    overflowWrap: 'anywhere',
   };
   const body = (
     <>
@@ -62,12 +67,17 @@ function StatTile({ icon, label, big, sub, trend, href, onActivate }: {
         lineHeight: 1.25, minWidth: 0,
       }}>
         <span aria-hidden style={{ display: 'inline-flex', flexShrink: 0, marginTop: 1 }}>{icon}</span>
-        <span>{label}</span>
+        <span style={{ minWidth: 0 }}>{label}</span>
       </div>
       {/* Bottom row: big number lower-left, trend pill lower-right -- not
-          the header row, so it never crowds a two-line-wrapped label. */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8, marginTop: 8 }}>
-        <div style={{ fontSize: 24, lineHeight: 1, ...NUM_DISPLAY }}>{big}</div>
+          the header row, so it never crowds a two-line-wrapped label. Wraps
+          when the number and the pill cannot share a line, since the pill
+          never shrinks and the number cannot break mid-digit. */}
+      <div style={{
+        display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 8, marginTop: 8, minWidth: 0,
+      }}>
+        <div style={{ fontSize: 24, lineHeight: 1, minWidth: 0, ...NUM_DISPLAY }}>{big}</div>
         {trend && <TrendPill pct={trend.pct} />}
       </div>
       {sub && (
@@ -148,17 +158,27 @@ export function MonthOverviewBanner({
   return (
     <div style={{
       borderRadius: 24, padding: '20px 20px 20px', color: '#fff',
+      // Backstop: the banner is a grid item, and a grid item's automatic
+      // minimum size is its min-content width -- without these it can grow
+      // past its column and run off the right edge of the phone.
+      minWidth: 0, maxWidth: '100%', overflow: 'hidden',
       background: 'linear-gradient(135deg, color-mix(in srgb, var(--brand-primary, #e14d1a) 100%, white 28%), var(--brand-primary, #e14d1a) 55%, color-mix(in srgb, var(--brand-primary, #e14d1a) 100%, black 22%))',
       boxShadow: '0 12px 28px color-mix(in srgb, var(--brand-primary, #e14d1a) 38%, transparent)',
     }}>
       {/* Header row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: 8, minWidth: 0,
+      }}>
         <span style={{
           fontSize: 11, letterSpacing: 1.5, fontWeight: 700, fontFamily: FONT_BODY, opacity: 0.85,
+          minWidth: 0,
         }}>
           MONTH OVERVIEW
         </span>
-        <span style={{ fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY, opacity: 0.85 }}>
+        <span style={{
+          fontSize: 12, fontWeight: 600, fontFamily: FONT_BODY, opacity: 0.85, minWidth: 0,
+        }}>
           {overview.monthLabel}
         </span>
       </div>
@@ -173,15 +193,21 @@ export function MonthOverviewBanner({
 
       {/* Six supporting stats: activity, crew, attention, reputation */}
       <style>{`
-        @media (max-width: 640px) {
-          .month-overview-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        ${MQ_DASH_MOBILE} {
+          .month-overview-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+        }
+        /* Very narrow / heavily text-scaled screens: two columns stop being
+           readable long before they stop fitting, so drop to one. */
+        @media (max-width: 340px) {
+          .month-overview-grid { grid-template-columns: minmax(0, 1fr) !important; }
         }
         .stat-tile-link { transition: background 120ms ease; }
         .stat-tile-link:hover { background: rgba(255,255,255,0.24) !important; }
         .stat-tile-link:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
       `}</style>
       <div className="month-overview-grid" style={{
-        display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 14,
+        display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 10, marginTop: 14,
+        minWidth: 0,
       }}>
         <StatTile
           icon={<Wrench size={13} weight="bold" />}

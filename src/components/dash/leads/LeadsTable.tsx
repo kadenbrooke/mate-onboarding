@@ -6,6 +6,7 @@ import { STAGE_STATUSES, type Lead, type LeadStatus, type StageStatus } from '@/
 import {
   FREE_GREEN, BORDER_SOFT, TEXT_MUTED, TEXT_DARK, TEXT_FAINT, BG_CARD,
   NUM_TABLE, NUM_DISPLAY, FONT_BODY, scoreColor, STAGE_COLOR, STAGE_LABEL,
+  MQ_DASH_MOBILE, MQ_DASH_DESKTOP,
 } from '@/lib/theme';
 import {
   searchLeads, applySort, cycleSort, nextStatus, SORT_CHIPS,
@@ -47,7 +48,7 @@ const captured = (iso: string | null | undefined) =>
 const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, transparent)';
 
 // Desktop: 10-column table (SCORE NAME CONTACT SERVICE CITY SOURCE QUOTE DRIVER
-// CAPTURED STAGE) plus a trailing chevron. Mobile (<=640px): the table crushed
+// CAPTURED STAGE) plus a trailing chevron. Phone layout: the table crushed
 // unreadably at 390px, so leads render as stacked card rows with 40px stage
 // buttons and the Driver pill + contact dots inline. Both variants render and
 // CSS toggles display; state (optimistic status + handler) is shared so
@@ -209,8 +210,8 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
       </div>
 
       <style>{`
-        @media (max-width: 640px) { .leads-desktop { display: none !important; } }
-        @media (min-width: 641px) { .leads-mobile { display: none !important; } }
+        ${MQ_DASH_MOBILE} { .leads-desktop { display: none !important; } }
+        ${MQ_DASH_DESKTOP} { .leads-mobile { display: none !important; } }
         .leads-row { cursor: pointer; }
         .leads-row:hover { background: rgba(20,20,20,0.025); }
         .lead-open { cursor: pointer; }
