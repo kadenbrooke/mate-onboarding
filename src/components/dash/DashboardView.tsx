@@ -37,7 +37,7 @@ import type { DashData } from './types';
 import { ZONE_LABELS, ZONE_DESCRIPTIONS, type ZoneId, type ZoneLock } from '@/lib/dash/locks';
 import type { SectionLock } from './Card';
 import {
-  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar,
+  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, brandVar, MQ_DASH_MOBILE, MQ_DASH_DESKTOP,
 } from '@/lib/theme';
 
 // Light-theme layout (2026-07 redesign): each zone is a large light-grey
@@ -270,8 +270,8 @@ export function DashboardView({ session, leads, data, locks, glance }: {
   return (
     <main>
       <style>{`
-        @media (max-width: 640px) { .dash-desktop { display: none !important; } }
-        @media (min-width: 641px) { .dash-mobile, .dash-nav { display: none !important; } }
+        ${MQ_DASH_MOBILE} { .dash-desktop { display: none !important; } }
+        ${MQ_DASH_DESKTOP} { .dash-mobile, .dash-nav { display: none !important; } }
       `}</style>
 
       {/* Desktop layout. Hero + Ticker stay pinned at the top; everything below

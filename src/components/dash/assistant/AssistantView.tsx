@@ -5,6 +5,7 @@ import {
 } from '@phosphor-icons/react';
 import {
   BG_CARD, BG_PAGE, BORDER_SOFT, TEXT_DARK, TEXT_MUTED, FONT_BODY, CARD_SHADOW, brandVar,
+  MQ_DASH_MOBILE,
 } from '@/lib/theme';
 
 type Role = 'user' | 'assistant';
@@ -156,7 +157,7 @@ export function AssistantView({ sessionId }: { sessionId: string }) {
         flex: 1, minWidth: 0, background: BG_CARD, borderRadius: 16, boxShadow: CARD_SHADOW,
         display: 'flex', flexDirection: 'column', overflow: 'hidden',
       }}>
-        <style>{`@media (max-width: 640px) { .assistant-rail { display: none !important; } }`}</style>
+        <style>{`${MQ_DASH_MOBILE} { .assistant-rail { display: none !important; } }`}</style>
 
         <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
           {empty ? (

@@ -10,7 +10,7 @@ import { FONT_BODY, TEXT_MUTED } from '@/lib/theme';
 
 // Standalone sub-pages (the full leads table, the standalone assistant
 // page) used to rely on TopBar's desktop nav pills as "the way back" -- but
-// those pills are hidden on mobile (<=640px), which left mobile users
+// those pills are hidden on the phone layout, which left mobile users
 // stranded with no back button at all. This is the fix: an explicit link
 // back to the dashboard root, shown on every sub-page regardless of screen
 // size.

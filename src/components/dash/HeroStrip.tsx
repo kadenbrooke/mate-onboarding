@@ -4,6 +4,7 @@ import type { DailyPoint } from '@/lib/metrics/recovered';
 import type { Lead } from '@/lib/metrics/leads';
 import { RecoveredCard } from './RecoveredCard';
 import { DriverSplitCard } from './pipeline/DriverSplitCard';
+import { MQ_DASH_MOBILE } from '@/lib/theme';
 
 export type HeroStripSeries = { recovered: HeroSeries; hours: HeroSeries; actions: HeroSeries };
 
@@ -24,9 +25,9 @@ export function HeroStrip({ recoveredCents, roiMultiple, recovered, leads, agent
   return (
     <div className="hero-strip" style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
       {/* Mobile: the dark Recovered card would pin its 260px min-width and
-          crush its neighbour. Below 641px each card takes a full row. */}
+          crush its neighbour. On the phone layout each card takes a full row. */}
       <style>{`
-        @media (max-width: 640px) {
+        ${MQ_DASH_MOBILE} {
           .hero-strip .hero-dark { flex: 1 1 100% !important; min-width: 100% !important; }
           .hero-strip .hero-split { flex: 1 1 100% !important; min-width: 100% !important; }
         }

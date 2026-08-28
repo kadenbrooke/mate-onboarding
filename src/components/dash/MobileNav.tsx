@@ -5,7 +5,7 @@ import { House, UsersThree, CurrencyDollar, ChartLineUp, Microphone } from '@pho
 import { FONT_BODY, BG_CARD, BORDER_SOFT, TEXT_MUTED, brandVar } from '@/lib/theme';
 export type MobileView = 'home' | 'leads' | 'money' | 'crew' | 'assistant';
 
-// Bottom tab bar (<=640px only). Icon + label per tab, >=48px touch targets,
+// Bottom tab bar (phone layout only). Icon + label per tab, >=48px touch targets,
 // bottom padding clears the iPhone home indicator (safe-area-inset-bottom).
 // Active tab: brand color + filled icon + top indicator bar so the state
 // reads instantly on the light theme.

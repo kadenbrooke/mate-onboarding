@@ -3,7 +3,10 @@ import { CascadeFunnel } from '../followup/CascadeFunnel';
 import { StarBars } from './StarBars';
 import { ReferralRing } from './ReferralRing';
 import { ComingSoon } from '@/components/dash/ComingSoon';
-import { FREE_GREEN, CARD_MUTED, CARD_BG, CARD_INSET, CARD_HAIRLINE, FONT_BODY, FONT_HEAD } from '@/lib/theme';
+import {
+  FREE_GREEN, CARD_MUTED, CARD_BG, CARD_INSET, CARD_HAIRLINE, FONT_BODY, FONT_HEAD,
+  MQ_DASH_MOBILE,
+} from '@/lib/theme';
 import type { Reputation, Review } from '@/components/dash/types';
 import { ZONE_LABELS, ZONE_DESCRIPTIONS } from '@/lib/dash/locks';
 
@@ -71,7 +74,7 @@ export function ReputationZone({
       {/* Bottom: StarBars + ReferralRing sub-panels. Mobile stacks them: the
           ReferralRing's 110px donut + revenue block overflows a half column. */}
       <style>{`
-        @media (max-width: 640px) { .rep-panels { grid-template-columns: 1fr !important; } }
+        ${MQ_DASH_MOBILE} { .rep-panels { grid-template-columns: 1fr !important; } }
       `}</style>
       <div className="rep-panels" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
         <div style={{

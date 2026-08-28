@@ -4,7 +4,9 @@ import { usePathname } from 'next/navigation';
 import { SquaresFour, UsersThree, ChatCircle, Bell, SignOut } from '@phosphor-icons/react';
 import { activeNavKey, businessInitials, type DashNavKey } from '@/lib/dashChrome';
 import { useDashEditing } from '@/lib/dashEditing';
-import { BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, TEXT_MUTED, brandVar } from '@/lib/theme';
+import {
+  BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, TEXT_MUTED, brandVar, MQ_DASH_MOBILE,
+} from '@/lib/theme';
 
 // Dash chrome top bar (InvestIQ reference): logo chip far left, pill nav
 // center (active = white pill + dark circular icon chip), bell + avatar
@@ -93,7 +95,7 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
            (viewport-fit=cover): top padding grows by the safe-area inset.
            Class-based (not inline): jsdom/CSSOM drops env() inline values. */
         .dash-topbar { padding: calc(12px + env(safe-area-inset-top, 0px)) 16px 12px; }
-        @media (max-width: 640px) { .dash-topnav, .dash-avatar { display: none !important; } }
+        ${MQ_DASH_MOBILE} { .dash-topnav, .dash-avatar { display: none !important; } }
       `}</style>
 
       {/* Logo chip: tenant logo when set; default is the inline Auto Mate
