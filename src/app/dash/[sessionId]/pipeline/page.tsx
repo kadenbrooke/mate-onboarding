@@ -27,8 +27,11 @@ export default async function PipelinePage({ params, searchParams }: {
   const supabase = createServiceClient();
   const { data: session } = await supabase.from('onboarding_sessions').select('id').eq('id', sessionId).single();
   if (!session) notFound();
+  // is_test: reseller/founder demo rows never appear in the client's pipeline
+  // (migration 032; generated from phone, so it cannot be forgotten by a writer).
   const { data: leads } = await supabase.from('client_leads')
     .select('*').eq('session_id', sessionId)
+    .eq('is_test', false)
     .order('contacted', { ascending: true }).order('score', { ascending: false })
     .limit(500);
 

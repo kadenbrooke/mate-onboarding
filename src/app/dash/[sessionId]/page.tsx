@@ -44,10 +44,15 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     money,
     contactResult,
   ] = await Promise.all([
+    // is_test excludes the reseller/founder test phones (client_leads.is_test,
+    // migration 032 -- a generated column derived from `phone`). Those rows run the
+    // real First Responder pipeline for demos, so they must never reach a client's
+    // rollups: this single query feeds every metric on the dashboard.
     supabase
       .from('client_leads')
       .select('*')
       .eq('session_id', sessionId)
+      .eq('is_test', false)
       .order('created_at', { ascending: false })
       .limit(500),
     supabase

@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
 
   const [{ data: session }, { data: leadsData }, { data: history }] = await Promise.all([
     supabase.from('onboarding_sessions').select('collected').eq('id', session_id).maybeSingle(),
-    supabase.from('client_leads').select('*').eq('session_id', session_id).limit(500),
+    // is_test excluded: the assistant answers questions about the client's book of
+    // business, so reseller/founder demo leads must not show up in its context
+    // (client_leads.is_test, migration 032).
+    supabase.from('client_leads').select('*').eq('session_id', session_id).eq('is_test', false).limit(500),
     supabase.from('assistant_messages').select('role, content').eq('chat_id', chat_id)
       .order('created_at', { ascending: true }).limit(40),
   ]);
