@@ -42,7 +42,7 @@ type IntakeReply =
 
 export type ConfirmOutcome = {
   index: number;
-  outcome: 'sent' | 'queued' | 'duplicate' | 'skipped' | 'invalid' | 'failed';
+  outcome: 'sent' | 'queued' | 'saved' | 'duplicate' | 'skipped' | 'invalid' | 'failed';
   message: string;
   /** Set on sent/queued so the result screen can link into the thread. */
   lead_id?: string | null;
@@ -56,6 +56,7 @@ function isRow(v: unknown): v is ConfirmRow {
   return (
     typeof r.index === 'number' &&
     typeof r.include === 'boolean' &&
+    (r.text === undefined || typeof r.text === 'boolean') &&
     str(r.name) && str(r.phone) && str(r.address) && str(r.service) && str(r.notes)
   );
 }
@@ -105,7 +106,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const { data: snapshot } = await service
     .from('lead_snapshots')
-    .select('id, status, extracted')
+    .select('id, status, extracted, storage_path')
     .eq('id', snapshotId)
     .eq('session_id', sessionId)
     .maybeSingle();
@@ -126,17 +127,22 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   } catch {
     return NextResponse.json({ error: 'bad json' }, { status: 400 });
   }
-  if (body.consent !== true) {
-    return NextResponse.json(
-      { error: 'Please confirm these people asked to be contacted before sending.' },
-      { status: 400 },
-    );
-  }
   if (!Array.isArray(body.rows) || body.rows.length === 0 || !body.rows.every(isRow)) {
     return NextResponse.json({ error: 'rows[] required' }, { status: 400 });
   }
   const rows = body.rows as ConfirmRow[];
   if (rows.length > 50) return NextResponse.json({ error: 'Too many rows.' }, { status: 400 });
+
+  // Consent is required exactly when someone will be texted. A save-only
+  // batch contacts nobody, so it needs no attestation.
+  const wantsText = rows.some(r => r.include && r.text !== false);
+  if (wantsText && body.consent !== true) {
+    return NextResponse.json(
+      { error: 'Please confirm these people asked to be contacted before sending.' },
+      { status: 400 },
+    );
+  }
+  const consent = body.consent === true;
 
   // ---- what we already know --------------------------------------------------
 
@@ -166,7 +172,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       uploaded_by: user?.id ?? null,
       confirmed: {
         rows,
-        consent: { attested: true, user_id: user?.id ?? null, email: user?.email ?? null, at: now.toISOString() },
+        consent: { attested: consent, user_id: user?.id ?? null, email: user?.email ?? null, at: now.toISOString() },
         plan: plan.map(v => ({ index: v.index, kind: v.kind, ...('reason' in v ? { reason: v.reason } : {}) })),
         results: null,
       },
@@ -182,21 +188,27 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const sendAfter = nextSendWindowStart(DEFAULT_OUTREACH_HOURS, now);
   const hold = sendAfter.getTime() > now.getTime();
 
+  const source = snapshot.storage_path === 'typed' ? 'typed' : 'lead_snapshot';
+
   const outcomes: ConfirmOutcome[] = [];
   for (const v of plan) {
     if (v.kind !== 'send') {
       outcomes.push({ index: v.index, outcome: v.kind, message: verdictMessage(v) });
       continue;
     }
+    if (v.mode === 'save') {
+      outcomes.push(await saveOne(service, v, sessionId, source, now));
+      continue;
+    }
     const outcome = await sendOne(v, {
-      sessionId, snapshotId, tenant, webhookUrl, secret, hold, sendAfter,
+      sessionId, snapshotId, tenant, webhookUrl, secret, hold, sendAfter, source,
     });
     outcomes.push(outcome);
   }
 
   // ---- link outcomes to lead rows, mirror to the ticker ----------------------------
 
-  const sentKeys = plan.filter(v => v.kind === 'send').map(v => (v as Extract<RowVerdict, { kind: 'send' }>).e164);
+  const sentKeys = plan.filter(v => v.kind === 'send' && v.mode === 'text').map(v => (v as Extract<RowVerdict, { kind: 'send' }>).e164);
   if (sentKeys.length > 0) {
     const { data: created } = await service
       .from('client_leads')
@@ -205,7 +217,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       .in('phone', sentKeys);
     const byPhone = new Map((created ?? []).map(l => [String(l.phone), l]));
     for (const v of plan) {
-      if (v.kind !== 'send') continue;
+      if (v.kind !== 'send' || v.mode !== 'text') continue;
       const o = outcomes.find(x => x.index === v.index);
       const lead = byPhone.get(v.e164);
       if (o && lead) o.lead_id = lead.id as string;
@@ -227,16 +239,16 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   await service
     .from('lead_snapshots')
-    .update({ confirmed: { ...(claimedConfirmed(rows, plan, user, now)), results: outcomes } })
+    .update({ confirmed: { ...(claimedConfirmed(rows, plan, user, now, consent)), results: outcomes } })
     .eq('id', snapshotId);
 
   return NextResponse.json({ snapshot_id: snapshotId, hold, send_after: hold ? sendAfter.toISOString() : null, outcomes });
 }
 
-function claimedConfirmed(rows: ConfirmRow[], plan: RowVerdict[], user: { id: string; email?: string } | null, now: Date) {
+function claimedConfirmed(rows: ConfirmRow[], plan: RowVerdict[], user: { id: string; email?: string } | null, now: Date, consent: boolean) {
   return {
     rows,
-    consent: { attested: true, user_id: user?.id ?? null, email: user?.email ?? null, at: now.toISOString() },
+    consent: { attested: consent, user_id: user?.id ?? null, email: user?.email ?? null, at: now.toISOString() },
     plan: plan.map(v => ({ index: v.index, kind: v.kind, ...('reason' in v ? { reason: v.reason } : {}) })),
   };
 }
@@ -246,7 +258,7 @@ async function sendOne(
   ctx: {
     sessionId: string; snapshotId: string;
     tenant: NonNullable<ReturnType<typeof intakeTenantFor>>;
-    webhookUrl: string; secret: string; hold: boolean; sendAfter: Date;
+    webhookUrl: string; secret: string; hold: boolean; sendAfter: Date; source: 'typed' | 'lead_snapshot';
   },
 ): Promise<ConfirmOutcome> {
   const opening = snapshotOpening(ctx.tenant, { name: v.lead.name, service: v.lead.service });
@@ -256,7 +268,7 @@ async function sendOne(
     snapshot_id: ctx.snapshotId,
     // Idempotency key the workflow can use if it ever grows a ledger.
     intake_key: `${ctx.snapshotId}:${v.leadKey}`,
-    lead: { ...v.lead, source: 'lead_snapshot', created_at: new Date().toISOString() },
+    lead: { ...v.lead, source: ctx.source, created_at: new Date().toISOString() },
     tenant: {
       contact_id: ctx.tenant.contactId,
       sms_from: ctx.tenant.smsFrom,
@@ -296,6 +308,44 @@ async function sendOne(
     console.error('lead-intake threw', ctx.snapshotId, v.leadKey, err instanceof Error ? err.message : err);
     return { index: v.index, outcome: 'failed', message: 'Could not reach the sender. Nothing was texted.' };
   }
+}
+
+/**
+ * The "Text them" switch is off: a pipeline row the client works themselves.
+ * Direct insert rather than the ingest API, because dedupe has already proven
+ * the number is new and the row must carry handler = 'human' from birth so
+ * nothing automated ever picks it up. No ticker event: saving a lead is not
+ * agent work. Notes have no column on client_leads and are kept only in the
+ * snapshot's confirmed record.
+ */
+async function saveOne(
+  service: ReturnType<typeof createServiceClient>,
+  v: Extract<RowVerdict, { kind: 'send' }>,
+  sessionId: string,
+  source: 'typed' | 'lead_snapshot',
+  now: Date,
+): Promise<ConfirmOutcome> {
+  const { data, error } = await service
+    .from('client_leads')
+    .insert({
+      session_id: sessionId,
+      name: v.lead.name,
+      phone: v.e164,
+      address: v.lead.address,
+      service: v.lead.service,
+      source,
+      status: 'open',
+      handler: 'human',
+      handler_changed_at: now.toISOString(),
+      created_at: now.toISOString(),
+    })
+    .select('id')
+    .single();
+  if (error || !data) {
+    console.error('save lead failed', sessionId, v.leadKey, error?.message);
+    return { index: v.index, outcome: 'failed', message: 'Could not save. Nothing was texted.' };
+  }
+  return { index: v.index, outcome: 'saved', message: 'Saved. Yours to work.', lead_id: data.id as string };
 }
 
 function formatWhen(d: Date): string {

@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useRef, useState, type ChangeEvent } from 'react';
 import Link from 'next/link';
 import {
-  Camera, Images, X, PaperPlaneTilt, CheckCircle, Clock, Warning, XCircle, MinusCircle, ArrowSquareOut,
+  Camera, Images, Keyboard, Plus, X, PaperPlaneTilt, CheckCircle, Clock, Warning, XCircle, MinusCircle, ArrowSquareOut,
 } from '@phosphor-icons/react';
 import {
   BG_CARD, BG_SECTION, BORDER_SOFT, CARD_SHADOW, TEXT_DARK, TEXT_MUTED, TEXT_FAINT,
@@ -12,30 +12,31 @@ import type { SnapshotCandidate } from '@/lib/leads/snapshotParse';
 import { snapshotOpening, type OpeningTenant } from '@/lib/leads/snapshotOpening';
 import { MAX_IMAGES_PER_REQUEST } from '@/lib/leads/snapshotImage';
 import {
-  rowsFromCandidates, updateRow, submitState, sendLabel, sendableRows, displayPhone, duplicateMessage,
+  rowsFromCandidates, blankRow, updateRow, submitState, sendLabel, sendableRows, displayPhone, duplicateMessage,
   type EditableRow, type DuplicateNote,
 } from './confirmState';
 
-// The whole Lead Snapshot flow on one screen, three steps:
+// Add a lead, two ways in and one screen out:
 //
-//   capture  -> pick or shoot 1..5 photos, read them
-//   confirm  -> one editable card per lead, consent box, "Send N texts"
-//   result   -> per row: sent, queued, duplicate, skipped, failed
+//   capture  -> shoot or pick 1..5 photos and read them, OR type it in
+//   confirm  -> one editable card per lead, a Text them switch on each,
+//               consent box when anything will be texted, one button
+//   result   -> per row: sent, queued, saved, duplicate, skipped, failed
 //
 // The confirm step is the safety story. Nothing is sent until a human has
-// looked at every number and ticked the box. See the spec for the reasoning
-// behind each rule; the rules themselves live in confirmState.ts with tests.
+// looked at every number and ticked the box. Rules live in confirmState.ts
+// with tests; this file is layout.
 
 type Step =
   | { kind: 'capture' }
   | { kind: 'reading' }
-  | { kind: 'confirm'; snapshotId: string; rows: EditableRow[]; unreadable: string | null }
-  | { kind: 'sending'; snapshotId: string; rows: EditableRow[] }
+  | { kind: 'confirm'; snapshotId: string; rows: EditableRow[]; unreadable: string | null; typed: boolean }
+  | { kind: 'sending'; snapshotId: string; rows: EditableRow[]; typed: boolean }
   | { kind: 'result'; outcomes: Outcome[]; hold: boolean; sendAfter: string | null };
 
 type Outcome = {
   index: number;
-  outcome: 'sent' | 'queued' | 'duplicate' | 'skipped' | 'invalid' | 'failed';
+  outcome: 'sent' | 'queued' | 'saved' | 'duplicate' | 'skipped' | 'invalid' | 'failed';
   message: string;
   lead_id?: string | null;
   send_after?: string | null;
@@ -47,6 +48,8 @@ type ExtractReply = {
   unreadable: string | null;
   duplicates: DuplicateNote[];
 } | { error: string; snapshot_id?: string };
+
+type ManualReply = { snapshot_id: string } | { error: string };
 
 type ConfirmReply = { snapshot_id: string; hold: boolean; send_after: string | null; outcomes: Outcome[] } | { error: string };
 
@@ -104,9 +107,28 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
       }
       const rows = rowsFromCandidates(body.candidates, body.duplicates ?? []);
       setConsent(false);
-      setStep({ kind: 'confirm', snapshotId: body.snapshot_id, rows, unreadable: body.unreadable });
+      setStep({ kind: 'confirm', snapshotId: body.snapshot_id, rows, unreadable: body.unreadable, typed: false });
     } catch {
       setError('Could not reach the reader. Check your connection and try again.');
+      setStep({ kind: 'capture' });
+    }
+  }
+
+  async function startTyped() {
+    setError(null);
+    setStep({ kind: 'reading' });
+    try {
+      const res = await fetch(`/api/dash/${sessionId}/leads/manual`, { method: 'POST' });
+      const body = (await res.json()) as ManualReply;
+      if (!res.ok || 'error' in body) {
+        setError('error' in body ? body.error : 'Could not start.');
+        setStep({ kind: 'capture' });
+        return;
+      }
+      setConsent(false);
+      setStep({ kind: 'confirm', snapshotId: body.snapshot_id, rows: [blankRow(0)], unreadable: null, typed: true });
+    } catch {
+      setError('Could not reach the server. Check your connection and try again.');
       setStep({ kind: 'capture' });
     }
   }
@@ -115,17 +137,17 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
     if (step.kind !== 'confirm') return;
     const gate = submitState(step.rows, consent);
     if (!gate.ok) return;
-    const { snapshotId, rows } = step;
+    const { snapshotId, rows, typed } = step;
     setError(null);
-    setStep({ kind: 'sending', snapshotId, rows });
+    setStep({ kind: 'sending', snapshotId, rows, typed });
     try {
       const res = await fetch(`/api/dash/${sessionId}/snapshot/${snapshotId}/confirm`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          consent: true,
+          consent,
           rows: rows.map(r => ({
-            index: r.index, include: r.include && !r.duplicate,
+            index: r.index, include: r.include && !r.duplicate, text: r.text,
             name: r.name || null, phone: r.phone || null, address: r.address || null,
             service: r.service || null, notes: r.notes || null,
           })),
@@ -134,13 +156,13 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
       const body = (await res.json()) as ConfirmReply;
       if (!res.ok || 'error' in body) {
         setError('error' in body ? body.error : 'Could not send.');
-        setStep({ kind: 'confirm', snapshotId, rows, unreadable: null });
+        setStep({ kind: 'confirm', snapshotId, rows, unreadable: null, typed });
         return;
       }
       setStep({ kind: 'result', outcomes: body.outcomes, hold: body.hold, sendAfter: body.send_after });
     } catch {
       setError('Could not reach the sender. Nothing was texted.');
-      setStep({ kind: 'confirm', snapshotId, rows, unreadable: null });
+      setStep({ kind: 'confirm', snapshotId, rows, unreadable: null, typed });
     }
   }
 
@@ -169,6 +191,7 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
           reading={step.kind === 'reading'}
           onPick={() => libraryRef.current?.click()}
           onShoot={() => cameraRef.current?.click()}
+          onType={startTyped}
           onRemove={removePicked}
           onRead={read}
         />
@@ -178,6 +201,7 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
         <ConfirmStep
           sessionId={sessionId}
           rows={step.rows}
+          typed={step.typed}
           unreadable={step.kind === 'confirm' ? step.unreadable : null}
           consent={consent}
           sending={step.kind === 'sending'}
@@ -185,6 +209,10 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
           onRow={(index, patch) => {
             if (step.kind !== 'confirm') return;
             setStep({ ...step, rows: updateRow(step.rows, index, patch) });
+          }}
+          onAdd={() => {
+            if (step.kind !== 'confirm') return;
+            setStep({ ...step, rows: [...step.rows, blankRow(step.rows.length)] });
           }}
           onConsent={setConsent}
           onSend={send}
@@ -206,9 +234,9 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
 
 // ---------------------------------------------------------------------------
 
-function CaptureStep({ picked, reading, onPick, onShoot, onRemove, onRead }: {
+function CaptureStep({ picked, reading, onPick, onShoot, onType, onRemove, onRead }: {
   picked: Picked[]; reading: boolean;
-  onPick: () => void; onShoot: () => void; onRemove: (i: number) => void; onRead: () => void;
+  onPick: () => void; onShoot: () => void; onType: () => void; onRemove: (i: number) => void; onRead: () => void;
 }) {
   return (
     <div style={{ background: BG_CARD, borderRadius: 16, padding: 16, boxShadow: CARD_SHADOW, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -217,6 +245,9 @@ function CaptureStep({ picked, reading, onPick, onShoot, onRemove, onRead }: {
       </button>
       <button type="button" onClick={onPick} disabled={reading} style={bigButton(false)}>
         <Images size={20} weight="bold" aria-hidden /> Choose from library
+      </button>
+      <button type="button" onClick={onType} disabled={reading || picked.length > 0} style={bigButton(false)}>
+        <Keyboard size={20} weight="bold" aria-hidden /> Type it in
       </button>
 
       {picked.length > 0 && (
@@ -238,9 +269,11 @@ function CaptureStep({ picked, reading, onPick, onShoot, onRemove, onRead }: {
         </ul>
       )}
 
-      <button type="button" onClick={onRead} disabled={picked.length === 0 || reading} style={primaryButton(picked.length === 0 || reading)}>
-        {reading ? 'Reading the photo' : picked.length > 1 ? `Read ${picked.length} photos` : 'Read the photo'}
-      </button>
+      {picked.length > 0 && (
+        <button type="button" onClick={onRead} disabled={reading} style={primaryButton(reading)}>
+          {reading ? 'Reading the photo' : picked.length > 1 ? `Read ${picked.length} photos` : 'Read the photo'}
+        </button>
+      )}
       <p style={{ margin: 0, fontSize: 12, color: TEXT_FAINT }}>
         Nothing is sent yet. You will check every name and number first.
       </p>
@@ -250,10 +283,11 @@ function CaptureStep({ picked, reading, onPick, onShoot, onRemove, onRead }: {
 
 // ---------------------------------------------------------------------------
 
-function ConfirmStep({ sessionId, rows, unreadable, consent, sending, opener, onRow, onConsent, onSend, onBack }: {
-  sessionId: string; rows: EditableRow[]; unreadable: string | null; consent: boolean; sending: boolean;
+function ConfirmStep({ sessionId, rows, typed, unreadable, consent, sending, opener, onRow, onAdd, onConsent, onSend, onBack }: {
+  sessionId: string; rows: EditableRow[]; typed: boolean; unreadable: string | null; consent: boolean; sending: boolean;
   opener: OpeningTenant | null;
   onRow: (index: number, patch: Partial<EditableRow>) => void;
+  onAdd: () => void;
   onConsent: (v: boolean) => void; onSend: () => void; onBack: () => void;
 }) {
   const gate = submitState(rows, consent);
@@ -271,15 +305,24 @@ function ConfirmStep({ sessionId, rows, unreadable, consent, sending, opener, on
 
       {rows.length > 0 && (
         <p style={{ margin: 0, fontSize: 13, color: TEXT_MUTED }}>
-          {rows.length === 1 ? 'Found 1 lead.' : `Found ${rows.length} leads.`} Check each one. A single wrong digit texts a stranger.
+          {typed
+            ? 'Type the details. Switch Text them off to keep a lead for yourself.'
+            : `${rows.length === 1 ? 'Found 1 lead.' : `Found ${rows.length} leads.`} Check each one. A single wrong digit texts a stranger.`}
         </p>
       )}
 
       <div style={{ display: 'grid', gap: 10, gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))' }}>
         {rows.map(row => (
-          <CandidateCard key={row.index} sessionId={sessionId} row={row} disabled={sending} onChange={patch => onRow(row.index, patch)} />
+          <CandidateCard key={row.index} sessionId={sessionId} row={row} disabled={sending} autoFocus={typed && row.index === rows.length - 1}
+            onChange={patch => onRow(row.index, patch)} />
         ))}
       </div>
+
+      {rows.length > 0 && (
+        <button type="button" onClick={onAdd} disabled={sending} style={{ ...bigButton(false), fontSize: 14, padding: '10px 12px' }}>
+          <Plus size={16} weight="bold" aria-hidden /> Add another
+        </button>
+      )}
 
       {rows.length > 0 && (
         <div style={{ background: BG_CARD, borderRadius: 16, padding: 16, boxShadow: CARD_SHADOW, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -292,18 +335,20 @@ function ConfirmStep({ sessionId, rows, unreadable, consent, sending, opener, on
             </div>
           )}
 
-          <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
-            <input
-              type="checkbox" checked={consent} disabled={sending}
-              onChange={e => onConsent(e.target.checked)}
-              style={{ width: 20, height: 20, marginTop: 1, accentColor: brandVar }}
-            />
-            <span>These people asked us to contact them.</span>
-          </label>
+          {gate.send > 0 && (
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+              <input
+                type="checkbox" checked={consent} disabled={sending}
+                onChange={e => onConsent(e.target.checked)}
+                style={{ width: 20, height: 20, marginTop: 1, accentColor: brandVar }}
+              />
+              <span>These people asked us to contact them.</span>
+            </label>
+          )}
 
           <button type="button" onClick={onSend} disabled={!gate.ok || sending} style={primaryButton(!gate.ok || sending)}>
             <PaperPlaneTilt size={18} weight="bold" aria-hidden />
-            {sending ? 'Sending' : sendLabel(gate.count)}
+            {sending ? (gate.send > 0 ? 'Sending' : 'Saving') : sendLabel(gate.send, gate.save)}
           </button>
           {!gate.ok && <p style={{ margin: 0, fontSize: 12, color: TEXT_MUTED }}>{gate.reason}</p>}
           <button type="button" onClick={onBack} disabled={sending} style={{ ...bigButton(false), fontSize: 13, padding: '8px 12px' }}>
@@ -315,30 +360,32 @@ function ConfirmStep({ sessionId, rows, unreadable, consent, sending, opener, on
   );
 }
 
-function CandidateCard({ sessionId, row, disabled, onChange }: {
-  sessionId: string; row: EditableRow; disabled: boolean; onChange: (patch: Partial<EditableRow>) => void;
+function CandidateCard({ sessionId, row, disabled, autoFocus, onChange }: {
+  sessionId: string; row: EditableRow; disabled: boolean; autoFocus?: boolean; onChange: (patch: Partial<EditableRow>) => void;
 }) {
   const dup = row.duplicate;
+  const locked = disabled || dup !== null;
   const muted = dup !== null || !row.include;
   const phoneBad = row.include && !dup && row.phone.trim() !== '' && !/^\+?[\d\s().-]{10,}$/.test(row.phone);
   const withheld = (f: 'name' | 'phone' | 'address') => row.withheld.includes(f);
+  const state = dup ? 'Not sending' : !row.include ? 'Skipped' : row.text ? 'Sending' : 'Saving only';
 
   return (
     <div data-testid={`candidate-${row.index}`} style={{
       background: BG_CARD, borderRadius: 16, padding: 14, boxShadow: CARD_SHADOW,
       opacity: muted ? 0.72 : 1, display: 'flex', flexDirection: 'column', gap: 10,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, cursor: dup ? 'default' : 'pointer' }}>
           <input
-            type="checkbox" checked={row.include} disabled={disabled || dup !== null}
+            type="checkbox" checked={row.include} disabled={locked}
             onChange={e => onChange({ include: e.target.checked })}
             aria-label={`Include lead ${row.index + 1}`}
             style={{ width: 18, height: 18, accentColor: brandVar }}
           />
-          {dup ? 'Not sending' : row.include ? 'Sending' : 'Skipped'}
+          {state}
         </label>
-        {dup && (
+        {dup ? (
           <span style={{ fontSize: 12, color: TEXT_MUTED, display: 'inline-flex', gap: 6, alignItems: 'center' }}>
             {duplicateMessage(dup)}
             {dup.lead_id && (
@@ -347,13 +394,23 @@ function CandidateCard({ sessionId, row, disabled, onChange }: {
               </Link>
             )}
           </span>
+        ) : (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: 600, color: row.text ? TEXT_DARK : TEXT_MUTED, cursor: 'pointer' }}>
+            <input
+              type="checkbox" role="switch" aria-checked={row.text} checked={row.text} disabled={locked || !row.include}
+              onChange={e => onChange({ text: e.target.checked })}
+              aria-label={`Text lead ${row.index + 1}`}
+              style={{ width: 16, height: 16, accentColor: brandVar }}
+            />
+            Text them
+          </label>
         )}
       </div>
 
       <Field label="Phone" hint={withheld('phone') ? 'Could not read this. Type it in.' : phoneBad ? 'That does not look like a number we can text.' : null}
         flag={withheld('phone') || phoneBad}>
         <input
-          type="tel" inputMode="tel" value={row.phone} disabled={disabled || dup !== null}
+          type="tel" inputMode="tel" value={row.phone} disabled={locked} autoFocus={autoFocus}
           onChange={e => onChange({ phone: e.target.value })}
           onBlur={() => onChange({ phone: displayPhone(row.phone) })}
           aria-label={`Phone for lead ${row.index + 1}`}
@@ -362,20 +419,20 @@ function CandidateCard({ sessionId, row, disabled, onChange }: {
         />
       </Field>
       <Field label="Name" hint={withheld('name') ? 'Could not read this.' : null} flag={withheld('name')}>
-        <input type="text" value={row.name} disabled={disabled || dup !== null} onChange={e => onChange({ name: e.target.value })}
+        <input type="text" value={row.name} disabled={locked} onChange={e => onChange({ name: e.target.value })}
           aria-label={`Name for lead ${row.index + 1}`} style={input} autoCapitalize="words" />
       </Field>
       <Field label="Address" hint={withheld('address') ? 'Could not read this.' : null} flag={withheld('address')}>
-        <input type="text" value={row.address} disabled={disabled || dup !== null} onChange={e => onChange({ address: e.target.value })}
+        <input type="text" value={row.address} disabled={locked} onChange={e => onChange({ address: e.target.value })}
           aria-label={`Address for lead ${row.index + 1}`} style={input} />
       </Field>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
         <Field label="Work wanted">
-          <input type="text" value={row.service} disabled={disabled || dup !== null} onChange={e => onChange({ service: e.target.value })}
+          <input type="text" value={row.service} disabled={locked} onChange={e => onChange({ service: e.target.value })}
             aria-label={`Work wanted for lead ${row.index + 1}`} style={input} placeholder="driveway" />
         </Field>
         <Field label="Notes">
-          <input type="text" value={row.notes} disabled={disabled || dup !== null} onChange={e => onChange({ notes: e.target.value })}
+          <input type="text" value={row.notes} disabled={locked} onChange={e => onChange({ notes: e.target.value })}
             aria-label={`Notes for lead ${row.index + 1}`} style={input} />
         </Field>
       </div>
@@ -400,16 +457,19 @@ function ResultStep({ sessionId, outcomes, hold, sendAfter, onAgain }: {
 }) {
   const sent = outcomes.filter(o => o.outcome === 'sent').length;
   const queued = outcomes.filter(o => o.outcome === 'queued').length;
-  const headline = sent + queued === 0
-    ? 'Nothing was sent.'
-    : hold
-      ? `${queued === 1 ? '1 text' : `${queued} texts`} queued${sendAfter ? ` until ${when(sendAfter)}` : ''}.`
-      : `${sent === 1 ? '1 text' : `${sent} texts`} sent.`;
+  const saved = outcomes.filter(o => o.outcome === 'saved').length;
+  const parts: string[] = [];
+  if (queued > 0) parts.push(`${queued === 1 ? '1 text' : `${queued} texts`} queued${sendAfter ? ` until ${when(sendAfter)}` : ''}`);
+  if (sent > 0) parts.push(`${sent === 1 ? '1 text' : `${sent} texts`} sent`);
+  if (saved > 0) parts.push(`${saved === 1 ? '1 lead' : `${saved} leads`} saved for you`);
+  const headline = parts.length === 0 ? 'Nothing was sent.' : parts.join(', ') + '.';
 
   return (
     <div style={{ background: BG_CARD, borderRadius: 16, padding: 16, boxShadow: CARD_SHADOW, display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <h2 style={{ margin: 0, fontSize: 17, fontFamily: FONT_HEAD, fontFeatureSettings: FONT_HEAD_FEATURE }}>{headline}</h2>
-      {hold && sent + queued > 0 && (
+      <h2 style={{ margin: 0, fontSize: 17, fontFamily: FONT_HEAD, fontFeatureSettings: FONT_HEAD_FEATURE }}>
+        {headline.charAt(0).toUpperCase() + headline.slice(1)}
+      </h2>
+      {hold && queued > 0 && (
         <p style={{ margin: 0, fontSize: 13, color: TEXT_MUTED }}>
           We do not text people overnight or on Sundays. They will hear from us first thing.
         </p>
@@ -420,9 +480,9 @@ function ResultStep({ sessionId, outcomes, hold, sendAfter, onAgain }: {
             <OutcomeIcon outcome={o.outcome} />
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span>Lead {o.index + 1}: {o.message}</span>
-              {o.lead_id && (o.outcome === 'sent' || o.outcome === 'queued') && (
+              {o.lead_id && (o.outcome === 'sent' || o.outcome === 'queued' || o.outcome === 'saved') && (
                 <Link href={`/dash/${sessionId}/pipeline?spotlight=${o.lead_id}`} style={{ fontSize: 13, color: TEXT_DARK, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  Open the conversation <ArrowSquareOut size={13} aria-hidden />
+                  {o.outcome === 'saved' ? 'Open the lead' : 'Open the conversation'} <ArrowSquareOut size={13} aria-hidden />
                 </Link>
               )}
             </div>
@@ -430,7 +490,7 @@ function ResultStep({ sessionId, outcomes, hold, sendAfter, onAgain }: {
         ))}
       </ul>
       <button type="button" onClick={onAgain} style={primaryButton(false)}>
-        <Camera size={18} weight="bold" aria-hidden /> Add another
+        <Plus size={18} weight="bold" aria-hidden /> Add another
       </button>
       <Link href={`/dash/${sessionId}/pipeline`} style={{ fontSize: 13, color: TEXT_MUTED, textAlign: 'center' }}>Back to the pipeline</Link>
     </div>
@@ -441,6 +501,7 @@ function OutcomeIcon({ outcome }: { outcome: Outcome['outcome'] }) {
   const common = { size: 20, weight: 'fill' as const, 'aria-hidden': true, style: { flexShrink: 0, marginTop: 1 } };
   switch (outcome) {
     case 'sent': return <CheckCircle {...common} color={FREE_GREEN} />;
+    case 'saved': return <CheckCircle {...common} color={TEXT_DARK} />;
     case 'queued': return <Clock {...common} color={SCORE_AMBER} />;
     case 'failed': return <XCircle {...common} color={SCORE_RED} />;
     case 'invalid': return <Warning {...common} color={SCORE_RED} />;

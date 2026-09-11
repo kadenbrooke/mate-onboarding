@@ -13,6 +13,8 @@ export type DuplicateNote = { index: number; reason: DuplicateReason; lead_id: s
 export type EditableRow = {
   index: number;
   include: boolean;
+  /** The "Text them" switch. Off = save the lead for the client to work. */
+  text: boolean;
   name: string;
   phone: string;
   address: string;
@@ -20,7 +22,7 @@ export type EditableRow = {
   notes: string;
   /** Fields the reader saw but was not sure of. They start blank and are highlighted. */
   withheld: ScoredField[];
-  /** Set when this number already exists. The row is locked out of sending. */
+  /** Set when this number already exists. The row is locked out entirely. */
   duplicate: DuplicateNote | null;
 };
 
@@ -30,8 +32,9 @@ export function rowsFromCandidates(candidates: SnapshotCandidate[], duplicates: 
     const duplicate = dupByIndex.get(index) ?? null;
     return {
       index,
-      // A duplicate cannot be sent, so it starts (and stays) off.
+      // A duplicate cannot be sent or saved, so it starts (and stays) off.
       include: duplicate === null,
+      text: true,
       name: c.name ?? '',
       phone: c.phone ?? '',
       address: c.address ?? '',
@@ -41,6 +44,15 @@ export function rowsFromCandidates(candidates: SnapshotCandidate[], duplicates: 
       duplicate,
     };
   });
+}
+
+/** An empty card for the typed-in flow. */
+export function blankRow(index: number): EditableRow {
+  return {
+    index, include: true, text: true,
+    name: '', phone: '', address: '', service: '', notes: '',
+    withheld: [], duplicate: null,
+  };
 }
 
 export function updateRow(rows: EditableRow[], index: number, patch: Partial<EditableRow>): EditableRow[] {
@@ -58,37 +70,54 @@ export function rowPhoneOk(row: EditableRow): boolean {
   return toE164(row.phone).ok;
 }
 
-/** Rows that will actually be sent if the human taps the button. */
-export function sendableRows(rows: EditableRow[]): EditableRow[] {
+function liveRows(rows: EditableRow[]): EditableRow[] {
   return rows.filter(r => r.include && !r.duplicate && rowPhoneOk(r));
 }
 
-export type SubmitState = { ok: true; count: number } | { ok: false; count: number; reason: string };
+/** Rows that will be texted if the human taps the button. */
+export function sendableRows(rows: EditableRow[]): EditableRow[] {
+  return liveRows(rows).filter(r => r.text);
+}
+
+/** Rows that will be saved for the client to work, no text. */
+export function savableRows(rows: EditableRow[]): EditableRow[] {
+  return liveRows(rows).filter(r => !r.text);
+}
+
+export type SubmitState =
+  | { ok: true; send: number; save: number }
+  | { ok: false; send: number; save: number; reason: string };
 
 /**
- * The gate on the Send button. Both halves must hold: at least one sendable
- * row, and the consent box ticked. The reason is shown next to the disabled
- * button so the human knows which half is missing.
+ * The gate on the button. At least one live row, no selected row with a
+ * broken phone, and the consent box ticked IF anything will be texted. A
+ * save-only batch needs no consent: nobody is being contacted.
  */
 export function submitState(rows: EditableRow[], consent: boolean): SubmitState {
-  const count = sendableRows(rows).length;
+  const send = sendableRows(rows).length;
+  const save = savableRows(rows).length;
   const includedButBroken = rows.filter(r => r.include && !r.duplicate && !rowPhoneOk(r)).length;
-  if (count === 0) {
+  if (send + save === 0) {
     return {
-      ok: false, count,
-      reason: includedButBroken > 0 ? 'Fix the phone number first.' : 'Nothing selected to send.',
+      ok: false, send, save,
+      reason: includedButBroken > 0 ? 'Fix the phone number first.' : 'Nothing selected.',
     };
   }
   if (includedButBroken > 0) {
-    return { ok: false, count, reason: 'One of the selected rows has a phone number that cannot be texted.' };
+    return { ok: false, send, save, reason: 'One of the selected rows has a phone number that cannot be texted.' };
   }
-  if (!consent) return { ok: false, count, reason: 'Confirm these people asked to be contacted.' };
-  return { ok: true, count };
+  if (send > 0 && !consent) return { ok: false, send, save, reason: 'Confirm these people asked to be contacted.' };
+  return { ok: true, send, save };
 }
 
 /** Says what will happen, not "Save". */
-export function sendLabel(count: number): string {
-  return count === 1 ? 'Send 1 text' : `Send ${count} texts`;
+export function sendLabel(send: number, save: number): string {
+  const texts = send === 1 ? 'Send 1 text' : `Send ${send} texts`;
+  const leads = save === 1 ? 'Save 1 lead' : `Save ${save} leads`;
+  if (send > 0 && save > 0) return `${texts}, save ${save}`;
+  if (send > 0) return texts;
+  if (save > 0) return leads;
+  return 'Nothing to send';
 }
 
 export function duplicateMessage(d: DuplicateNote): string {

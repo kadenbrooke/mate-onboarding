@@ -30,7 +30,7 @@ const SOURCE_LABEL: Record<string, string> = {
   text: 'Texter', texted_in: 'Texter',
   meta: 'Meta lead', google: 'Google lead', web_form: 'Web lead',
   referral: 'Referral', revived: 'Revived lead',
-  lead_snapshot: 'From a photo',
+  lead_snapshot: 'From a photo', typed: 'Typed in',
 };
 
 export interface LeadIdentity {
