@@ -53,6 +53,15 @@ comment on column public.lead_snapshots.storage_path is
 create index if not exists lead_snapshots_session_idx
   on public.lead_snapshots (session_id, created_at desc);
 
+-- Grants. A table created through the Management API SQL endpoint does not
+-- pick up the project's default privileges (found the hard way 2026-09-11:
+-- "permission denied for table lead_snapshots" from the service client).
+-- Match client_leads exactly: service_role reads and writes, anon and
+-- authenticated get nothing usable. RLS is off here, so an anon grant would
+-- expose lead PII through the publishable key. Idempotent.
+grant select, insert, update, delete on table public.lead_snapshots to service_role;
+revoke select, insert, update, delete on table public.lead_snapshots from anon, authenticated;
+
 -- ---------------------------------------------------------------------------
 -- 2. Private storage bucket
 -- ---------------------------------------------------------------------------
