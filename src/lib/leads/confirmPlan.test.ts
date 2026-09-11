@@ -105,3 +105,28 @@ describe('verdictMessage', () => {
     expect(verdictMessage({ kind: 'duplicate', index: 0, reason: 'recent-contact', leadKey: 'x' })).toContain(String(RECENT_CONTACT_DAYS));
   });
 });
+
+describe('planConfirm modes', () => {
+  it('defaults to text when the switch is absent, so the photo payload keeps its meaning', () => {
+    const [v] = planConfirm([row({ index: 0 })], empty(), NOW);
+    expect(v).toMatchObject({ kind: 'send', mode: 'text' });
+  });
+
+  it('marks a row with the switch off as save', () => {
+    const [v] = planConfirm([row({ index: 0, text: false })], empty(), NOW);
+    expect(v).toMatchObject({ kind: 'send', mode: 'save' });
+    expect(verdictMessage(v)).toBe('Ready to save.');
+  });
+
+  it('still refuses a duplicate in save mode: a second row is the harm', () => {
+    const known = empty();
+    known.leadKeys.add('8015775322');
+    expect(planConfirm([row({ index: 0, text: false })], known, NOW)[0]).toMatchObject({ kind: 'duplicate' });
+  });
+
+  it('dedupes a save row against a text row for the same number in one batch', () => {
+    const verdicts = planConfirm([row({ index: 0 }), row({ index: 1, text: false })], empty(), NOW);
+    expect(verdicts[0]).toMatchObject({ kind: 'send', mode: 'text' });
+    expect(verdicts[1]).toMatchObject({ kind: 'duplicate' });
+  });
+});

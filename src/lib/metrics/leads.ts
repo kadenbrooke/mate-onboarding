@@ -24,7 +24,7 @@ export type Lead = {
   // Legacy values (missed_call, meta_ads, unknown) were renamed/removed table-wide;
   // texted_in/web_form/revived are kept only because live demo-session rows still use
   // them (out of scope to migrate -- see reference_mate_jc_data_exposure_incident).
-  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'lead_snapshot' | 'unknown';
+  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'lead_snapshot' | 'typed' | 'unknown';
   referrer_name: string | null; score: number | null;
   status: LeadStatus; quote_cents: number | null;
   // Who is driving the conversation: Mate's agent ('agent') or the client ('human').
@@ -73,6 +73,8 @@ const FREE_SOURCES = new Set(['referral', 'revived']);
 // client reads as "leads that came to me". Listed here so it is a decision,
 // not a fall-through. Same call in journey.ts and LeadsTable.tsx.
 export const SNAPSHOT_SOURCE = 'lead_snapshot';
+// 'typed' (keyed in by hand on the dash) follows the same reasoning: not free.
+export const TYPED_SOURCE = 'typed';
 
 /** The visible period tabs on the Leads card. Calendar-to-date, not trailing. */
 export type Range = 'WEEK' | 'MONTH' | 'YEAR';

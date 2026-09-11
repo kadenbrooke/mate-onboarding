@@ -12,6 +12,12 @@ export type ConfirmRow = {
   /** Position in the extracted candidates array, for the audit record. */
   index: number;
   include: boolean;
+  /**
+   * The "Text them" switch. Off means save the lead for the client to work
+   * themselves: pipeline row only, nothing automated. Absent reads as on, so
+   * the photo flow's original payload keeps its meaning.
+   */
+  text?: boolean;
   name: string | null;
   phone: string | null;
   address: string | null;
@@ -27,9 +33,12 @@ export type KnownNumbers = {
   conversations: Map<string, { lastOutboundAt: string | null }>;
 };
 
+export type SendMode = 'text' | 'save';
+
 export type RowVerdict =
   | {
       kind: 'send';
+      mode: SendMode;
       index: number;
       e164: string;
       leadKey: string;
@@ -41,8 +50,6 @@ export type RowVerdict =
 
 /** A number we texted inside this window is not texted again from a photo. */
 export const RECENT_CONTACT_DAYS = 7;
-
-const OPERATOR_NUMBER_PATTERNS: RegExp[] = [];
 
 export function planConfirm(
   rows: ConfirmRow[],
@@ -62,15 +69,18 @@ export function planConfirm(
     // The client's own numbers and ours. trg_client_leads_block_operator does
     // this at the DB too, but a photo of the office whiteboard should fail
     // here with a readable reason, not as a trigger error three hops later.
-    if (blocked.has(phone.leadKey) || OPERATOR_NUMBER_PATTERNS.some(p => p.test(phone.e164))) {
+    if (blocked.has(phone.leadKey)) {
       return { kind: 'invalid', index: row.index, reason: 'That is one of your own numbers.' };
     }
 
-    // The same number twice in one photo sends once.
+    // The same number twice in one batch lands once.
     if (seenInBatch.has(phone.leadKey)) {
       return { kind: 'duplicate', index: row.index, reason: 'in-pipeline', leadKey: phone.leadKey };
     }
 
+    // Dedupe applies to BOTH modes. A saved-only row for a number that is
+    // already in the pipeline would be a second row for the same person,
+    // which is the actual harm, text or no text.
     const convo = known.conversations.get(phone.e164);
     if (convo) {
       const last = convo.lastOutboundAt ? new Date(convo.lastOutboundAt).getTime() : NaN;
@@ -90,6 +100,7 @@ export function planConfirm(
     seenInBatch.add(phone.leadKey);
     return {
       kind: 'send',
+      mode: row.text === false ? 'save' : 'text',
       index: row.index,
       e164: phone.e164,
       leadKey: phone.leadKey,
@@ -113,7 +124,7 @@ function clean(v: string | null | undefined): string | null {
 export function verdictMessage(v: RowVerdict): string {
   switch (v.kind) {
     case 'send':
-      return 'Ready to send.';
+      return v.mode === 'text' ? 'Ready to send.' : 'Ready to save.';
     case 'skipped':
       return 'Left out.';
     case 'invalid':

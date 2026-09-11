@@ -47,7 +47,8 @@ describe('SnapshotFlow', () => {
   it('starts on capture with nothing sent and the read button disabled', () => {
     render(<SnapshotFlow sessionId="s1" opener={opener} />);
     expect(screen.getByRole('button', { name: /Take a photo/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Read the photo/ })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /Read the photo/ })).toBeNull();
+    expect(screen.getByRole('button', { name: /Type it in/ })).toBeInTheDocument();
     expect(screen.getByText(/Nothing is sent yet/)).toBeInTheDocument();
   });
 
@@ -82,7 +83,8 @@ describe('SnapshotFlow', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: /These people asked us to contact them/ }));
     const phone = screen.getByRole('textbox', { name: 'Phone for lead 1' });
     fireEvent.change(phone, { target: { value: '555-12' } });
-    expect(screen.getByRole('button', { name: /Send/ })).toBeDisabled();
+    // With the only row broken there is nothing to send, and the button says so.
+    expect(screen.getByRole('button', { name: /Nothing to send/ })).toBeDisabled();
     expect(screen.getByText('Fix the phone number first.')).toBeInTheDocument();
   });
 
@@ -103,7 +105,7 @@ describe('SnapshotFlow', () => {
     const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(String(init.body));
     expect(body.consent).toBe(true);
-    expect(body.rows[0]).toMatchObject({ index: 0, include: true, name: 'Rynell D.', phone: '801-577-5322' });
+    expect(body.rows[0]).toMatchObject({ index: 0, include: true, text: true, name: 'Rynell D.', phone: '801-577-5322' });
     expect(body.rows[1]).toMatchObject({ index: 1, include: false });
     expect(screen.getByRole('link', { name: /Open the conversation/ })).toHaveAttribute('href', '/dash/s1/pipeline?spotlight=lead-1');
   });
@@ -116,5 +118,58 @@ describe('SnapshotFlow', () => {
     fireEvent.click(screen.getByRole('button', { name: /Read the photo/ }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('The reader is unavailable right now.'));
     expect(screen.getByRole('button', { name: /Take a photo/ })).toBeInTheDocument();
+  });
+
+  it('typed flow: blank card, Text them off needs no consent, posts save mode', async () => {
+    fetchMock.mockImplementationOnce(() => jsonResponse({ snapshot_id: 'snap-t' }));
+    render(<SnapshotFlow sessionId="s1" opener={opener} />);
+    fireEvent.click(screen.getByRole('button', { name: /Type it in/ }));
+    await waitFor(() => expect(screen.getByText(/Type the details/)).toBeInTheDocument());
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/dash/s1/leads/manual');
+
+    // Empty card: nothing to send yet.
+    expect(screen.getByRole('button', { name: /Nothing to send/ })).toBeDisabled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Phone for lead 1' }), { target: { value: '801-555-0000' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name for lead 1' }), { target: { value: 'Walk In' } });
+    // Text them is on by default, so consent is demanded.
+    expect(screen.getByRole('button', { name: /Send 1 text/ })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: /These people asked us to contact them/ })).toBeInTheDocument();
+
+    // Switch it off: consent box disappears, button becomes Save, enabled.
+    fireEvent.click(screen.getByRole('switch', { name: 'Text lead 1' }));
+    expect(screen.queryByRole('checkbox', { name: /These people asked us to contact them/ })).toBeNull();
+    expect(screen.getByText('Saving only')).toBeInTheDocument();
+    const save = screen.getByRole('button', { name: /Save 1 lead/ });
+    expect(save).toBeEnabled();
+
+    fetchMock.mockImplementationOnce(() => jsonResponse({
+      snapshot_id: 'snap-t', hold: false, send_after: null,
+      outcomes: [{ index: 0, outcome: 'saved', message: 'Saved. Yours to work.', lead_id: 'lead-t' }],
+    }));
+    fireEvent.click(save);
+    await waitFor(() => expect(screen.getByText('1 lead saved for you.')).toBeInTheDocument());
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    const body = JSON.parse(String(init.body));
+    expect(body.consent).toBe(false);
+    expect(body.rows[0]).toMatchObject({ index: 0, include: true, text: false, phone: '801-555-0000', name: 'Walk In' });
+    expect(screen.getByRole('link', { name: /Open the lead/ })).toHaveAttribute('href', '/dash/s1/pipeline?spotlight=lead-t');
+  });
+
+  it('typed flow: Add another appends a second blank card', async () => {
+    fetchMock.mockImplementationOnce(() => jsonResponse({ snapshot_id: 'snap-t' }));
+    render(<SnapshotFlow sessionId="s1" opener={opener} />);
+    fireEvent.click(screen.getByRole('button', { name: /Type it in/ }));
+    await waitFor(() => expect(screen.getByTestId('candidate-0')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /Add another/ }));
+    expect(screen.getByTestId('candidate-1')).toBeInTheDocument();
+  });
+
+  it('mixed batch: one texting, one saving, consent still required and label says both', async () => {
+    await readOnePhoto();
+    // Row 2 is a duplicate in the fixture; make row 1 save-only via a fresh photo instead.
+    fireEvent.click(screen.getByRole('switch', { name: 'Text lead 1' }));
+    expect(screen.getByRole('button', { name: /Save 1 lead/ })).toBeEnabled();
+    expect(screen.queryByRole('checkbox', { name: /These people asked us to contact them/ })).toBeNull();
   });
 });
