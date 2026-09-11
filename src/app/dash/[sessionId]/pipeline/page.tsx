@@ -11,7 +11,7 @@ import Link from 'next/link';
 // import throws here).
 import { Camera } from '@phosphor-icons/react/dist/ssr';
 import { BG_CARD, CARD_SHADOW, TEXT_DARK, FONT_BODY } from '@/lib/theme';
-import { isLeadSnapshotLive } from '@/lib/leads/capability';
+import { canUseLeadSnapshot } from '@/lib/leads/capability';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { BackLink } from '@/components/dash/chrome/BackLink';
@@ -24,7 +24,7 @@ export default async function PipelinePage({ params, searchParams }: {
   const { sessionId: rawSessionId } = await params;
   // "demo" alias -> real demo UUID for all DB reads below (uuid column).
   const sessionId = resolveSessionId(rawSessionId);
-  await requireDashAccess(sessionId);
+  const access = await requireDashAccess(sessionId);
   const { spotlight, sort, dir } = await searchParams;
   // ?sort=captured (&dir=) deep-links a specific order; the NEW LEADS glance
   // tile on the dashboard lands here with newest-captured first.
@@ -38,7 +38,7 @@ export default async function PipelinePage({ params, searchParams }: {
   const { data: caps } = session.contact_id
     ? await supabase.from('client_capabilities').select('capability_key, status').eq('contact_id', session.contact_id as string)
     : { data: [] };
-  const canAddLead = isLeadSnapshotLive(caps);
+  const canAddLead = canUseLeadSnapshot(caps, access);
   // is_test: reseller/founder demo rows never appear in the client's pipeline
   // (migration 032; generated from phone, so it cannot be forgotten by a writer).
   const { data: leads } = await supabase.from('client_leads')

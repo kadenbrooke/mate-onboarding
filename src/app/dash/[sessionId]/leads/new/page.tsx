@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
-import { isLeadSnapshotLive } from '@/lib/leads/capability';
+import { canUseLeadSnapshot } from '@/lib/leads/capability';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
 import { BackLink } from '@/components/dash/chrome/BackLink';
 import { MobileNav } from '@/components/dash/MobileNav';
@@ -40,7 +40,7 @@ export default async function NewLeadPage({ params }: { params: Promise<{ sessio
     .from('client_capabilities')
     .select('capability_key, status')
     .eq('contact_id', session.contact_id as string);
-  if (!isLeadSnapshotLive(caps)) notFound();
+  if (!canUseLeadSnapshot(caps, access)) notFound();
 
   const tenant = intakeTenantFor(sessionId);
 
