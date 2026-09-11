@@ -24,7 +24,7 @@ export type Lead = {
   // Legacy values (missed_call, meta_ads, unknown) were renamed/removed table-wide;
   // texted_in/web_form/revived are kept only because live demo-session rows still use
   // them (out of scope to migrate -- see reference_mate_jc_data_exposure_incident).
-  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'unknown';
+  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'lead_snapshot' | 'unknown';
   referrer_name: string | null; score: number | null;
   status: LeadStatus; quote_cents: number | null;
   // Who is driving the conversation: Mate's agent ('agent') or the client ('human').
@@ -67,6 +67,12 @@ export function isEngaged(l: Lead): boolean {
 }
 
 const FREE_SOURCES = new Set(['referral', 'revived']);
+// 'lead_snapshot' (a lead photographed off a note, DEL-38) is deliberately NOT
+// in FREE_SOURCES. It cost no ad spend, but it is not inbound either: someone
+// went and got it. Counting it as free would flatter the free-lead rate the
+// client reads as "leads that came to me". Listed here so it is a decision,
+// not a fall-through. Same call in journey.ts and LeadsTable.tsx.
+export const SNAPSHOT_SOURCE = 'lead_snapshot';
 
 /** The visible period tabs on the Leads card. Calendar-to-date, not trailing. */
 export type Range = 'WEEK' | 'MONTH' | 'YEAR';

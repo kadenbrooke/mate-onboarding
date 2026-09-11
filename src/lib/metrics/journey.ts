@@ -5,6 +5,7 @@ export function journeyRiver(leads: Lead[]) {
   const bySource = new Map<string, number>();
   for (const l of leads) bySource.set(l.source, (bySource.get(l.source) ?? 0) + 1);
   const sources = [...bySource.entries()]
+    // lead_snapshot is not free here on purpose; see SNAPSHOT_SOURCE in leads.ts.
     .map(([source, count]) => ({ source, count, free: source === 'referral' || source === 'revived' }))
     .sort((a, b) => b.count - a.count);
   const priced = leads.filter(l => l.quote_cents != null).length;
