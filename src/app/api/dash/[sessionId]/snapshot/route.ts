@@ -13,6 +13,10 @@ import {
 import { parseSnapshotReply } from '@/lib/leads/snapshotParse';
 import { snapshotPrompt } from '@/lib/leads/snapshotPrompt';
 import { visionComplete, type VisionImage } from '@/lib/demo/portkey';
+import { intakeTenantFor } from '@/lib/leads/intakeTenants';
+import { loadKnownNumbers, ownNumbers } from '@/lib/leads/knownNumbers';
+import { planConfirm } from '@/lib/leads/confirmPlan';
+import { toE164 } from '@/lib/leads/phone';
 
 // POST /api/dash/<sessionId>/snapshot
 //
@@ -47,7 +51,7 @@ export async function POST(
 
   const { data: session, error: sessionError } = await service
     .from('onboarding_sessions')
-    .select('id, is_demo, contact_id')
+    .select('id, is_demo, contact_id, operator_phone')
     .eq('id', sessionId)
     .maybeSingle();
 
@@ -215,11 +219,30 @@ export async function POST(
     );
   }
 
+  // Mark rows that already exist so the confirm screen can say so up front
+  // rather than after the human has edited them. Advisory only: the confirm
+  // route re-runs the same check against fresh data before anything sends.
+  const tenant = intakeTenantFor(sessionId);
+  const e164s = parsed.candidates.map(c => toE164(c.phone)).flatMap(p => (p.ok ? [p.e164] : []));
+  const known = await loadKnownNumbers(service, sessionId, tenant, e164s);
+  const blocked = ownNumbers(tenant, session.operator_phone as string | null);
+  const preview = planConfirm(
+    parsed.candidates.map((c, index) => ({
+      index, include: true, name: c.name, phone: c.phone, address: c.address, service: c.service, notes: c.notes,
+    })),
+    known, new Date(), blocked,
+  );
+  const duplicates = preview.flatMap(v => {
+    if (v.kind !== 'duplicate') return [];
+    const lead = known.leadsByKey.get(v.leadKey);
+    return [{ index: v.index, reason: v.reason, lead_id: lead?.id ?? null }];
+  });
+
   await service
     .from('lead_snapshots')
     .update({
       status: 'ready',
-      extracted: { candidates: parsed.candidates, unreadable: parsed.unreadable },
+      extracted: { candidates: parsed.candidates, unreadable: parsed.unreadable, duplicates },
     })
     .eq('id', snapshotId);
 
@@ -227,5 +250,6 @@ export async function POST(
     snapshot_id: snapshotId,
     candidates: parsed.candidates,
     unreadable: parsed.unreadable,
+    duplicates,
   });
 }
