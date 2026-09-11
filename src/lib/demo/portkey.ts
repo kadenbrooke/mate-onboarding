@@ -40,6 +40,12 @@ export const TASK_MODELS = {
   // Dashboard assistant chat: longer answers about the client's data. Cheap,
   // non-reasoning (same reasoning-model empty-output trap applies).
   assistant: "google/gemini-2.5-flash",
+  // Lead Snapshot: read a photographed note into lead fields. This is the
+  // `long-doc-vision` class from amos's .claude/model-routing/registry.json,
+  // pinned by the Lead Snapshot spec. piiSafe: true is BINDING here, because a
+  // client's handwritten note has a real person's name, phone, and address in
+  // frame. Never point this at an OpenRouter-backed row.
+  vision: "google/gemini-3.6-flash",
 } as const
 
 export type TaskClass = keyof typeof TASK_MODELS
@@ -52,6 +58,10 @@ export const MIN_MAX_TOKENS: Record<TaskClass, number> = {
   extract: 1024,
   reply: 256,
   assistant: 1500,
+  // Generous on purpose. A multi-lead photo returns an array of objects, and
+  // the empty-output trap in the header note bites hardest when the budget is
+  // tight. 2500 matches what amos-ui gives its own image ingest.
+  vision: 2500,
 }
 
 export function modelForClass(cls: TaskClass): string {
@@ -202,4 +212,112 @@ export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response>
     body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true }),
     signal: AbortSignal.timeout(60000),
   })
+}
+
+// ---------------------------------------------------------------------------
+// Vision (Lead Snapshot)
+// ---------------------------------------------------------------------------
+
+export interface VisionImage {
+  /** Sniffed mime, never the client's declared content-type. */
+  mime: string
+  /** Raw image bytes. Base64 encoding happens here, once. */
+  bytes: Uint8Array
+}
+
+export type VisionResult =
+  | { ok: true; text: string }
+  | { ok: false; kind: "config" | "http" | "network" | "empty"; detail: string }
+
+/**
+ * Run a vision completion through Portkey.
+ *
+ * Unlike chatComplete, this reports WHY it failed instead of collapsing every
+ * failure to "". The Lead Snapshot route needs the difference: a gateway
+ * outage should tell the client "try again in a minute", while an unreadable
+ * photo should tell them "retake it". Silently returning "" would render both
+ * as the same shrug, and the 429 that the depleted Gemini credits produce
+ * would look identical to a blurry photo.
+ */
+export async function visionComplete(opts: {
+  prompt: string
+  images: VisionImage[]
+  system?: string
+  maxTokens?: number
+  clientId?: string
+}): Promise<VisionResult> {
+  if (opts.images.length === 0) {
+    return { ok: false, kind: "config", detail: "no images supplied" }
+  }
+
+  let provider: Provider
+  let model: string
+  try {
+    ({ provider, model } = parseModelId(modelForClass("vision")))
+  } catch (e) {
+    return { ok: false, kind: "config", detail: e instanceof Error ? e.message : String(e) }
+  }
+
+  const key = providerKey(provider)
+  if (!key) return { ok: false, kind: "config", detail: `no API key for provider ${provider}` }
+
+  const floor = MIN_MAX_TOKENS.vision
+  const maxTokens = Math.max(opts.maxTokens ?? floor, floor)
+
+  const content: Record<string, unknown>[] = [{ type: "text", text: opts.prompt }]
+  for (const img of opts.images) {
+    content.push({
+      type: "image_url",
+      image_url: { url: `data:${img.mime};base64,${Buffer.from(img.bytes).toString("base64")}` },
+    })
+  }
+
+  const messages: Record<string, unknown>[] = opts.system
+    ? [{ role: "system", content: opts.system }, { role: "user", content }]
+    : [{ role: "user", content }]
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${key}`,
+    "x-portkey-provider": provider,
+    "x-portkey-metadata": JSON.stringify({
+      app: "mate-onboarding",
+      surface: "lead-snapshot",
+      ...(opts.clientId ? { clientId: opts.clientId } : {}),
+    }),
+  }
+
+  let res: Response
+  try {
+    res = await fetch(`${portkeyBaseUrl()}/v1/chat/completions`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ model, messages, max_tokens: maxTokens }),
+      // Longer than the text paths: a multi-megabyte image upload plus a
+      // multi-lead extraction is not a 15 second job.
+      signal: AbortSignal.timeout(60000),
+    })
+  } catch (e) {
+    return { ok: false, kind: "network", detail: e instanceof Error ? e.message : String(e) }
+  }
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "")
+    return { ok: false, kind: "http", detail: `${res.status} ${body.slice(0, 300)}` }
+  }
+
+  let json: { choices?: { message?: { content?: string } }[] }
+  try {
+    json = (await res.json()) as typeof json
+  } catch (e) {
+    return { ok: false, kind: "http", detail: `unparseable response: ${e instanceof Error ? e.message : String(e)}` }
+  }
+
+  const text = json?.choices?.[0]?.message?.content?.trim() ?? ""
+  // The reasoning-model trap from the header note: a model that spends its
+  // whole budget on reasoning returns 200 with empty content. Name it rather
+  // than letting it read as an unreadable photo.
+  if (!text) return { ok: false, kind: "empty", detail: "model returned empty content" }
+
+  return { ok: true, text }
 }
