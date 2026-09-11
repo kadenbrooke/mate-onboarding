@@ -64,3 +64,33 @@ describe('lead_snapshot is not an agent', () => {
     expect(roster.every(card => card.status !== 'live')).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// canUseLeadSnapshot: the rollout gate. under_construction is the founder-probe
+// state, visible to internal users on the real path and to nobody else.
+// ---------------------------------------------------------------------------
+import { canUseLeadSnapshot } from './capability';
+
+describe('canUseLeadSnapshot', () => {
+  const live = [{ capability_key: 'lead_snapshot', status: 'live' }];
+  const building = [{ capability_key: 'lead_snapshot', status: 'under_construction' }];
+
+  it('live opens for members and internal users, not for demo or forbidden', () => {
+    expect(canUseLeadSnapshot(live, 'member')).toBe(true);
+    expect(canUseLeadSnapshot(live, 'internal')).toBe(true);
+    expect(canUseLeadSnapshot(live, 'demo')).toBe(false);
+    expect(canUseLeadSnapshot(live, 'forbidden')).toBe(false);
+    expect(canUseLeadSnapshot(live, 'login')).toBe(false);
+  });
+
+  it('under_construction opens for internal users ONLY', () => {
+    expect(canUseLeadSnapshot(building, 'internal')).toBe(true);
+    expect(canUseLeadSnapshot(building, 'member')).toBe(false);
+    expect(canUseLeadSnapshot(building, 'demo')).toBe(false);
+  });
+
+  it('no row opens for nobody, internal included', () => {
+    expect(canUseLeadSnapshot([], 'internal')).toBe(false);
+    expect(canUseLeadSnapshot(null, 'member')).toBe(false);
+  });
+});

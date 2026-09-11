@@ -230,6 +230,30 @@ export type VisionResult =
   | { ok: false; kind: "config" | "http" | "network" | "empty"; detail: string }
 
 /**
+ * Fallback for the vision class when the primary provider is unavailable.
+ *
+ * Added 2026-09-11 after the Gemini key returned 429 RESOURCE_EXHAUSTED
+ * (prepay credits depleted) and took the reader down with it. A depleted or
+ * rate-limited provider is a billing event, not a reason for a client to get
+ * "could not read that photo". OpenAI is already a configured provider on the
+ * gateway with a working key, and this model does vision cheaply. piiSafe
+ * holds: it is OpenAI direct, not an OpenRouter-backed row.
+ *
+ * Only PROVIDER failures fall through (429, 5xx, transport). A 4xx that says
+ * the request itself is bad, or a clean-but-empty answer, is returned as is,
+ * because retrying the same bad request on another model hides the bug.
+ */
+export const VISION_FALLBACK_MODEL = "openai/gpt-4o-mini"
+
+function shouldFallBack(r: VisionResult): boolean {
+  if (r.ok) return false
+  if (r.kind === "network") return true
+  if (r.kind !== "http") return false
+  const status = Number(r.detail.slice(0, 3))
+  return status === 429 || status >= 500
+}
+
+/**
  * Run a vision completion through Portkey.
  *
  * Unlike chatComplete, this reports WHY it failed instead of collapsing every
@@ -238,6 +262,9 @@ export type VisionResult =
  * photo should tell them "retake it". Silently returning "" would render both
  * as the same shrug, and the 429 that the depleted Gemini credits produce
  * would look identical to a blurry photo.
+ *
+ * Tries the vision class model first, then VISION_FALLBACK_MODEL when the
+ * primary provider itself is down (see shouldFallBack).
  */
 export async function visionComplete(opts: {
   prompt: string
@@ -245,15 +272,26 @@ export async function visionComplete(opts: {
   system?: string
   maxTokens?: number
   clientId?: string
-}): Promise<VisionResult> {
+}): Promise<VisionResult & { model?: string }> {
   if (opts.images.length === 0) {
     return { ok: false, kind: "config", detail: "no images supplied" }
   }
+  const primary = await visionOnce(modelForClass("vision"), opts)
+  if (!shouldFallBack(primary)) return { ...primary, model: modelForClass("vision") }
 
+  console.warn("vision: primary failed, falling back", primary.ok ? "" : `${primary.kind} ${primary.detail.slice(0, 120)}`)
+  const second = await visionOnce(VISION_FALLBACK_MODEL, opts)
+  return { ...second, model: VISION_FALLBACK_MODEL }
+}
+
+async function visionOnce(
+  modelId: string,
+  opts: { prompt: string; images: VisionImage[]; system?: string; maxTokens?: number; clientId?: string },
+): Promise<VisionResult> {
   let provider: Provider
   let model: string
   try {
-    ({ provider, model } = parseModelId(modelForClass("vision")))
+    ({ provider, model } = parseModelId(modelId))
   } catch (e) {
     return { ok: false, kind: "config", detail: e instanceof Error ? e.message : String(e) }
   }

@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
-import { isLeadSnapshotLive } from '@/lib/leads/capability';
+import { canUseLeadSnapshot } from '@/lib/leads/capability';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
 import { planConfirm, verdictMessage, type ConfirmRow, type RowVerdict } from '@/lib/leads/confirmPlan';
 import { snapshotOpening } from '@/lib/leads/snapshotOpening';
@@ -85,7 +85,7 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     .from('client_capabilities')
     .select('capability_key, status')
     .eq('contact_id', session.contact_id as string);
-  if (!isLeadSnapshotLive(caps)) {
+  if (!canUseLeadSnapshot(caps, verdict.access)) {
     return NextResponse.json({ error: 'Lead Snapshot is not enabled for this account.' }, { status: 403 });
   }
 
