@@ -6,7 +6,8 @@ import {
 } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
 
-// Hot leads + average lead quality on one card (2026-07 merge).
+// Hot leads + average lead quality on one card (2026-07 merge). The list is
+// the top 5 by LIVE score (migration 0020) among leads not yet serviced.
 // Each lead's score is a traffic-light colored number (>=80 green, 60-79
 // amber, <60 red); the semicircular average gauge sweeps in the same
 // threshold color for the portfolio average.
@@ -53,7 +54,7 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
   const { hot, avg, scoredCount } = scoreStats(leads);
 
   // Nothing scored: the gauge would sweep a red 0 and the list would read
-  // "no uncontacted leads", both of which assert lead quality we have never
+  // "no open leads", both of which assert lead quality we have never
   // measured. Say the scoring is not running instead. This is the whole card's
   // only input, so there is nothing else to render.
   if (scoredCount === 0) {
@@ -83,7 +84,7 @@ export function HotLeads({ leads, sessionId }: { leads: Lead[]; sessionId: strin
 
       {hot.length === 0 ? (
         <div style={{ color: CARD_MUTED, fontSize: 12, marginTop: 12, fontFamily: FONT_BODY }}>
-          No uncontacted leads right now
+          No open leads right now, every lead is serviced
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, marginTop: 8 }}>

@@ -323,14 +323,22 @@ export function outcomesInRange(leads: Lead[], startISO: string, endISO: string)
  * an unscored book of leads is not a book of zero-quality leads, and an empty
  * hot list means "no scores exist" rather than "nothing is hot". `scoredCount`
  * is what lets the card tell those two apart and say so.
+ *
+ * `hot` is the top 5 by score among leads that are not 'serviced'. It used to
+ * also require !contacted, but the AI texts every lead the moment it arrives,
+ * so that gate hid exactly the live conversations the owner should be calling.
+ * `score` here is the LIVE score (client_lead_scores, migration 0020) once the
+ * page has merged it in, so a lead that just texted back climbs this list.
+ * Ties go to the newer lead, so the order is stable across renders.
  */
 export function scoreStats(leads: Lead[]): {
   avg: number | null; hot: Lead[]; scoredCount: number;
 } {
   const scored = leads.filter(l => l.score != null);
-  // avg spans ALL scored leads (portfolio quality); hot is the action queue (open + uncontacted).
+  // avg spans ALL scored leads (portfolio quality); hot is the action queue.
   const avg = scored.length ? Math.round(scored.reduce((a, l) => a + l.score!, 0) / scored.length) : null;
-  const hot = leads.filter(l => !l.contacted && l.status === 'open' && l.score != null)
-    .sort((a, b) => b.score! - a.score!).slice(0, 5);
+  const hot = scored.filter(l => l.status !== 'serviced')
+    .sort((a, b) => b.score! - a.score! || b.created_at.localeCompare(a.created_at))
+    .slice(0, 5);
   return { avg, hot, scoredCount: scored.length };
 }

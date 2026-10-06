@@ -12,6 +12,7 @@ import Link from 'next/link';
 import { Camera } from '@phosphor-icons/react/dist/ssr';
 import { BG_CARD, CARD_SHADOW, TEXT_DARK, FONT_BODY } from '@/lib/theme';
 import { canUseLeadSnapshot } from '@/lib/leads/capability';
+import { fetchLiveScores, mergeLiveScores, type LiveScoreQuery } from '@/lib/leads/liveScores';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { BackLink } from '@/components/dash/chrome/BackLink';
@@ -41,11 +42,18 @@ export default async function PipelinePage({ params, searchParams }: {
   const canAddLead = canUseLeadSnapshot(caps, access);
   // is_test: reseller/founder demo rows never appear in the client's pipeline
   // (migration 032; generated from phone, so it cannot be forgotten by a writer).
+  // Newest 500, not "highest stored score": the stored column is stale for
+  // ranking (migration 0020 computes the live score at read time), and the
+  // table sorts client-side on the merged live score anyway.
   const { data: leads } = await supabase.from('client_leads')
     .select('*').eq('session_id', sessionId)
     .eq('is_test', false)
-    .order('contacted', { ascending: true }).order('score', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(500);
+  const loadedLeads = (leads ?? []) as Lead[];
+  const liveScores = await fetchLiveScores(
+    supabase as unknown as LiveScoreQuery, sessionId, loadedLeads.map(l => l.id),
+  );
 
   let thread: {
     messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null;
@@ -96,7 +104,7 @@ export default async function PipelinePage({ params, searchParams }: {
       )}
       <div style={{ background: BG_CARD, borderRadius: 16, padding: 8, boxShadow: CARD_SHADOW }}>
         <LeadsTable
-          leads={(leads ?? []) as Lead[]}
+          leads={mergeLiveScores(loadedLeads, liveScores)}
           sessionId={sessionId}
           spotlightId={spotlight ?? null}
           initialSort={initialSort}

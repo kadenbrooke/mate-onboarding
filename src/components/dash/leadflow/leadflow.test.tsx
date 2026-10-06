@@ -81,7 +81,7 @@ describe('TrendCard', () => {
 });
 
 describe('HotLeads (with merged quality gauge)', () => {
-  it('renders top uncontacted leads with score and link to leads page', () => {
+  it('renders top leads with score and link to leads page', () => {
     render(<HotLeads leads={[lead({ score: 92 })]} sessionId="s1" />);
     // score appears in the row and in the average gauge
     expect(screen.getAllByText('92').length).toBeGreaterThanOrEqual(1);
@@ -123,7 +123,7 @@ describe('HotLeads (with merged quality gauge)', () => {
     expect(screen.getByText(/lead scoring is not running yet/i)).toBeInTheDocument();
     expect(screen.getByText(/your 2 leads are in the pipeline, none of them scored/i)).toBeInTheDocument();
     expect(screen.queryByTestId('quality-arc')).toBeNull();
-    expect(screen.queryByText(/no uncontacted leads/i)).toBeNull();
+    expect(screen.queryByText(/no open leads/i)).toBeNull();
   });
 
   it('offers the waiting-for-leads copy when there are no leads at all', () => {
