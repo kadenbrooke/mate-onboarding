@@ -6,11 +6,14 @@
 // probe another tenant's lead ids. Access to that tenant is then decided by the
 // shared dash access model (checkDashApiAccess: portal_members membership,
 // internal portal_access slug 'mate', demo sessions public).
+//
+// Only the tenant identity is read before authorization. Anything else on the
+// lead (phone, etc.) is the caller's to fetch AFTER the gate passes.
 import { createServiceClient } from '@/lib/supabase/service';
 import { checkDashApiAccess } from './api-gate';
 import type { DashAccess } from './dash-access';
 
-export type LeadRow = { id: string; session_id: string; phone: string | null };
+export type LeadRow = { id: string; session_id: string };
 
 export type LeadApiVerdict =
   | { ok: true; lead: LeadRow; access: DashAccess }
@@ -22,7 +25,7 @@ export async function checkLeadApiAccess(
 ): Promise<LeadApiVerdict> {
   const { data: lead, error } = await createServiceClient()
     .from('client_leads')
-    .select('id, session_id, phone')
+    .select('id, session_id')
     .eq('id', leadId)
     .maybeSingle();
   if (error) return { ok: false, status: 500, error: error.message };

@@ -108,4 +108,40 @@ describe('POST /api/leads/[id]/reply', () => {
     expect(res.status).toBe(502);
     expect(h.db.writes).toEqual([]);
   });
+
+  describe('phone is read only after authorization', () => {
+    const phoneReads = () => h.db.reads.filter(r => r.table === 'client_leads' && r.columns.includes('phone'));
+
+    it('anonymous: the gate reads tenant identity only, never the phone', async () => {
+      h.user = null;
+      expect((await call('lead-a', { text: 'hi' })).status).toBe(401);
+      expect(h.db.reads.filter(r => r.table === 'client_leads')).toEqual([
+        { table: 'client_leads', columns: 'id, session_id', filters: [['id', 'lead-a']] },
+      ]);
+      expect(phoneReads()).toEqual([]);
+    });
+
+    it('cross-tenant: no phone read', async () => {
+      h.user = USERS.memberB;
+      expect((await call('lead-a', { text: 'hi' })).status).toBe(403);
+      expect(phoneReads()).toEqual([]);
+    });
+
+    it('demo / unmapped tenant: refused before the phone is read', async () => {
+      h.user = null;
+      expect((await call('lead-demo', { text: 'hi' })).status).toBe(403);
+      h.user = USERS.memberB;
+      expect((await call('lead-b', { text: 'hi' })).status).toBe(403);
+      expect(phoneReads()).toEqual([]);
+    });
+
+    it('member: phone read happens after the membership check, scoped to the lead tenant', async () => {
+      expect((await call('lead-a', { text: 'hi' })).status).toBe(200);
+      const memberIdx = h.db.reads.findIndex(r => r.table === 'portal_members');
+      const phoneIdx = h.db.reads.findIndex(r => r.table === 'client_leads' && r.columns.includes('phone'));
+      expect(memberIdx).toBeGreaterThanOrEqual(0);
+      expect(phoneIdx).toBeGreaterThan(memberIdx);
+      expect(h.db.reads[phoneIdx].filters).toEqual([['id', 'lead-a'], ['session_id', TENANT_A]]);
+    });
+  });
 });

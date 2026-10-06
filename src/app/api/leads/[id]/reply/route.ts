@@ -23,12 +23,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   if (access === 'demo' || !intakeTenantFor(lead.session_id)) {
     return NextResponse.json({ error: 'replies are not enabled for this dashboard' }, { status: 403 });
   }
-  if (!lead.phone) return NextResponse.json({ error: 'lead not found or has no phone' }, { status: 404 });
 
-  const sent = await sendSms(lead.phone, text);
+  // Phone is read only now that the caller is authorized for this tenant.
+  const supabase = createServiceClient();
+  const { data: contact } = await supabase.from('client_leads')
+    .select('phone').eq('id', id).eq('session_id', lead.session_id).maybeSingle();
+  if (!contact?.phone) return NextResponse.json({ error: 'lead not found or has no phone' }, { status: 404 });
+
+  const sent = await sendSms(contact.phone, text);
   if (!sent.ok) return NextResponse.json({ error: sent.error ?? 'send failed' }, { status: 502 });
 
-  const supabase = createServiceClient();
   const logRes = await logMessage(supabase, { leadId: id, sessionId: lead.session_id, direction: 'outbound', author: 'human', body: text });
   const flipRes = await setHandler(supabase, { leadId: id, sessionId: lead.session_id, handler: 'human', by: 'dashboard' });
   // The SMS already went out; a post-send DB write failure is non-fatal but must be observable.

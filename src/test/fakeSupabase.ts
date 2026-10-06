@@ -1,46 +1,55 @@
 // Minimal in-memory Supabase stand-in for route tests that need the REAL access
 // gates to run (lead-gate -> api-gate -> dash-access). Supports the query shapes
 // those gates and the lead routes use: select/eq/maybeSingle/single, and
-// update/insert/delete chains that resolve when awaited. Every write is recorded
-// so tests can assert that nothing was written on a denied request.
+// update/insert/delete chains that resolve when awaited. Every write and every
+// select is recorded (with its columns and eq filters) so tests can assert that
+// nothing was written, or read, on a denied request, and that the gate looked up
+// the right user and session.
 //
 // Never point this at real data: rows are whatever the test seeds.
 
 type Row = Record<string, unknown>;
 export type FakeWrite = { table: string; op: 'update' | 'insert' | 'delete'; values?: unknown; filters: [string, unknown][] };
+export type FakeRead = { table: string; columns: string; filters: [string, unknown][] };
 
 export type FakeDb = {
   tables: Record<string, Row[]>;
   writes: FakeWrite[];
+  reads: FakeRead[];
   client: { from: (table: string) => unknown };
 };
 
 export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
-  const db: FakeDb = { tables, writes: [], client: { from: (t: string) => builder(t) } };
+  const db: FakeDb = { tables, writes: [], reads: [], client: { from: (t: string) => builder(t) } };
 
   function builder(table: string) {
     const filters: [string, unknown][] = [];
     let op: 'select' | FakeWrite['op'] = 'select';
     let values: unknown;
+    let columns = '*';
     const rows = () => (db.tables[table] ?? []).filter(r => filters.every(([k, v]) => r[k] === v));
+    const logRead = () => { db.reads.push({ table, columns, filters: [...filters] }); };
     const settle = () => {
-      if (op === 'select') return { data: rows(), error: null };
+      if (op === 'select') { logRead(); return { data: rows(), error: null }; }
       db.writes.push({ table, op, values, filters: [...filters] });
       return { data: null, error: null, count: op === 'delete' ? rows().length : null };
     };
     const b = {
-      select: () => b,
+      select: (cols?: string) => { columns = cols ?? '*'; return b; },
       eq: (k: string, v: unknown) => { filters.push([k, v]); return b; },
       order: () => b,
       limit: () => b,
       update: (v: unknown) => { op = 'update'; values = v; return b; },
       insert: (v: unknown) => { op = 'insert'; values = v; return b; },
       delete: () => { op = 'delete'; return b; },
-      maybeSingle: () => Promise.resolve(op === 'select'
-        ? { data: rows()[0] ?? null, error: null }
-        : { ...settle(), data: values }),
+      maybeSingle: () => {
+        if (op !== 'select') return Promise.resolve({ ...settle(), data: values });
+        logRead();
+        return Promise.resolve({ data: rows()[0] ?? null, error: null });
+      },
       single: () => {
         if (op !== 'select') return Promise.resolve({ ...settle(), data: values });
+        logRead();
         const r = rows();
         return Promise.resolve(r.length === 1
           ? { data: r[0], error: null }

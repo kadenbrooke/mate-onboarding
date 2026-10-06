@@ -54,6 +54,17 @@ describe('POST /api/assistant/chats', () => {
     expect((await post({ session_id: TENANT_A })).status).toBe(403);
     expect(h.db.writes).toEqual([]);
   });
+  it('creates a chat for a portal_members member of the session', async () => {
+    h.user = USERS.memberA;
+    const res = await post({ session_id: TENANT_A });
+    expect(res.status).toBe(200);
+    expect(h.db.writes).toEqual([expect.objectContaining({ table: 'assistant_chats', op: 'insert', values: { session_id: TENANT_A } })]);
+    // The gate looked up THIS user against THIS session.
+    expect(h.db.reads).toContainEqual({
+      table: 'portal_members', columns: 'role',
+      filters: [['user_id', USERS.memberA.id], ['session_id', TENANT_A]],
+    });
+  });
   it('lets an internal user through to the insert', async () => {
     h.user = USERS.internal;
     await post({ session_id: TENANT_A });
