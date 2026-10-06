@@ -185,16 +185,41 @@ describe('custom range: leadsInRange / outcomesInRange / customBuckets', () => {
 });
 
 describe('scoreStats', () => {
-  it('averages scores and returns hot uncontacted leads sorted score-desc', () => {
+  it('averages scores and returns hot leads sorted score-desc', () => {
     const out = scoreStats([
-      lead({ score: 90, contacted: false, name: 'Hot' }),
-      lead({ score: 50, contacted: true }),
-      lead({ score: 80, contacted: false }),
+      lead({ id: 'h', score: 90, name: 'Hot' }),
+      lead({ id: 'b', score: 50 }),
+      lead({ id: 'c', score: 80 }),
     ]);
     expect(out.avg).toBe(73);
     expect(out.scoredCount).toBe(3);
-    expect(out.hot[0].name).toBe('Hot');
-    expect(out.hot.every(l => !l.contacted)).toBe(true);
+    expect(out.hot.map(l => l.score)).toEqual([90, 80, 50]);
+  });
+
+  it('keeps contacted leads: the AI texts every lead, so contacted is not "handled"', () => {
+    const out = scoreStats([lead({ id: 'talking', score: 95, contacted: true }), lead({ id: 'q', score: 60 })]);
+    expect(out.hot.map(l => l.id)).toEqual(['talking', 'q']);
+  });
+
+  it('keeps booked and quoted leads but drops serviced ones', () => {
+    const out = scoreStats([
+      lead({ id: 'done', score: 99, status: 'serviced' }),
+      lead({ id: 'booked', score: 80, status: 'booked' }),
+      lead({ id: 'quoted', score: 70, status: 'quoted' }),
+    ]);
+    expect(out.hot.map(l => l.id)).toEqual(['booked', 'quoted']);
+    // Serviced still counts toward portfolio quality.
+    expect(out.avg).toBe(83);
+  });
+
+  it('caps at the top 5 and breaks ties toward the newer lead', () => {
+    const out = scoreStats([
+      lead({ id: 'old', score: 70, created_at: d(5) }),
+      lead({ id: 'new', score: 70, created_at: d(1) }),
+      ...[91, 92, 93, 94].map(s => lead({ id: `s${s}`, score: s })),
+      lead({ id: 'low', score: 10 }),
+    ]);
+    expect(out.hot.map(l => l.id)).toEqual(['s94', 's93', 's92', 's91', 'new']);
   });
 
   it('reports a null average when nothing is scored, not a 0', () => {
@@ -207,7 +232,7 @@ describe('scoreStats', () => {
   });
 
   it('separates "nothing scored" from "nothing hot"', () => {
-    const nothingHot = scoreStats([lead({ score: 90, contacted: true })]);
+    const nothingHot = scoreStats([lead({ score: 90, status: 'serviced' })]);
     expect(nothingHot.hot).toHaveLength(0);
     expect(nothingHot.scoredCount).toBe(1);
   });

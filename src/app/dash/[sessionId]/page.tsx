@@ -11,6 +11,7 @@ import { adTotals, type AdMetricRow } from '@/lib/metrics/ads';
 import { fetchMoneyTotals, type MoneyQuery } from '@/lib/metrics/money';
 import { zoneLocks } from '@/lib/dash/locks';
 import { gateLockedZoneData } from '@/lib/dash/gate';
+import { fetchLiveScores, mergeLiveScores, type LiveScoreQuery } from '@/lib/leads/liveScores';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
@@ -43,6 +44,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     adMetricsResult,
     money,
     contactResult,
+    liveScores,
   ] = await Promise.all([
     // is_test excludes the reseller/founder test phones (client_leads.is_test,
     // migration 032 -- a generated column derived from `phone`). Those rows run the
@@ -147,6 +149,10 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
           .eq('id', session.contact_id as string)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
+    // Live lead scores (migration 0020): computed at read time so the Hot
+    // Leads card ranks on how fresh the lead is and how recently they texted
+    // back RIGHT NOW. Same cast-through-unknown reason as fetchMoneyTotals.
+    fetchLiveScores(supabase as unknown as LiveScoreQuery, sessionId),
   ]);
 
   // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
@@ -230,7 +236,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
         created_at: (session.created_at ?? null) as string | null,
         monthlyRetainerCents,
       }}
-      leads={(leadsResult.data ?? []) as Lead[]}
+      leads={mergeLiveScores((leadsResult.data ?? []) as Lead[], liveScores)}
       data={data}
       locks={locks}
       glance={glance}
