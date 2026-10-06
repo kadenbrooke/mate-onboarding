@@ -8,7 +8,8 @@
 //      the J&C conversation second, the lead's own last inbound text),
 //   4. a new inbound text from the lead moves it up the ranking,
 //   5. anon / authenticated are denied the view and service_role can read it,
-//   6. the two lookups the view does can use the migration's indexes.
+//   6. reply recency can use the migration's index, and the migration never
+//      touches jc_sms_conversations (another lane owns it).
 //
 // Only invented rows are seeded. The tables are minimal stand-ins with the
 // live column names and types the migration reads.
@@ -309,6 +310,14 @@ describe('access to the view (real roles)', () => {
 });
 
 describe('indexes', () => {
+  it('adds nothing to jc_sms_conversations', async () => {
+    const { rows } = await db.query<{ indexname: string }>(
+      `select indexname from pg_indexes where tablename = 'jc_sms_conversations' and indexname <> 'jc_sms_conversations_pkey'`,
+    );
+    expect(rows).toEqual([]);
+    expect(MIGRATION).not.toMatch(/(create|alter|drop)\s+(unique\s+)?(index|table|trigger)[^;]*jc_sms_conversations/i);
+  });
+
   async function plan(sql: string) {
     await db.exec('set enable_seqscan = off');
     try {
@@ -321,11 +330,5 @@ describe('indexes', () => {
     const p = await plan(`select max(created_at) from lead_messages
       where lead_id = '00000000-0000-4000-8000-000000000001' and direction = 'inbound' and author = 'lead'`);
     expect(p).toMatch(/lead_messages_lead_reply_idx/);
-  });
-
-  it('the conversation link can use the last-10-digits expression index', async () => {
-    const p = await plan(`select 1 from jc_sms_conversations c
-      where right(regexp_replace(c.from_number, '[^0-9]', '', 'g'), 10) = '5550000101'`);
-    expect(p).toMatch(/jc_sms_conversations_phone10_idx/);
   });
 });

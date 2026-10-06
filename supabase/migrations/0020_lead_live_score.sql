@@ -28,12 +28,14 @@
 --                                src/lib/metrics/leadScore.ts, parity-tested
 --                                against this file in a real Postgres
 --                                (src/lib/metrics/leadScore.sql.test.ts).
---   3. two indexes for the view's lookups (reply recency, conversation link)
+--   3. one index for the view's reply-recency lookup
 --   4. client_lead_scores     -- lead_id -> live score, plus the inputs used.
 --
 -- Read-only with respect to existing data: no column or constraint changes,
--- no row is written, no trigger is added (two indexes, section 3). jc_sms_conversations is only read, through the
--- same link the sync trigger uses (J&C session + last 10 phone digits).
+-- no row is written, no trigger is added (one lead_messages index, section 3).
+-- jc_sms_conversations is not changed at all, not even indexed: it is only
+-- read, through the same link the sync trigger uses (J&C session + last 10
+-- phone digits).
 --
 -- Arithmetic is float8 in the same order as the TypeScript twin, and rounding
 -- is floor(x + 0.5) (JavaScript's Math.round), so the twins agree exactly.
@@ -214,21 +216,21 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 3. Indexes for the view's two lookups
+-- 3. Index for reply recency
 -- ---------------------------------------------------------------------------
--- Indexes only: no column, constraint, trigger or row changes on either table.
--- Both tables are small today (a few hundred messages, under a hundred
--- conversations), so the brief lock a plain CREATE INDEX takes is negligible.
-
--- Reply recency: max(created_at) of the lead's own inbound texts.
+-- An index only: no column, constraint, trigger or row change on lead_messages.
+-- The table is small today, so the brief lock a plain CREATE INDEX takes is
+-- negligible.
 create index if not exists lead_messages_lead_reply_idx
   on public.lead_messages (lead_id, created_at desc)
   where direction = 'inbound' and author = 'lead';
 
--- Conversation link: the same normalized last-10-digits expression the view
--- (and the sync trigger) compares, so the join is an index lookup.
-create index if not exists jc_sms_conversations_phone10_idx
-  on public.jc_sms_conversations ((right(regexp_replace(from_number, '[^0-9]', '', 'g'), 10)));
+-- The conversation link is NOT indexed here on purpose. jc_sms_conversations
+-- belongs to the lead-handling lane (First Responder, fr-brain) and this
+-- migration makes no change to it. At about 60 rows the join does not need
+-- one. If it ever does, that lane can add an expression index on
+-- right(regexp_replace(from_number, '[^0-9]', '', 'g'), 10), the exact
+-- expression the view compares.
 
 -- ---------------------------------------------------------------------------
 -- 4. The live view
