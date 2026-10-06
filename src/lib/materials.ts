@@ -12,10 +12,11 @@
  * The upsert into contact_materials happens in the route; this only derives the
  * material keys, never touches the DB.
  */
-export function materialsForCollected(c: Record<string, any>): string[] {
+export function materialsForCollected(c: Record<string, unknown>): string[] {
   const keys: string[] = []
+  const company = c?.company as { name?: unknown } | null | undefined
   if (
-    c?.company?.name &&
+    company?.name &&
     Array.isArray(c?.services) &&
     c.services.length
   ) {

@@ -26,6 +26,13 @@ const chatsUpdateEq = vi.fn(() => Promise.resolve({ error: null }));
 const chatsUpdate = vi.fn(() => ({ eq: chatsUpdateEq }));
 const chatsSelect = vi.fn(() => ({ eq: ownerEq }));
 
+// portal_members / portal_access .select().eq().eq().maybeSingle() → membership.
+// Default: no membership and not internal.
+const memberMaybeSingle = vi.fn(() => Promise.resolve({ data: null as { role: string } | null, error: null }));
+const internalMaybeSingle = vi.fn(() => Promise.resolve({ data: null as { client_slug: string } | null, error: null }));
+const membersSelect = vi.fn(() => ({ eq: () => ({ eq: () => ({ maybeSingle: memberMaybeSingle }) }) }));
+const accessSelect = vi.fn(() => ({ eq: () => ({ eq: () => ({ maybeSingle: internalMaybeSingle }) }) }));
+
 // assistant_messages.insert(...) — must NEVER be called in these pre-write cases.
 const messagesInsert = vi.fn(() => Promise.resolve({ error: null }));
 
@@ -39,6 +46,10 @@ vi.mock('@/lib/supabase/service', () => ({
           return { select: chatsSelect, update: chatsUpdate };
         case 'assistant_messages':
           return { insert: messagesInsert };
+        case 'portal_members':
+          return { select: membersSelect };
+        case 'portal_access':
+          return { select: accessSelect };
         default:
           return {};
       }
@@ -140,5 +151,32 @@ describe('POST /api/assistant/chat', () => {
     expect(body.error).toBe('chat not found');
     expect(messagesInsert).not.toHaveBeenCalled();
     expect(portkeyChatStream).not.toHaveBeenCalled();
+  });
+
+  it('rejects a signed-in user who is not a member of the session → 403 (IDOR)', async () => {
+    sessionMaybeSingle.mockResolvedValueOnce({ data: { is_demo: false }, error: null });
+    getUserMock.mockResolvedValueOnce({ data: { user: { id: 'other-tenant-user', email: 'x@other.test' } } } as never);
+
+    const res = await POST(
+      req({ session_id: 'real-sess', chat_id: 'chat-1', content: 'hi' }) as never
+    );
+    expect(res.status).toBe(403);
+    expect(ownerMaybeSingle).not.toHaveBeenCalled();
+    expect(messagesInsert).not.toHaveBeenCalled();
+    expect(portkeyChatStream).not.toHaveBeenCalled();
+  });
+
+  it('lets a member of the session past the gate (reaches the ownership guard)', async () => {
+    sessionMaybeSingle.mockResolvedValueOnce({ data: { is_demo: false }, error: null });
+    getUserMock.mockResolvedValueOnce({ data: { user: { id: 'member', email: 'm@tenant.test' } } } as never);
+    memberMaybeSingle.mockResolvedValueOnce({ data: { role: 'owner' }, error: null });
+    ownerMaybeSingle.mockResolvedValueOnce({ data: { session_id: 'someone-else' }, error: null });
+
+    const res = await POST(
+      req({ session_id: 'real-sess', chat_id: 'chat-1', content: 'hi' }) as never
+    );
+    expect(ownerMaybeSingle).toHaveBeenCalled();
+    expect(res.status).toBe(404);
+    expect(messagesInsert).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@ export function useStackOrder(sessionId: string, stackId: string, defaultIds: st
   useEffect(() => {
     const stored = loadOrder(sessionId, stackId);
     if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates the saved order from localStorage after mount
       setOrderState(mergeOrder(stored, defaults));
       setIsCustomized(true);
     } else {

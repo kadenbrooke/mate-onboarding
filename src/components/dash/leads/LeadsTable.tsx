@@ -88,6 +88,7 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
     if (initialSort) { restored.current = true; return; }
     const stored = loadControls(sessionId);
     if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- restores saved controls from localStorage after mount
       setQuery(stored.query);
       setSort(stored.sort);
     }
@@ -117,6 +118,7 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
   // shared link) must not show an empty sheet with the row filtered out from
   // under it. Opens the older section once; the client can still collapse it.
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- opens the older section once for a spotlighted lead
     if (spotlightId && older.some(l => l.id === spotlightId)) setShowOlder(true);
     // Deliberately keyed on the spotlight only: re-running as `older` changes
     // would re-expand a section the client just chose to collapse.

@@ -1,32 +1,13 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createFakeDb, seedTenants, USERS, TENANT_A, TENANT_B, DEMO, type FakeDb } from '@/test/fakeSupabase';
 
-// Track eq args for the leads update chain only.
-const eqArgs: unknown[][] = [];
-const eq2 = vi.fn((...a: unknown[]) => { eqArgs.push(a); return Promise.resolve({ error: null }); });
-const eq1 = vi.fn((...a: unknown[]) => { eqArgs.push(a); return { eq: eq2 }; });
-const updateMock = vi.fn(() => ({ eq: eq1 }));
-
-// Session select chain: default returns a demo session so existing tests need
-// no auth mock. Individual tests override via mockResolvedValueOnce.
-const maybeSingleMock = vi.fn(() =>
-  Promise.resolve({ data: { is_demo: true } as { is_demo: boolean } | null, error: null })
-);
-const sessionEqMock = vi.fn(() => ({ maybeSingle: maybeSingleMock }));
-const selectMock = vi.fn(() => ({ eq: sessionEqMock }));
-
-vi.mock('@/lib/supabase/service', () => ({
-  createServiceClient: () => ({
-    from: (table: string) =>
-      table === 'onboarding_sessions'
-        ? { select: selectMock }
-        : { update: updateMock },
-  }),
+const h = vi.hoisted(() => ({
+  db: null as unknown as FakeDb,
+  user: null as { id: string; email: string } | null,
 }));
-
-// Auth client mock — default: no user (demo sessions don't reach this path).
-const getUserMock = vi.fn(() => Promise.resolve({ data: { user: null } }));
+vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => h.db.client }));
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: () => Promise.resolve({ auth: { getUser: getUserMock } }),
+  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: h.user } }) } }),
 }));
 
 import { PATCH } from './route';
@@ -34,54 +15,51 @@ import { PATCH } from './route';
 const req = (body: unknown) => new Request('http://x', {
   method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),
 });
-const params = Promise.resolve({ id: 'lead-1' });
+const call = (leadId: string, body: unknown) => PATCH(req(body) as never, { params: Promise.resolve({ id: leadId }) });
+
+beforeEach(() => {
+  h.db = createFakeDb(seedTenants());
+  h.user = USERS.memberA;
+});
 
 describe('PATCH /api/leads/[id]/status', () => {
   it('rejects invalid status with 400', async () => {
-    const res = await PATCH(req({ status: 'banana', session_id: 's1' }) as never, { params });
-    expect(res.status).toBe(400);
-  });
-
-  it('rejects missing session_id with 400', async () => {
-    const res = await PATCH(req({ status: 'booked' }) as never, { params });
-    expect(res.status).toBe(400);
-  });
-
-  it('updates status scoped to session (demo session, no auth needed)', async () => {
-    eqArgs.length = 0;
-    maybeSingleMock.mockResolvedValueOnce({ data: { is_demo: true }, error: null });
-    const res = await PATCH(req({ status: 'serviced', session_id: 's1' }) as never, { params });
-    expect(res.status).toBe(200);
-    expect(updateMock).toHaveBeenCalledWith(expect.objectContaining({ status: 'serviced' }));
-    expect(eqArgs).toContainEqual(['id', 'lead-1']);
-    expect(eqArgs).toContainEqual(['session_id', 's1']);
-  });
-
-  it('allows non-demo session when user is signed in', async () => {
-    eqArgs.length = 0;
-    maybeSingleMock.mockResolvedValueOnce({ data: { is_demo: false }, error: null });
-    getUserMock.mockResolvedValueOnce({ data: { user: { id: 'u1' } } } as never);
-    const res = await PATCH(req({ status: 'quoted', session_id: 's2' }) as never, { params });
-    expect(res.status).toBe(200);
-  });
-
-  it('rejects non-demo session when no user is signed in', async () => {
-    maybeSingleMock.mockResolvedValueOnce({ data: { is_demo: false }, error: null });
-    getUserMock.mockResolvedValueOnce({ data: { user: null } } as never);
-    const res = await PATCH(req({ status: 'serviced', session_id: 's3' }) as never, { params });
-    expect(res.status).toBe(401);
-    const body = await res.json();
-    expect(body.error).toBe('Sign in required.');
-  });
-
-  it('returns 404 when session is not found', async () => {
-    maybeSingleMock.mockResolvedValueOnce({ data: null, error: null });
-    const res = await PATCH(req({ status: 'serviced', session_id: 'missing' }) as never, { params });
-    expect(res.status).toBe(404);
+    expect((await call('lead-a', { status: 'banana', session_id: TENANT_A })).status).toBe(400);
   });
 
   it('returns 400 for unparseable body', async () => {
-    const res = await PATCH(new Request('http://x', { method: 'PATCH', body: 'not-json' }) as never, { params });
+    const res = await PATCH(new Request('http://x', { method: 'PATCH', body: 'not-json' }) as never, { params: Promise.resolve({ id: 'lead-a' }) });
     expect(res.status).toBe(400);
+  });
+
+  it('401s an anonymous caller on a real tenant', async () => {
+    h.user = null;
+    const res = await call('lead-a', { status: 'serviced', session_id: TENANT_A });
+    expect(res.status).toBe(401);
+    expect((await res.json()).error).toBe('Sign in required.');
+    expect(h.db.writes).toEqual([]);
+  });
+
+  it('403s a signed-in member of a different tenant (IDOR)', async () => {
+    h.user = USERS.memberB;
+    expect((await call('lead-a', { status: 'serviced', session_id: TENANT_A })).status).toBe(403);
+    // Naming their own session does not help: the tenant comes from the lead row.
+    expect((await call('lead-a', { status: 'serviced', session_id: TENANT_B })).status).toBe(403);
+    expect(h.db.writes).toEqual([]);
+  });
+
+  it('updates status scoped to the lead row session for a member', async () => {
+    const res = await call('lead-a', { status: 'quoted', session_id: TENANT_A });
+    expect(res.status).toBe(200);
+    expect(h.db.writes).toEqual([{ table: 'client_leads', op: 'update', values: { status: 'quoted' }, filters: [['id', 'lead-a'], ['session_id', TENANT_A]] }]);
+  });
+
+  it('keeps demo sessions open for the public Instant Demo flow', async () => {
+    h.user = null;
+    expect((await call('lead-demo', { status: 'serviced', session_id: DEMO })).status).toBe(200);
+  });
+
+  it('404s an unknown lead', async () => {
+    expect((await call('ghost', { status: 'serviced' })).status).toBe(404);
   });
 });

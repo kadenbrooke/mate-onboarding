@@ -1,12 +1,12 @@
 import { z } from "zod"
 
 export type Collected = Record<string, unknown>
-export interface ToolCall { tool: string; args: Record<string, any> }
+export interface ToolCall { tool: string; args: Record<string, unknown> }
 
 // Pure reducer: applies a tool call to the collected state. Unit-testable, no I/O.
 export function applyToolResult(collected: Collected, call: ToolCall): Collected {
   switch (call.tool) {
-    case "saveField": return { ...collected, [call.args.key]: call.args.value }
+    case "saveField": return { ...collected, [String(call.args.key)]: call.args.value }
     case "confirmServices": return { ...collected, services: call.args.services }
     case "setBrandVoice": return { ...collected, brand_voice: call.args.voice }
     default: return collected

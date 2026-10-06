@@ -25,6 +25,7 @@ export default function LoginPage() {
   // during render, so no hydration mismatch or Suspense bailout).
   useEffect(() => {
     const code = new URLSearchParams(window.location.search).get("error");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reads window.location after mount so SSR markup stays stable
     if (code && ERROR_MESSAGES[code]) setError(ERROR_MESSAGES[code]);
   }, []);
 
