@@ -4,6 +4,7 @@ import { DashboardView } from './DashboardView';
 import { DashEditingProvider, useDashEditing } from '@/lib/dashEditing';
 import type { DashData } from './types';
 import { zoneLocks } from '@/lib/dash/locks';
+import { summarizeReturn } from '@/lib/metrics/revenue';
 
 const noLeads: never[] = [];
 const session = { id: 's1', mate_name: 'J&C Asphalt' };
@@ -173,6 +174,21 @@ describe('DashboardView', () => {
     renderDash({ session, leads, data: emptyDash });
     expect(screen.getAllByText('HOT RIGHT NOW').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('Pipeline').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('shows Return by source in the Pipeline zone and on the money tab once outcomes exist', () => {
+    const returns = summarizeReturn([{ source: 'meta', leads: 2, won: 1, lost: 0, job_value_cents: 500000,
+      collected_cents: 200000, collected_in_window_cents: 200000, collected_30d_cents: 0 }]);
+    renderDash({ session, leads: noLeads, data: emptyDash, returns });
+    const desktop = screen.getByTestId('dash-desktop');
+    expect(within(desktop).getByTestId('return-partner-basis').textContent).toContain('$300');
+    fireEvent.click(screen.getByRole('button', { name: /money/i }));
+    expect(within(screen.getByTestId('view-money')).getByText('RETURN BY SOURCE')).toBeInTheDocument();
+  });
+
+  it('leaves Return by source out until job outcomes are set up', () => {
+    renderDash({ session, leads: noLeads, data: emptyDash });
+    expect(screen.queryByTestId('return-partner-basis')).toBeNull();
   });
 
   it('money tab renders reputation and follow-up inside mobile container', () => {

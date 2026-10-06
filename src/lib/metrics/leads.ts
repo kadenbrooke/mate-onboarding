@@ -38,6 +38,15 @@ export type Lead = {
   // belongs to. Optional + nullable: rows whose status predates the trigger
   // have none, and those fall back to created_at (see revenueAt).
   status_updated_at?: string | null;
+  // Job outcome, entered by hand (migration 0021). Separate from `status` on
+  // purpose: status is where the job is, these are what it was worth. All
+  // optional + nullable: absent until 0021 is applied, null until entered.
+  job_outcome?: 'won' | 'lost' | null;
+  outcome_at?: string | null;
+  job_value_cents?: number | null;
+  collected_cents?: number | null;
+  collected_at?: string | null;
+  lost_reason?: string | null;
 };
 
 /** Money is real once the job is serviced. This is the successor to the old

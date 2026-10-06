@@ -40,4 +40,15 @@ describe('buildAssistantContext', () => {
     const ctx = buildAssistantContext([], 'Acme').toLowerCase();
     expect(ctx).toContain('only');
   });
+  it('reports return by lead source once outcomes are entered, never the partner share', () => {
+    const won = { ...mk({ source: 'meta' }), job_outcome: 'won' as const, job_value_cents: 500000,
+      collected_cents: 250000, collected_at: '2026-07-02T00:00:00Z' };
+    const ctx = buildAssistantContext([won, mk({ source: 'meta' }), mk({ source: 'call' })], 'Acme', new Date('2026-07-10T00:00:00Z'));
+    expect(ctx).toContain('Meta Ads: 1 won, 0 lost of 2 leads, $5,000 sold, $2,500 collected');
+    expect(ctx).not.toContain('Call:');
+    expect(ctx).not.toMatch(/15%|partner/i);
+  });
+  it('says plainly when no outcomes are entered', () => {
+    expect(buildAssistantContext([mk({})], 'Acme')).toContain('no jobs have been marked won or lost yet');
+  });
 });
