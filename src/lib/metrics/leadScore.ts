@@ -38,14 +38,61 @@ export const TIER2_CITIES = [
   'cottonwood heights', 'millcreek', 'magna', 'kearns', 'south salt lake',
 ] as const;
 
-/** Tier 1 = Utah County (around Orem), Tier 2 = Salt Lake Valley, null =
- *  anywhere else. The sheet also carried hand-set Tier 3 and Tier 8; nothing
- *  in Mate records those, so only 1 and 2 are ever derived here. */
-export function cityTier(city: string | null | undefined): 1 | 2 | null {
-  const c = (city ?? '').toLowerCase().replace(/^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g, '');
-  if ((TIER1_CITIES as readonly string[]).includes(c)) return 1;
-  if ((TIER2_CITIES as readonly string[]).includes(c)) return 2;
+/** Tiers 3 to 5 were never set by the First Responder; the client set them by
+ *  hand in the 'Active Leads' tab of the lead sheet the Ranker reads. These are
+ *  the distinct city -> tier pairs recovered from that tab's City and Tier
+ *  columns on 2026-10-06 (nothing else was read). Every Tier 1 / Tier 2 city
+ *  in the sheet is already in the lists above. Only Tier 3 moves the score
+ *  (0.5); Tier 4 and 5 score like any other named city (0.4) and are listed
+ *  so the mapping matches the sheet. 'coalville' is Tier 4 because the sheet
+ *  says so. */
+export const TIER3_CITIES = ['park city'] as const;
+export const TIER4_CITIES = ['clearfield', 'clinton', 'coalville', 'ogden', 'roy', 'south weber'] as const;
+export const TIER5_CITIES = ['beaverdam', 'corinne', 'logan', 'thatcher', 'tremonton'] as const;
+
+/** Tier 7 / 8 / 8b are the sheet's tiers for a lead with NO city and no
+ *  address, by phone area code: 7 = Wasatch Front (801, 385), 8 = 435,
+ *  8b = out of state (anything else). In the sheet they appear only on rows
+ *  with no city. */
+export const WASATCH_FRONT_AREA_CODES = ['801', '385'] as const;
+export const TIER8_AREA_CODE = '435';
+
+/** '1' Utah County, '2' Salt Lake Valley, '3' Summit County, '4' Davis / Weber,
+ *  '5' Box Elder / Cache, '7' / '8' / '8b' by area code (no city, no address). */
+export type LeadTier = '1' | '2' | '3' | '4' | '5' | '7' | '8' | '8b';
+
+const WS_EDGES = /^[ \t\r\n\f\v]+|[ \t\r\n\f\v]+$/g;
+
+export function cityTier(city: string | null | undefined): LeadTier | null {
+  const c = (city ?? '').toLowerCase().replace(WS_EDGES, '');
+  const has = (list: readonly string[]) => list.includes(c);
+  if (has(TIER1_CITIES)) return '1';
+  if (has(TIER2_CITIES)) return '2';
+  if (has(TIER3_CITIES)) return '3';
+  if (has(TIER4_CITIES)) return '4';
+  if (has(TIER5_CITIES)) return '5';
   return null;
+}
+
+/** Area-code tier from the last 10 digits of the phone. Null without a
+ *  10-digit number. */
+export function phoneTier(phone: string | null | undefined): '7' | '8' | '8b' | null {
+  const digits = (phone ?? '').replace(/[^0-9]/g, '').slice(-10);
+  if (digits.length < 10) return null;
+  const area = digits.slice(0, 3);
+  if ((WASATCH_FRONT_AREA_CODES as readonly string[]).includes(area)) return '7';
+  if (area === TIER8_AREA_CODE) return '8';
+  return '8b';
+}
+
+/** The lead's tier: by city when it gave one, by area code only when it gave
+ *  neither a city nor an address (the sheet's rule). */
+export function leadTier(
+  city: string | null | undefined, address: string | null | undefined, phone: string | null | undefined,
+): LeadTier | null {
+  if (filled(city)) return cityTier(city);
+  if (filled(address)) return null;
+  return phoneTier(phone);
 }
 
 /** Non-blank after stripping ASCII whitespace. The SQL twin strips the same
@@ -67,13 +114,14 @@ export function urgencyFor(timeframe: string | null | undefined): number {
   return 0.4;
 }
 
-/** Proximity from the tier. Tier 3 and Tier 8 are kept for fidelity with the
- *  Ranker even though cityTier() never produces them. */
-export function proximityFor(tier: number | null, city: string | null | undefined): number {
-  if (tier === 1) return 1.0;
-  if (tier === 2) return 0.7;
-  if (tier === 3) return 0.5;
-  if (tier === 8) return 0.1;
+/** Proximity from the tier, as the Ranker scored it. Its test was a prefix
+ *  match, so 'Tier 8b' scores like 'Tier 8'. Tiers 4, 5 and 7 carry no weight
+ *  of their own and fall through to "has a city" / "has nothing". */
+export function proximityFor(tier: LeadTier | null, city: string | null | undefined): number {
+  if (tier === '1') return 1.0;
+  if (tier === '2') return 0.7;
+  if (tier === '3') return 0.5;
+  if (tier === '8' || tier === '8b') return 0.1;
   return filled(city) ? 0.4 : 0.3;
 }
 
@@ -119,7 +167,7 @@ export type LeadScoreInputs = {
 export function leadScore(i: LeadScoreInputs, now: Date): number {
   const value = valueFor(i.quote_cents);
   const urgency = urgencyFor(i.timeframe);
-  const proximity = proximityFor(cityTier(i.city), i.city);
+  const proximity = proximityFor(leadTier(i.city, i.address, i.phone), i.city);
   const freshness = freshnessFor(i.created_at, now);
   const completeness =
     [i.name, i.phone, i.address, i.city, i.timeframe, i.dimensions].filter(filled).length / 6;

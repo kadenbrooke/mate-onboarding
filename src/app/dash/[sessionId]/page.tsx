@@ -44,7 +44,6 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     adMetricsResult,
     money,
     contactResult,
-    liveScores,
   ] = await Promise.all([
     // is_test excludes the reseller/founder test phones (client_leads.is_test,
     // migration 032 -- a generated column derived from `phone`). Those rows run the
@@ -149,11 +148,16 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
           .eq('id', session.contact_id as string)
           .maybeSingle()
       : Promise.resolve({ data: null, error: null }),
-    // Live lead scores (migration 0020): computed at read time so the Hot
-    // Leads card ranks on how fresh the lead is and how recently they texted
-    // back RIGHT NOW. Same cast-through-unknown reason as fetchMoneyTotals.
-    fetchLiveScores(supabase as unknown as LiveScoreQuery, sessionId),
   ]);
+
+  // Live lead scores (migration 0020), for exactly the leads loaded above:
+  // computed at read time so the Hot Leads card ranks on how fresh each lead
+  // is and how recently they texted back RIGHT NOW. Same cast-through-unknown
+  // reason as fetchMoneyTotals.
+  const loadedLeads = (leadsResult.data ?? []) as Lead[];
+  const liveScores = await fetchLiveScores(
+    supabase as unknown as LiveScoreQuery, sessionId, loadedLeads.map(l => l.id),
+  );
 
   // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
   // totals. Resolving one global latest date would silently drop a platform
@@ -236,7 +240,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
         created_at: (session.created_at ?? null) as string | null,
         monthlyRetainerCents,
       }}
-      leads={mergeLiveScores((leadsResult.data ?? []) as Lead[], liveScores)}
+      leads={mergeLiveScores(loadedLeads, liveScores)}
       data={data}
       locks={locks}
       glance={glance}

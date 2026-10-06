@@ -45,14 +45,15 @@ export default async function PipelinePage({ params, searchParams }: {
   // Newest 500, not "highest stored score": the stored column is stale for
   // ranking (migration 0020 computes the live score at read time), and the
   // table sorts client-side on the merged live score anyway.
-  const [{ data: leads }, liveScores] = await Promise.all([
-    supabase.from('client_leads')
-      .select('*').eq('session_id', sessionId)
-      .eq('is_test', false)
-      .order('created_at', { ascending: false })
-      .limit(500),
-    fetchLiveScores(supabase as unknown as LiveScoreQuery, sessionId),
-  ]);
+  const { data: leads } = await supabase.from('client_leads')
+    .select('*').eq('session_id', sessionId)
+    .eq('is_test', false)
+    .order('created_at', { ascending: false })
+    .limit(500);
+  const loadedLeads = (leads ?? []) as Lead[];
+  const liveScores = await fetchLiveScores(
+    supabase as unknown as LiveScoreQuery, sessionId, loadedLeads.map(l => l.id),
+  );
 
   let thread: {
     messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null;
@@ -103,7 +104,7 @@ export default async function PipelinePage({ params, searchParams }: {
       )}
       <div style={{ background: BG_CARD, borderRadius: 16, padding: 8, boxShadow: CARD_SHADOW }}>
         <LeadsTable
-          leads={mergeLiveScores((leads ?? []) as Lead[], liveScores)}
+          leads={mergeLiveScores(loadedLeads, liveScores)}
           sessionId={sessionId}
           spotlightId={spotlight ?? null}
           initialSort={initialSort}

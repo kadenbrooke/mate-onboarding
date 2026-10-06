@@ -2,10 +2,13 @@
 //
 // Runs migration 0020 in a real Postgres (PGlite, in-process) and checks:
 //   1. mate_lead_score() agrees with the TypeScript twin on every fixture,
-//   2. mate_city_tier() agrees on every city in the First Responder lists,
+//   2. mate_city_tier() / mate_lead_tier() agree on every listed city and on
+//      the area-code tiers,
 //   3. the client_lead_scores view wires the right inputs (client_leads first,
 //      the J&C conversation second, the lead's own last inbound text),
-//   4. a new inbound text from the lead moves it up the ranking.
+//   4. a new inbound text from the lead moves it up the ranking,
+//   5. anon / authenticated are denied the view and service_role can read it,
+//   6. the two lookups the view does can use the migration's indexes.
 //
 // Only invented rows are seeded. The tables are minimal stand-ins with the
 // live column names and types the migration reads.
@@ -13,7 +16,10 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
-import { leadScore, cityTier, TIER1_CITIES, TIER2_CITIES, type LeadScoreInputs } from './leadScore';
+import {
+  leadScore, cityTier, leadTier, TIER1_CITIES, TIER2_CITIES, TIER3_CITIES, TIER4_CITIES, TIER5_CITIES,
+  type LeadScoreInputs,
+} from './leadScore';
 import { JC_SESSION_ID } from './eventSources';
 
 const MIGRATION = readFileSync(
@@ -22,6 +28,9 @@ const MIGRATION = readFileSync(
 
 const SCHEMA = `
   create role anon; create role authenticated; create role service_role;
+  -- Supabase hands every new table and view in public to all three roles by
+  -- default. Reproduced so the migration's revoke is tested against it.
+  alter default privileges in schema public grant all on tables to anon, authenticated, service_role;
   create table onboarding_sessions (id uuid primary key);
   create table client_leads (
     id uuid primary key default gen_random_uuid(),
@@ -48,6 +57,15 @@ const SCHEMA = `
   );
 `;
 
+// Supabase's shape: the base tables are granted to every role (default
+// privileges above) and protected by RLS with no policies; service_role
+// bypasses RLS. So without the migration's revoke, anon could query the view
+// and only RLS would stand in the way. The test proves the view itself denies.
+const GRANT_BASE = `alter role service_role bypassrls;
+  alter table client_leads enable row level security;
+  alter table lead_messages enable row level security;
+  alter table jc_sms_conversations enable row level security;`;
+
 const OTHER_SESSION = '00000000-0000-4000-8000-0000000000aa';
 const NOW = new Date('2026-10-06T18:00:00.000Z');
 const ago = (days: number, from = NOW) => new Date(from.getTime() - days * 86400000).toISOString();
@@ -57,6 +75,7 @@ let db: PGlite;
 beforeAll(async () => {
   db = new PGlite();
   await db.exec(SCHEMA);
+  await db.exec(GRANT_BASE);
   await db.exec(MIGRATION);
   // Re-running must be harmless (create or replace throughout).
   await db.exec(MIGRATION);
@@ -79,14 +98,21 @@ describe('mate_lead_score parity with the TypeScript twin', () => {
   const quotes = [null, 0, 1, 99999, 1250000, 2500000, 7777777];
   const timeframes = [null, '', 'ASAP', 'next week', '2 weeks', 'more than 2 weeks', 'in a month', 'next spring', 'whenever'];
   const cities = [null, '  ', 'Orem', ' SANDY ', 'Ogden'];
-  const ages = [0.5, 1.99, 2.01, 6.5, 7.5, 13, 15, 90];
-  const replies = [null, 0.01, 0.99, 1.01, 2.9, 3.1, 6.9, 7.1, 13.9, 14.1, 60];
+  // Exact thresholds included (2 / 7 / 14 days, 1 / 3 / 7 / 14 days), so a
+  // < vs <= drift between the twins fails.
+  const ages = [0.5, 1.99, 2, 2.01, 6.5, 7, 7.5, 13, 14, 15, 90];
+  const replies = [null, 0.01, 0.99, 1, 1.01, 2.9, 3, 3.1, 6.9, 7, 7.1, 13.9, 14, 14.1, 60];
   const fieldSets: Partial<LeadScoreInputs>[] = [
     {},
     { name: 'Test Lead', phone: '+15550000010' },
     { name: 'Test Lead', phone: '+15550000010', address: '1 Test St', dimensions: '20x30' },
     { name: ' ', phone: '\t', address: '', dimensions: ' \n ' },
   ];
+
+  const base0: LeadScoreInputs = {
+    quote_cents: 400000, timeframe: 'next week', city: null, name: 'Test Lead', phone: null,
+    address: null, dimensions: null, created_at: ago(5), last_lead_reply_at: null,
+  };
 
   it('agrees on every fixture', async () => {
     const cases: LeadScoreInputs[] = [];
@@ -111,21 +137,46 @@ describe('mate_lead_score parity with the TypeScript twin', () => {
         ...fields, created_at: ago(age), last_lead_reply_at: reply == null ? null : ago(reply),
       });
     }
+    // Location axis: every tier source, including the area-code tiers that
+    // only apply with neither a city nor an address.
+    for (const city of [null, '', ' Park City ', 'Logan', 'Ogden', 'St. George', 'Orem']) {
+      for (const address of [null, ' ', '1 Test St']) {
+        for (const phone of [null, '5550100', '+18015550100', '(385) 555-0100', '+14355550100', '+12125550100']) {
+          cases.push({ ...base0, city, address, phone, created_at: ago(5), last_lead_reply_at: ago(2) });
+        }
+      }
+    }
     const mismatches: string[] = [];
     for (const c of cases) {
       const ts = leadScore(c, NOW);
       const sql = await sqlScore(c, NOW);
       if (ts !== sql) mismatches.push(`${JSON.stringify(c)} ts=${ts} sql=${sql}`);
     }
-    expect(cases.length).toBeGreaterThan(600);
+    expect(cases.length).toBeGreaterThan(1000);
     expect(mismatches).toEqual([]);
   }, 60000);
 
   it('mate_city_tier matches cityTier on every listed city and a few that are not', async () => {
-    const cities = [...TIER1_CITIES, ...TIER2_CITIES, 'Ogden', 'Orem, UT', '', null, '  Lehi  ', 'WEST VALLEY'];
+    const cities = [
+      ...TIER1_CITIES, ...TIER2_CITIES, ...TIER3_CITIES, ...TIER4_CITIES, ...TIER5_CITIES,
+      'St. George', 'Orem, UT', '', null, '  Lehi  ', 'WEST VALLEY', 'PARK CITY',
+    ];
     for (const c of cities) {
-      const { rows } = await db.query<{ t: number | null }>('select public.mate_city_tier($1) as t', [c]);
+      const { rows } = await db.query<{ t: string | null }>('select public.mate_city_tier($1) as t', [c]);
       expect(rows[0].t, String(c)).toBe(cityTier(c));
+    }
+  });
+
+  it('mate_lead_tier matches leadTier, area-code tiers included', async () => {
+    for (const city of [null, ' ', 'Park City', 'St. George']) {
+      for (const address of [null, '', '1 Test St']) {
+        for (const phone of [null, '', '555-0100', '+18015550100', '3855550100', '+14355550100', '+19175550100']) {
+          const { rows } = await db.query<{ t: string | null }>(
+            'select public.mate_lead_tier($1, $2, $3) as t', [city, address, phone],
+          );
+          expect(rows[0].t, JSON.stringify([city, address, phone])).toBe(leadTier(city, address, phone));
+        }
+      }
     }
   });
 });
@@ -140,7 +191,7 @@ async function insertLead(over: Record<string, unknown>): Promise<string> {
 }
 
 async function viewRow(id: string) {
-  const { rows } = await db.query<{ score: number; tier: number | null; timeframe: string | null; last_lead_reply_at: string | null }>(
+  const { rows } = await db.query<{ score: number; tier: string | null; timeframe: string | null; last_lead_reply_at: string | null }>(
     'select score, tier, timeframe, last_lead_reply_at from client_lead_scores where lead_id = $1', [id],
   );
   return rows[0];
@@ -157,7 +208,7 @@ describe('client_lead_scores view', () => {
     const id = await insertLead({ session_id: JC_SESSION_ID, phone: '(555) 000-0101', created_at: created });
     const row = await viewRow(id);
     expect(row.timeframe).toBe('next week');
-    expect(row.tier).toBe(1);
+    expect(row.tier).toBe('1');
     expect(row.score).toBe(leadScore({
       quote_cents: 1200000, timeframe: 'next week', city: 'Lehi', name: 'Convo Name',
       phone: '(555) 000-0101', address: '9 Convo Rd', dimensions: '40x60',
@@ -175,7 +226,7 @@ describe('client_lead_scores view', () => {
       session_id: JC_SESSION_ID, phone: '+15550000102', city: 'Sandy', quote_cents: 500000, created_at: created,
     });
     const row = await viewRow(id);
-    expect(row.tier).toBe(2);
+    expect(row.tier).toBe('2');
     expect(row.score).toBe(leadScore({
       quote_cents: 500000, timeframe: 'asap', city: 'Sandy', name: null, phone: '+15550000102',
       address: null, dimensions: null, created_at: created, last_lead_reply_at: null,
@@ -197,7 +248,7 @@ describe('client_lead_scores view', () => {
   });
 
   it('scores a lead with no phone and no conversation (Meta-only) on what it has', async () => {
-    const id = await insertLead({ session_id: JC_SESSION_ID, name: 'Form Lead', city: 'Ogden' });
+    const id = await insertLead({ session_id: JC_SESSION_ID, name: 'Form Lead', city: 'St. George' });
     const row = await viewRow(id);
     expect(row.score).toBeGreaterThan(0);
     expect(row.last_lead_reply_at).toBeNull();
@@ -240,9 +291,41 @@ describe('a new inbound text from the lead moves it up the ranking (SQL)', () =>
   });
 });
 
-describe('grants', () => {
-  it('hands the view to service_role only', () => {
-    expect(MIGRATION).toMatch(/revoke all on public\.client_lead_scores from anon, authenticated;/);
-    expect(MIGRATION).toMatch(/grant select on public\.client_lead_scores to service_role;/);
+describe('access to the view (real roles)', () => {
+  async function asRole(role: string, sql: string) {
+    await db.exec(`set role ${role}`);
+    try { return await db.query(sql); } finally { await db.exec('reset role'); }
+  }
+
+  it.each(['anon', 'authenticated'])('denies %s', async (role) => {
+    await expect(asRole(role, 'select lead_id, score from client_lead_scores'))
+      .rejects.toThrow(/permission denied for view client_lead_scores/);
+  });
+
+  it('lets service_role read it', async () => {
+    const { rows } = await asRole('service_role', 'select lead_id, score from client_lead_scores');
+    expect(rows.length).toBeGreaterThan(0);
+  });
+});
+
+describe('indexes', () => {
+  async function plan(sql: string) {
+    await db.exec('set enable_seqscan = off');
+    try {
+      const { rows } = await db.query<{ 'QUERY PLAN': string }>(`explain ${sql}`);
+      return rows.map(r => r['QUERY PLAN']).join('\n');
+    } finally { await db.exec('reset enable_seqscan'); }
+  }
+
+  it('reply recency can use the partial inbound-lead index', async () => {
+    const p = await plan(`select max(created_at) from lead_messages
+      where lead_id = '00000000-0000-4000-8000-000000000001' and direction = 'inbound' and author = 'lead'`);
+    expect(p).toMatch(/lead_messages_lead_reply_idx/);
+  });
+
+  it('the conversation link can use the last-10-digits expression index', async () => {
+    const p = await plan(`select 1 from jc_sms_conversations c
+      where right(regexp_replace(c.from_number, '[^0-9]', '', 'g'), 10) = '5550000101'`);
+    expect(p).toMatch(/jc_sms_conversations_phone10_idx/);
   });
 });

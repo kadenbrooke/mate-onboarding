@@ -20,15 +20,19 @@
 -- stored, nothing is scheduled, nothing can fall behind.
 --
 -- This migration creates:
---   1. mate_city_tier(city)   -- the First Responder's city -> tier lists
+--   1. mate_city_tier(city), mate_lead_tier(city, address, phone)
+--                             -- city -> tier (First Responder lists + the tiers
+--                                the client set by hand in the lead sheet),
+--                                area-code tier for a lead with no location
 --   2. mate_lead_score(...)   -- the formula, in ONE place. TypeScript twin:
 --                                src/lib/metrics/leadScore.ts, parity-tested
 --                                against this file in a real Postgres
 --                                (src/lib/metrics/leadScore.sql.test.ts).
---   3. client_lead_scores     -- lead_id -> live score, plus the inputs used.
+--   3. two indexes for the view's lookups (reply recency, conversation link)
+--   4. client_lead_scores     -- lead_id -> live score, plus the inputs used.
 --
--- Read-only with respect to existing data: no table is altered, no row is
--- written, no trigger is added. jc_sms_conversations is only read, through the
+-- Read-only with respect to existing data: no column or constraint changes,
+-- no row is written, no trigger is added (two indexes, section 3). jc_sms_conversations is only read, through the
 -- same link the sync trigger uses (J&C session + last 10 phone digits).
 --
 -- Arithmetic is float8 in the same order as the TypeScript twin, and rounding
@@ -36,15 +40,22 @@
 -- Every statement is idempotent and safe to re-run.
 
 -- ---------------------------------------------------------------------------
--- 1. City -> tier
+-- 1. Tier
 -- ---------------------------------------------------------------------------
--- Ported verbatim from the First Responder's "Build Lead Summary" node
--- (n8n workflow MyTAmqQsLDUtAyep, export 2026-09-30): lowercased, trimmed,
--- exact match. Tier 1 = Utah County (around Orem), Tier 2 = Salt Lake Valley.
--- The sheet also carried hand-set Tier 3 / Tier 8; nothing in Mate records
--- those, so this returns 1, 2 or null.
+-- Tier 1 / 2 cities are ported verbatim from the First Responder's "Build Lead
+-- Summary" node (n8n workflow MyTAmqQsLDUtAyep, export 2026-09-30): lowercased,
+-- trimmed, exact match. Tier 1 = Utah County (around Orem), Tier 2 = Salt Lake
+-- Valley.
+--
+-- Tiers 3 to 5 were set by hand in the 'Active Leads' tab of the client's lead
+-- sheet (the one the Ranker reads). The lists below are the distinct
+-- city -> tier pairs recovered from that tab's City and Tier columns on
+-- 2026-10-06; every Tier 1 / 2 city in the sheet is already in the FR lists.
+-- 3 = Summit County, 4 = Davis / Weber, 5 = Box Elder / Cache.
+--
+-- Returned as text because the sheet's tiers include '8b'.
 create or replace function public.mate_city_tier(p_city text)
-returns integer
+returns text
 language sql
 immutable
 parallel safe
@@ -56,13 +67,43 @@ as $$
       'spanish fork','payson','vineyard','saratoga springs','eagle mountain','highland',
       'alpine','cedar hills','mapleton','salem','santaquin','genola','elk ridge',
       'woodland hills'
-    ]) then 1
+    ]) then '1'
     when lower(btrim(coalesce(p_city, ''), E' \t\r\n\f\v')) = any (array[
       'salt lake city','west jordan','south jordan','sandy','draper','riverton','bluffdale',
       'herriman','west valley city','west valley','murray','midvale','taylorsville','holladay',
       'cottonwood heights','millcreek','magna','kearns','south salt lake'
-    ]) then 2
+    ]) then '2'
+    when lower(btrim(coalesce(p_city, ''), E' \t\r\n\f\v')) = any (array[
+      'park city'
+    ]) then '3'
+    when lower(btrim(coalesce(p_city, ''), E' \t\r\n\f\v')) = any (array[
+      'clearfield','clinton','coalville','ogden','roy','south weber'
+    ]) then '4'
+    when lower(btrim(coalesce(p_city, ''), E' \t\r\n\f\v')) = any (array[
+      'beaverdam','corinne','logan','thatcher','tremonton'
+    ]) then '5'
     else null
+  end;
+$$;
+
+-- The lead's tier. By city when it gave one. With neither a city nor an
+-- address, the sheet tiered by phone area code: '7' Wasatch Front (801, 385),
+-- '8' the 435 area code, '8b' out of state. In the sheet those three appear
+-- only on rows with no city.
+create or replace function public.mate_lead_tier(p_city text, p_address text, p_phone text)
+returns text
+language sql
+immutable
+parallel safe
+set search_path = public
+as $$
+  select case
+    when btrim(coalesce(p_city, ''), E' \t\r\n\f\v') <> '' then public.mate_city_tier(p_city)
+    when btrim(coalesce(p_address, ''), E' \t\r\n\f\v') <> '' then null
+    when length(right(regexp_replace(coalesce(p_phone, ''), '[^0-9]', '', 'g'), 10)) < 10 then null
+    when left(right(regexp_replace(p_phone, '[^0-9]', '', 'g'), 10), 3) in ('801', '385') then '7'
+    when left(right(regexp_replace(p_phone, '[^0-9]', '', 'g'), 10), 3) = '435' then '8'
+    else '8b'
   end;
 $$;
 
@@ -92,7 +133,7 @@ as $$
 declare
   ws           constant text := E' \t\r\n\f\v';
   tf           text := lower(coalesce(p_timeframe, ''));
-  tier         integer := public.mate_city_tier(p_city);
+  tier         text := public.mate_lead_tier(p_city, p_address, p_phone);
   v_value      float8;
   v_urgency    float8;
   v_proximity  float8;
@@ -120,12 +161,13 @@ begin
     else 0.4::float8
   end;
 
-  -- proximity: Tier 3 / Tier 8 kept for fidelity; mate_city_tier never yields them.
+  -- proximity: the Ranker matched tier labels by prefix, so 8b scores like 8.
+  -- Tiers 4, 5 and 7 carry no weight of their own.
   v_proximity := case
-    when tier = 1 then 1.0::float8
-    when tier = 2 then 0.7::float8
-    when tier = 3 then 0.5::float8
-    when tier = 8 then 0.1::float8
+    when tier = '1' then 1.0::float8
+    when tier = '2' then 0.7::float8
+    when tier = '3' then 0.5::float8
+    when tier in ('8', '8b') then 0.1::float8
     when btrim(coalesce(p_city, ''), ws) <> '' then 0.4::float8
     else 0.3::float8
   end;
@@ -172,7 +214,24 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------------
--- 3. The live view
+-- 3. Indexes for the view's two lookups
+-- ---------------------------------------------------------------------------
+-- Indexes only: no column, constraint, trigger or row changes on either table.
+-- Both tables are small today (a few hundred messages, under a hundred
+-- conversations), so the brief lock a plain CREATE INDEX takes is negligible.
+
+-- Reply recency: max(created_at) of the lead's own inbound texts.
+create index if not exists lead_messages_lead_reply_idx
+  on public.lead_messages (lead_id, created_at desc)
+  where direction = 'inbound' and author = 'lead';
+
+-- Conversation link: the same normalized last-10-digits expression the view
+-- (and the sync trigger) compares, so the join is an index lookup.
+create index if not exists jc_sms_conversations_phone10_idx
+  on public.jc_sms_conversations ((right(regexp_replace(from_number, '[^0-9]', '', 'g'), 10)));
+
+-- ---------------------------------------------------------------------------
+-- 4. The live view
 -- ---------------------------------------------------------------------------
 -- One row per client_leads row. Inputs come from client_leads first, else from
 -- the mirrored First Responder conversation:
@@ -209,7 +268,7 @@ select
     lr.last_lead_reply_at,
     now()
   )             as score,
-  public.mate_city_tier(coalesce(cl.city, jc.city)) as tier,
+  public.mate_lead_tier(coalesce(cl.city, jc.city), coalesce(cl.address, jc.property_address), cl.phone) as tier,
   jc.timeline   as timeframe,
   lr.last_lead_reply_at
 from public.client_leads cl

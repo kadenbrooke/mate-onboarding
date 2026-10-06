@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
-  leadScore, cityTier, urgencyFor, proximityFor, freshnessFor, replyFor, valueFor,
-  TIER1_CITIES, TIER2_CITIES, type LeadScoreInputs,
+  leadScore, cityTier, phoneTier, leadTier, urgencyFor, proximityFor, freshnessFor, replyFor, valueFor,
+  TIER1_CITIES, TIER2_CITIES, TIER3_CITIES, TIER4_CITIES, TIER5_CITIES, type LeadScoreInputs,
 } from './leadScore';
 import { scoreStats, type Lead } from './leads';
 
@@ -40,28 +40,69 @@ describe('component scores (the Ranker, ported)', () => {
     expect(urgencyFor('whenever')).toBe(0.4);
   });
 
-  it('tier: the First Responder city lists, case and whitespace insensitive, exact match', () => {
-    expect(cityTier('Orem')).toBe(1);
-    expect(cityTier('  saratoga springs ')).toBe(1);
-    expect(cityTier('Sandy')).toBe(2);
-    expect(cityTier('Ogden')).toBeNull();
+  it('city tier: FR lists plus the sheet tiers, case and whitespace insensitive, exact match', () => {
+    expect(cityTier('Orem')).toBe('1');
+    expect(cityTier('  saratoga springs ')).toBe('1');
+    expect(cityTier('Sandy')).toBe('2');
+    expect(cityTier('Park City')).toBe('3');
+    expect(cityTier('Ogden')).toBe('4');
+    expect(cityTier('Logan')).toBe('5');
+    expect(cityTier('St. George')).toBeNull();
     expect(cityTier('Orem, UT')).toBeNull();
     expect(cityTier(null)).toBeNull();
-    for (const c of TIER1_CITIES) expect(cityTier(c)).toBe(1);
-    for (const c of TIER2_CITIES) expect(cityTier(c)).toBe(2);
+    const lists: [readonly string[], string][] = [
+      [TIER1_CITIES, '1'], [TIER2_CITIES, '2'], [TIER3_CITIES, '3'], [TIER4_CITIES, '4'], [TIER5_CITIES, '5'],
+    ];
+    const seen = new Set<string>();
+    for (const [list, tier] of lists) for (const c of list) {
+      expect(seen.has(c), `${c} listed twice`).toBe(false);
+      seen.add(c);
+      expect(cityTier(c)).toBe(tier);
+    }
+  });
+
+  it('area-code tier: 801/385 -> 7, 435 -> 8, anything else -> 8b, needs 10 digits', () => {
+    expect(phoneTier('+18015550100')).toBe('7');
+    expect(phoneTier('(385) 555-0100')).toBe('7');
+    expect(phoneTier('4355550100')).toBe('8');
+    expect(phoneTier('+12125550100')).toBe('8b');
+    expect(phoneTier('5550100')).toBeNull();
+    expect(phoneTier(null)).toBeNull();
+  });
+
+  it('lead tier: city first; area code only with neither city nor address', () => {
+    expect(leadTier('Park City', null, '+14355550100')).toBe('3');
+    expect(leadTier('St. George', null, '+14355550100')).toBeNull();
+    expect(leadTier(null, '1 Test St', '+14355550100')).toBeNull();
+    expect(leadTier(' ', '', '+14355550100')).toBe('8');
+    expect(leadTier(null, null, '+12125550100')).toBe('8b');
+    expect(leadTier(null, null, '+18015550100')).toBe('7');
   });
 
   it('proximity: tier first, then any city at all, then nothing', () => {
-    expect(proximityFor(1, 'Orem')).toBe(1.0);
-    expect(proximityFor(2, 'Sandy')).toBe(0.7);
-    expect(proximityFor(3, 'x')).toBe(0.5);
-    expect(proximityFor(8, 'x')).toBe(0.1);
-    expect(proximityFor(null, 'Ogden')).toBe(0.4);
+    expect(proximityFor('1', 'Orem')).toBe(1.0);
+    expect(proximityFor('2', 'Sandy')).toBe(0.7);
+    expect(proximityFor('3', 'Park City')).toBe(0.5);
+    expect(proximityFor('4', 'Ogden')).toBe(0.4);
+    expect(proximityFor('5', 'Logan')).toBe(0.4);
+    expect(proximityFor('8', null)).toBe(0.1);
+    expect(proximityFor('8b', null)).toBe(0.1);
+    expect(proximityFor('7', null)).toBe(0.3);
+    expect(proximityFor(null, 'St. George')).toBe(0.4);
     expect(proximityFor(null, '  ')).toBe(0.3);
     expect(proximityFor(null, null)).toBe(0.3);
   });
 
-  it('freshness by lead age', () => {
+  it('scores a Park City lead above an untiered city, and an out-of-state no-location lead below nothing', () => {
+    const at = (over: Partial<LeadScoreInputs>) => leadScore({ ...base, ...over }, NOW);
+    expect(at({ city: 'Park City' })).toBeGreaterThan(at({ city: 'St. George' }));
+    expect(at({ phone: '+12125550100' })).toBeLessThan(at({ phone: '5550100' }));
+  });
+
+  it('freshness by lead age, inclusive at 2 / 7 / 14 days', () => {
+    expect(freshnessFor(ago(7), NOW)).toBe(0.7);
+    expect(freshnessFor(ago(14), NOW)).toBe(0.4);
+    expect(freshnessFor(ago(14.001), NOW)).toBe(0.2);
     expect(freshnessFor(ago(1), NOW)).toBe(1.0);
     expect(freshnessFor(ago(2), NOW)).toBe(1.0);
     expect(freshnessFor(ago(6), NOW)).toBe(0.7);
@@ -70,6 +111,10 @@ describe('component scores (the Ranker, ported)', () => {
   });
 
   it('reply by last inbound text from the lead; never replied is 0', () => {
+    expect(replyFor(ago(1), NOW)).toBe(1.0);
+    expect(replyFor(ago(3), NOW)).toBe(0.8);
+    expect(replyFor(ago(7), NOW)).toBe(0.6);
+    expect(replyFor(ago(14), NOW)).toBe(0.4);
     expect(replyFor(null, NOW)).toBe(0);
     expect(replyFor(ago(0.5), NOW)).toBe(1.0);
     expect(replyFor(ago(2), NOW)).toBe(0.8);
