@@ -38,6 +38,7 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName }: {
     }
     // Driver state is per-lead: switching leads must not carry the previous
     // lead's optimistic handler across.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- resets per-lead draft and driver when the lead changes
     setDriver(handler);
     setText('');
   }, [leadId, handler]);

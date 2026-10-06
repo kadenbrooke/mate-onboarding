@@ -7,6 +7,7 @@ export function useCountUp(target: number, ms = 1500) {
   const raf = useRef<number>(0);
   useEffect(() => {
     if (typeof requestAnimationFrame === 'undefined') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- no requestAnimationFrame (SSR/test): jump to the target
       setValue(target);
       return;
     }

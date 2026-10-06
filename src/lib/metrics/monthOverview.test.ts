@@ -44,9 +44,9 @@ describe('monthOverview month-over-month spans', () => {
       lead('2026-07-28T10:00:00Z', 'serviced', 1000), // outside span
     ];
     const events = [
-      { id: 'e1', agent: 'fr', kind: 'call', message: '', created_at: '2026-08-04T10:00:00Z' },
-      { id: 'e2', agent: 'fr', kind: 'call', message: '', created_at: '2026-07-04T10:00:00Z' },
-      { id: 'e3', agent: 'fr', kind: 'call', message: '', created_at: '2026-07-29T10:00:00Z' }, // outside span
+      { id: 'e1', agent: 'first_responder', kind: 'call', message: '', created_at: '2026-08-04T10:00:00Z' },
+      { id: 'e2', agent: 'first_responder', kind: 'call', message: '', created_at: '2026-07-04T10:00:00Z' },
+      { id: 'e3', agent: 'first_responder', kind: 'call', message: '', created_at: '2026-07-29T10:00:00Z' }, // outside span
     ] as ClientEvent[];
     const o = monthOverview(leads, events, NOW);
     expect(o.jobsCompleted.value).toBe(1);

@@ -1,42 +1,26 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { PIPELINE_STATUSES } from '@/lib/metrics/leads';
+import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 
-// Real (non-demo) sessions require a signed-in user before any write; demo
-// sessions stay anonymous for the public Instant Demo flow. Membership-binding
-// (user owns THIS session) is Plan-3 hardening.
+// The caller must hold access to the lead's tenant (membership / internal);
+// demo sessions stay open for the public Instant Demo flow. The tenant is the
+// lead row's session, never the body's session_id.
 // status_updated_at is stamped by DB trigger trg_client_leads_status_ts.
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let body: { status?: string; session_id?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
-  if (!body.session_id) return NextResponse.json({ error: 'session_id required' }, { status: 400 });
   if (!(PIPELINE_STATUSES as readonly string[]).includes(body.status ?? '')) {
     return NextResponse.json({ error: `status must be ${PIPELINE_STATUSES.join('|')}` }, { status: 400 });
   }
 
-  const supabase = createServiceClient();
+  const gate = await checkLeadApiAccess(id, body.session_id);
+  if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
 
-  // Resolve the session to check is_demo before authorizing the write.
-  const { data: sessionRow, error: sessionError } = await supabase
-    .from('onboarding_sessions')
-    .select('is_demo')
-    .eq('id', body.session_id)
-    .maybeSingle();
-
-  if (sessionError) return NextResponse.json({ error: sessionError.message }, { status: 500 });
-  if (!sessionRow) return NextResponse.json({ error: 'session not found' }, { status: 404 });
-
-  if (!sessionRow.is_demo) {
-    const ssr = await createClient();
-    const { data: { user } } = await ssr.auth.getUser();
-    if (!user) return NextResponse.json({ error: 'Sign in required.' }, { status: 401 });
-  }
-
-  const { error } = await supabase.from('client_leads')
+  const { error } = await createServiceClient().from('client_leads')
     .update({ status: body.status })
-    .eq('id', id).eq('session_id', body.session_id);
+    .eq('id', id).eq('session_id', gate.lead.session_id);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

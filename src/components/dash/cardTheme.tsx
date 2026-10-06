@@ -58,6 +58,7 @@ export function useCardTheme(key: string | undefined, defaultDark = false) {
     if (!key) return;
     try {
       const stored = window.localStorage.getItem(STORAGE_PREFIX + key);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates the saved theme from localStorage after mount
       if (stored === 'dark') setDark(true);
       else if (stored === 'light') setDark(false);
     } catch { /* storage unavailable (private mode): session-only toggle */ }

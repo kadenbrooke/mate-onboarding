@@ -93,6 +93,7 @@ export function Ticker({ events, sessionId, leads = [] }: {
   const [held, setHeld] = useState<ClientEvent[]>(events);
   // A new server render (navigation, refresh) should win over stale polled
   // state rather than being merged behind it.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- a new server snapshot must replace stale polled state
   useEffect(() => { setHeld(events); }, [events]);
 
   const groups = rollupEvents(held);
@@ -101,8 +102,10 @@ export function Ticker({ events, sessionId, leads = [] }: {
   // in a ref because comparing against previous render output is exactly what a
   // ref is for, and putting it in state would loop.
   const prevGroups = useRef<TickerGroup[]>([]);
+  // eslint-disable-next-line react-hooks/refs -- diffing against the previous render is what this ref is for
   const entering = enteringKeys(prevGroups.current, groups);
   // First paint is not an arrival: the whole strip would flare at once.
+  // eslint-disable-next-line react-hooks/refs -- same previous-render ref as above
   const isFirstPaint = prevGroups.current.length === 0;
   useEffect(() => { prevGroups.current = groups; });
 

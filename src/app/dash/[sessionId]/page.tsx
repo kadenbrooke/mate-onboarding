@@ -108,6 +108,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       .from('client_events')
       .select('id', { count: 'exact', head: true })
       .eq('session_id', sessionId)
+      // eslint-disable-next-line react-hooks/purity -- server component, rendered per request; "now" is intended
       .gte('created_at', new Date(Date.now() - 7 * 86400000).toISOString()),
     // RescueRing's denominator: how many missed calls this session has EVER
     // recorded. A count query, not a slice of the 50-row events fetch above --

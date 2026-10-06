@@ -26,7 +26,7 @@ import { materialsForCollected } from "@/lib/materials"
 // 'cold_outreach' by that trigger) and the client lands on the delivery board.
 const SIGNED_PAID_STAGE_ID = "37c2431e-a747-410d-a3c3-2ae0ed901fd4"
 
-type Collected = Record<string, any>
+type Collected = Record<string, unknown>
 
 interface CompanyBlob {
   name?: string

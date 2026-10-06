@@ -34,6 +34,7 @@ export function AssistantView({ sessionId }: { sessionId: string }) {
     if (res.ok) setChats((await res.json()).chats ?? []);
   }, [sessionId]);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- loadChats only sets state after an awaited fetch
   useEffect(() => { void loadChats(); }, [loadChats]);
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });

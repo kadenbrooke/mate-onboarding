@@ -204,6 +204,7 @@ function ScrubLine({ series, labels }: { series: number[]; labels: string[] }) {
 export function TrendCard({ leads }: { leads: Lead[] }) {
   const [chip, setChip] = useState<Chip>('WEEK');
   const [mounted, setMounted] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag, avoids a hydration mismatch
   useEffect(() => { setMounted(true); }, []);
 
   // Custom range state, persisted in the component only. Defaults to the last

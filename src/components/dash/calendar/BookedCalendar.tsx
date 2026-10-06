@@ -82,6 +82,7 @@ export function BookedCalendar({ appointments, showLabel = true, wide = false }:
   const [hoverKey, setHoverKey] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag, avoids a hydration mismatch
   useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {

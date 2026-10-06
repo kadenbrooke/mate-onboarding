@@ -22,6 +22,7 @@ export function useDashLayout(sessionId: string, defaultLayout: DashLayout) {
   useEffect(() => {
     const stored = loadLayout(sessionId);
     if (stored) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrates the saved layout from localStorage after mount
       setLayoutState(stored);
       setIsCustomized(true);
     } else {
