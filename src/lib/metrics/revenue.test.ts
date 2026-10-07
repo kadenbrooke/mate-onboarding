@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
-  revenueRowsFromLeads, summarizeReturn, metaSpend30dCents, addMonthsUtc, type SourceRevenueRow,
+  revenueRowsFromLeads, summarizeReturn, metaSpend30dCents, fetchMetaSpend30dCents, addMonthsUtc,
+  type SourceRevenueRow, type LeadPayment, type AdSpendQuery,
 } from './revenue';
 import { PARTNER_CHANNEL_SOURCES, channelOwner, partnerShareCents } from './partnerChannels';
 import type { Lead } from './leads';
@@ -54,21 +55,22 @@ describe('addMonthsUtc (Postgres month arithmetic in a UTC session)', () => {
 });
 
 describe('return per source', () => {
-  it('recording a won job with cash updates that source and the 15% figure', () => {
+  const pay = (l: Lead, amount_cents: number, paid_at: string): LeadPayment => ({ lead_id: l.id, amount_cents, paid_at });
+
+  it('recording a won job with a payment updates that source and the 15% figure', () => {
     const meta = lead({ source: 'meta' });
     const leads = [meta, lead({ source: 'meta' }), lead({ source: 'call' }), lead({ source: 'web_form' })];
 
-    const before = summarizeReturn(revenueRowsFromLeads(leads, NOW));
+    const before = summarizeReturn(revenueRowsFromLeads(leads, [], NOW));
     expect(before.hasOutcomes).toBe(false);
     expect(before.partner).toMatchObject({ collectedCents: 0, shareCents: 0 });
 
-    // Practice entry: the Meta lead closes at $6,400 and $3,200 is in.
+    // Practice entry: the Meta lead closes at $6,400 and a $3,200 payment is in.
     meta.job_outcome = 'won';
     meta.job_value_cents = 640000;
-    meta.collected_cents = 320000;
-    meta.collected_at = ago(2);
+    const payments = [pay(meta, 320000, ago(2))];
 
-    const after = summarizeReturn(revenueRowsFromLeads(leads, NOW), { metaSpend30dCents: 80000 });
+    const after = summarizeReturn(revenueRowsFromLeads(leads, payments, NOW), { metaSpend30dCents: 80000 });
     const row = after.rows.find(r => r.source === 'meta')!;
     expect(row).toMatchObject({
       owner: 'partner', leads: 2, won: 1, lost: 0, winRate: 50,
@@ -80,13 +82,38 @@ describe('return per source', () => {
     expect(after.totals).toEqual({ leads: 4, won: 1, lost: 0, jobValueCents: 640000, collectedCents: 320000 });
   });
 
+  it('$5,000 paid two months ago plus $1,000 this week is $1,000 in the last 30 days, not $6,000', () => {
+    const meta = lead({ source: 'meta', created_at: ago(90), job_outcome: 'won', job_value_cents: 600000 });
+    const rows = revenueRowsFromLeads([meta], [pay(meta, 500000, ago(60)), pay(meta, 100000, ago(3))], NOW);
+    expect(rows[0]).toMatchObject({ collected_cents: 600000, collected_in_window_cents: 600000, collected_30d_cents: 100000 });
+    const s = summarizeReturn(rows, { metaSpend30dCents: 50000 });
+    expect(s.meta).toMatchObject({ collected30dCents: 100000, returnPerDollar: 2 });
+    expect(s.partner).toMatchObject({ collectedCents: 600000, shareCents: 90000 });
+  });
+
+  it('a job paid across the 24-month line counts only the payments inside it', () => {
+    const l = lead({ source: 'web_form', created_at: '2024-03-31T09:00:00.000Z', job_outcome: 'won' });
+    const rows = revenueRowsFromLeads([l], [
+      pay(l, 300000, '2024-05-01T12:00:00.000Z'), // deposit, inside
+      pay(l, 200000, '2026-03-31T08:59:59.000Z'), // one second inside
+      pay(l, 150000, '2026-03-31T09:00:00.000Z'), // exactly 24 months: outside
+      pay(l, 50000, '2026-06-01T12:00:00.000Z'),  // well outside
+    ], NOW);
+    expect(rows[0]).toMatchObject({ collected_cents: 700000, collected_in_window_cents: 500000 });
+    expect(summarizeReturn(rows).partner).toMatchObject({ collectedCents: 500000, shareCents: 75000 });
+  });
+
+  it('a refund counts in the window it happened in', () => {
+    const l = lead({ source: 'meta', created_at: ago(120), job_outcome: 'won' });
+    const rows = revenueRowsFromLeads([l], [pay(l, 400000, ago(100)), pay(l, -50000, ago(5))], NOW);
+    expect(rows[0]).toMatchObject({ collected_cents: 350000, collected_in_window_cents: 350000, collected_30d_cents: -50000 });
+  });
+
   it('company-channel cash shows in the source return but never in the 15% basis', () => {
-    const leads = [
-      lead({ source: 'call', job_outcome: 'won', job_value_cents: 900000, collected_cents: 900000, collected_at: ago(1) }),
-      lead({ source: 'web_form', job_outcome: 'won', job_value_cents: 200000, collected_cents: 100000, collected_at: ago(1) }),
-      lead({ source: 'text', job_outcome: 'lost' }),
-    ];
-    const s = summarizeReturn(revenueRowsFromLeads(leads, NOW));
+    const call = lead({ source: 'call', job_outcome: 'won', job_value_cents: 900000 });
+    const web = lead({ source: 'web_form', job_outcome: 'won', job_value_cents: 200000 });
+    const leads = [call, web, lead({ source: 'text', job_outcome: 'lost' })];
+    const s = summarizeReturn(revenueRowsFromLeads(leads, [pay(call, 900000, ago(1)), pay(web, 100000, ago(1))], NOW));
     expect(s.rows.find(r => r.source === 'call')).toMatchObject({ owner: 'company', collected_cents: 900000 });
     expect(s.rows.find(r => r.source === 'text')).toMatchObject({ lost: 1, winRate: 0 });
     expect(s.partner.collectedCents).toBe(100000);
@@ -94,22 +121,10 @@ describe('return per source', () => {
     expect(s.hasOutcomes).toBe(true);
   });
 
-  it('cash collected 24+ months after first contact is outside the window', () => {
-    const leads = [
-      lead({ source: 'meta', created_at: '2024-01-15T12:00:00.000Z', job_outcome: 'won',
-        collected_cents: 50000, collected_at: '2026-01-15T12:00:00.000Z' }),
-      lead({ source: 'meta', created_at: '2024-01-15T12:00:01.000Z', job_outcome: 'won',
-        collected_cents: 70000, collected_at: '2026-01-15T12:00:00.000Z' }),
-    ];
-    const [row] = revenueRowsFromLeads(leads, NOW);
-    expect(row.collected_cents).toBe(120000);
-    expect(row.collected_in_window_cents).toBe(70000);
-    expect(row.collected_30d_cents).toBe(0);
-  });
-
-  it('ignores money on a lead that is not won (defensive, the DB forbids it)', () => {
-    const [row] = revenueRowsFromLeads([lead({ source: 'meta', job_outcome: 'lost', collected_cents: 100, collected_at: ago(1) })], NOW);
-    expect(row).toMatchObject({ lost: 1, won: 0, collected_cents: 0 });
+  it('ignores payments for leads it was not given', () => {
+    const l = lead({ source: 'meta', job_outcome: 'won' });
+    const [row] = revenueRowsFromLeads([l], [{ lead_id: 'someone-else', amount_cents: 999, paid_at: ago(1) }], NOW);
+    expect(row.collected_cents).toBe(0);
   });
 
   it('no Meta spend means no return-per-dollar, not a divide by zero', () => {
@@ -143,5 +158,56 @@ describe('metaSpend30dCents', () => {
   it('is null without Meta rows', () => {
     expect(metaSpend30dCents([])).toBeNull();
     expect(metaSpend30dCents([row('g', '2026-10-06', 1, 'google')])).toBeNull();
+  });
+});
+
+describe('fetchMetaSpend30dCents (no row cap)', () => {
+  type Row = { platform: 'meta' | 'google'; campaign_id: string; spend_cents: number; date_pulled: string };
+  // A structural stub of the two ad_metrics reads, over invented rows.
+  function stub(rows: Row[], fail: 'newest' | 'pull' | null = null) {
+    const calls: string[] = [];
+    const q = {
+      from: () => ({
+        select: (cols: string) => ({
+          eq: () => ({
+            eq: () => ({
+              order: () => ({
+                limit: async () => {
+                  calls.push(cols);
+                  if (fail === 'newest') return { data: null, error: { message: 'boom' } };
+                  const meta = rows.filter(r => r.platform === 'meta').sort((a, b) => b.date_pulled.localeCompare(a.date_pulled));
+                  return { data: meta.slice(0, 1).map(r => ({ date_pulled: r.date_pulled })), error: null };
+                },
+              }),
+              eq: async (_c: string, day: string) => {
+                calls.push(cols);
+                if (fail === 'pull') return { data: null, error: { message: 'boom' } };
+                return { data: rows.filter(r => r.platform === 'meta' && r.date_pulled === day), error: null };
+              },
+            }),
+          }),
+        }),
+      }),
+    };
+    return { q: q as unknown as AdSpendQuery, calls };
+  }
+
+  it('sums every campaign in the newest pull, however many older rows exist', async () => {
+    const rows: Row[] = [];
+    // 150 old daily snapshots would have pushed the newest pull past a 100-row cap.
+    for (let d = 1; d <= 150; d++) rows.push({ platform: 'meta', campaign_id: `c${d % 3}`, spend_cents: 99999, date_pulled: `2026-0${1 + (d % 8)}-01` });
+    for (let c = 0; c < 120; c++) rows.push({ platform: 'meta', campaign_id: `new${c}`, spend_cents: 1000, date_pulled: '2026-10-06' });
+    rows.push({ platform: 'google', campaign_id: 'g', spend_cents: 5, date_pulled: '2026-10-07' });
+    const { q } = stub(rows);
+    expect(await fetchMetaSpend30dCents(q, 's1')).toBe(120000);
+  });
+
+  it('is null without Meta data or when a read fails', async () => {
+    expect(await fetchMetaSpend30dCents(stub([]).q, 's1')).toBeNull();
+    const rows: Row[] = [{ platform: 'meta', campaign_id: 'c', spend_cents: 1, date_pulled: '2026-10-06' }];
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    expect(await fetchMetaSpend30dCents(stub(rows, 'newest').q, 's1')).toBeNull();
+    expect(await fetchMetaSpend30dCents(stub(rows, 'pull').q, 's1')).toBeNull();
+    err.mockRestore();
   });
 });

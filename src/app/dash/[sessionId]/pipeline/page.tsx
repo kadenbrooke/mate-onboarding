@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import type { Lead } from '@/lib/metrics/leads';
 import { LeadsTable } from '@/components/dash/leads/LeadsTable';
 import { LeadThread } from '@/components/dash/leads/LeadThread';
-import { JobOutcomePanel, type OutcomeFields } from '@/components/dash/leads/JobOutcomePanel';
+import { JobOutcomePanel, type OutcomeFields, type PanelPayment } from '@/components/dash/leads/JobOutcomePanel';
 import { leadLabel } from '@/components/dash/leads/leadName';
 import { parseSortParam } from '@/components/dash/leads/leadsControls';
 import type { LeadMessage } from '@/lib/agent/messages';
@@ -76,21 +76,30 @@ export default async function PipelinePage({ params, searchParams }: {
     }
   }
 
-  // Job outcome for the spotlighted lead (migration 0021), taken from the row
-  // already loaded with select('*') rather than a second query naming the new
-  // columns: until 0021 is applied the columns are simply absent, the panel
-  // stays hidden, and nothing else on the page breaks. Demo dashboards never
-  // record a sale (the outcome route refuses them too).
-  const spotlightId = thread?.leadId;
-  const spotlightRow = spotlightId ? loadedLeads.find(l => l.id === spotlightId) : undefined;
-  const outcome: OutcomeFields | null = access !== 'demo' && spotlightRow && 'job_outcome' in spotlightRow
-    ? {
-        job_outcome: spotlightRow.job_outcome ?? null,
-        job_value_cents: spotlightRow.job_value_cents ?? null,
-        collected_cents: spotlightRow.collected_cents ?? null,
-        lost_reason: spotlightRow.lost_reason ?? null,
+  // Job outcome + payments for the spotlighted lead (migration 0021). The
+  // outcome comes from a select('*') of that one lead rather than a query
+  // naming the new columns: until 0021 is applied the columns are simply
+  // absent, the panel stays hidden, and nothing else on the page breaks. Read
+  // by id, so a lead older than the 500 the table loads still gets its panel.
+  // Demo dashboards never record a sale (the outcome route refuses them too).
+  let outcome: OutcomeFields | null = null;
+  let payments: PanelPayment[] = [];
+  if (thread && access !== 'demo') {
+    const { data: row } = await supabase.from('client_leads')
+      .select('*').eq('id', thread.leadId).eq('session_id', sessionId).maybeSingle();
+    if (row && 'job_outcome' in row) {
+      const r = row as Lead;
+      const { data: paid, error: paidError } = await supabase.from('client_lead_payments')
+        .select('id, amount_cents, paid_at').eq('lead_id', r.id).eq('session_id', sessionId)
+        .order('paid_at', { ascending: true });
+      // A failed payments read hides the panel: showing "$0 collected" over
+      // money that is really there would invite a duplicate entry.
+      if (!paidError) {
+        outcome = { job_outcome: r.job_outcome ?? null, job_value_cents: r.job_value_cents ?? null, lost_reason: r.lost_reason ?? null };
+        payments = ((paid ?? []) as PanelPayment[]).map(p => ({ ...p, amount_cents: Number(p.amount_cents) }));
       }
-    : null;
+    }
+  }
 
   return (
     <div>
@@ -119,7 +128,7 @@ export default async function PipelinePage({ params, searchParams }: {
           />
           {outcome && (
             <div style={{ marginTop: 8 }}>
-              <JobOutcomePanel key={thread.leadId} leadId={thread.leadId} sessionId={sessionId} initial={outcome} />
+              <JobOutcomePanel key={thread.leadId} leadId={thread.leadId} sessionId={sessionId} initial={outcome} payments={payments} />
             </div>
           )}
         </div>

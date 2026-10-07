@@ -12,7 +12,7 @@ import { fetchMoneyTotals, type MoneyQuery } from '@/lib/metrics/money';
 import { zoneLocks } from '@/lib/dash/locks';
 import { gateLockedZoneData } from '@/lib/dash/gate';
 import { fetchLiveScores, mergeLiveScores, type LiveScoreQuery } from '@/lib/leads/liveScores';
-import { fetchRevenueBySource, metaSpend30dCents, summarizeReturn, type RevenueQuery } from '@/lib/metrics/revenue';
+import { fetchMetaSpend30dCents, fetchRevenueBySource, summarizeReturn, type AdSpendQuery, type RevenueQuery } from '@/lib/metrics/revenue';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
@@ -160,9 +160,13 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   // book of business from a PII-free view, not the 500 leads above, because
   // the partner-share basis must not quietly drop older jobs. null until 0021
   // is applied (or on a failed read), which hides the card.
-  const [liveScores, revenueRows] = await Promise.all([
+  const [liveScores, revenueRows, metaSpend] = await Promise.all([
     fetchLiveScores(supabase as unknown as LiveScoreQuery, sessionId, loadedLeads.map(l => l.id)),
     fetchRevenueBySource(supabase as unknown as RevenueQuery, sessionId),
+    // Meta's 30-day spend for the return card, read on its own: the ad_metrics
+    // fetch above is capped at 100 rows for the Ad Performance zone, and a cap
+    // that cut the newest pull short would understate spend.
+    fetchMetaSpend30dCents(supabase as unknown as AdSpendQuery, sessionId),
   ]);
 
   // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
@@ -177,10 +181,8 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   }
   const latestAdRows = allAdRows.filter((r) => newestPerPlatform.get(r.platform) === r.date_pulled);
   const ads = latestAdRows.length ? adTotals(latestAdRows) : null;
-  // Meta's 30-day spend for the return card: each campaign's newest rolling
-  // snapshot, never a sum across days (see metaSpend30dCents).
   const returns = revenueRows
-    ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend30dCents(allAdRows) })
+    ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend })
     : null;
 
   // Zone lock state, derived from signals already on the session row. `ads` is

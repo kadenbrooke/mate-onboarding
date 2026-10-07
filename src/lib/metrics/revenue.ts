@@ -3,12 +3,16 @@
 // Return per lead source, and the partner revenue-share basis.
 //
 // Inputs are the job outcomes the client enters per lead (migration 0021:
-// job_outcome, job_value_cents, collected_cents, collected_at). Two ways in:
+// job_outcome, job_value_cents on client_leads) and the cash ledger
+// (client_lead_payments: one row per payment, negative for a refund). Every
+// cash window sums only the payments dated inside it; a lead has no stored
+// running total to go stale. Two ways in:
 //   * the client_lead_revenue_by_source view (0021), which sums the WHOLE book
-//     of business per source in a few PII-free rows. /dash reads this.
-//   * revenueRowsFromLeads(), the TypeScript twin of that view over an
-//     already-loaded lead list. The assistant snapshot uses it, and
-//     revenue.sql.test.ts holds the two to the same numbers in a real Postgres.
+//     of business per source in a few PII-free rows. /dash and the assistant
+//     read this.
+//   * revenueRowsFromLeads(), the TypeScript twin of that view over loaded
+//     leads and payments. revenue.sql.test.ts holds the two to the same
+//     numbers in a real Postgres.
 // Both produce SourceRevenueRow[]; summarizeReturn() turns either into the card.
 //
 // The 15% figure is an ESTIMATE. The growth-partner agreement is a draft, and
@@ -32,7 +36,7 @@ export type SourceRevenueRow = {
   collected_cents: number;
   /** Cash collected within PARTNER_WINDOW_MONTHS of the lead's first contact. */
   collected_in_window_cents: number;
-  /** Cash whose collected_at falls in the last 30 days. */
+  /** Payments dated in the last 30 days. */
   collected_30d_cents: number;
 };
 
@@ -58,14 +62,26 @@ export function addMonthsUtc(ts: Date, months: number): Date {
 
 const cents = (v: number | null | undefined) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+/** One client_lead_payments row, as far as the math needs it. */
+export type LeadPayment = { lead_id: string; amount_cents: number; paid_at: string };
+
 /**
- * The TypeScript twin of client_lead_revenue_by_source for one tenant's leads.
- * Callers pass leads already filtered to the tenant and to is_test = false
- * (every lead query in the app does both). Rows come back in first-seen order.
+ * The TypeScript twin of client_lead_revenue_by_source for one tenant's leads
+ * and their payments. Callers pass leads already filtered to the tenant and to
+ * is_test = false (every lead query in the app does both). Payments for leads
+ * not in `leads` are ignored, as the view's join ignores them. Rows come back
+ * in first-seen order.
  */
-export function revenueRowsFromLeads(leads: Lead[], now = new Date()): SourceRevenueRow[] {
+export function revenueRowsFromLeads(
+  leads: Lead[], payments: LeadPayment[] = [], now = new Date(),
+): SourceRevenueRow[] {
   const bySource = new Map<string, SourceRevenueRow>();
   const since30d = now.getTime() - 30 * DAY_MS;
+  const paymentsByLead = new Map<string, LeadPayment[]>();
+  for (const p of payments) {
+    const list = paymentsByLead.get(p.lead_id);
+    if (list) list.push(p); else paymentsByLead.set(p.lead_id, [p]);
+  }
   for (const l of leads) {
     let row = bySource.get(l.source);
     if (!row) {
@@ -77,17 +93,20 @@ export function revenueRowsFromLeads(leads: Lead[], now = new Date()): SourceRev
     }
     row.leads += 1;
     if (l.job_outcome === 'lost') row.lost += 1;
-    if (l.job_outcome !== 'won') continue;
-    row.won += 1;
-    row.job_value_cents += cents(l.job_value_cents);
-    const collected = cents(l.collected_cents);
-    row.collected_cents += collected;
-    if (!collected || !l.collected_at) continue;
-    const at = new Date(l.collected_at).getTime();
-    if (at < addMonthsUtc(new Date(l.created_at), PARTNER_WINDOW_MONTHS).getTime()) {
-      row.collected_in_window_cents += collected;
+    if (l.job_outcome === 'won') {
+      row.won += 1;
+      row.job_value_cents += cents(l.job_value_cents);
     }
-    if (at >= since30d) row.collected_30d_cents += collected;
+    // Each payment lands in a window by its OWN date. The DB only lets
+    // payments onto a won lead, so no outcome check here.
+    const windowEnd = addMonthsUtc(new Date(l.created_at), PARTNER_WINDOW_MONTHS).getTime();
+    for (const p of paymentsByLead.get(l.id) ?? []) {
+      const amount = cents(p.amount_cents);
+      const at = new Date(p.paid_at).getTime();
+      row.collected_cents += amount;
+      if (at < windowEnd) row.collected_in_window_cents += amount;
+      if (at >= since30d) row.collected_30d_cents += amount;
+    }
   }
   return [...bySource.values()];
 }
@@ -225,4 +244,52 @@ export async function fetchRevenueBySource(
     return null;
   }
   return data;
+}
+
+// ---------------------------------------------------------------------------
+// Reading Meta spend
+// ---------------------------------------------------------------------------
+
+type AdSpendRow = Pick<AdMetricRow, 'platform' | 'campaign_id' | 'spend_cents' | 'date_pulled'>;
+
+/** The slice of a Supabase client this needs (structural, so tests can stub it). */
+export type AdSpendQuery = {
+  from(table: 'ad_metrics'): {
+    select(cols: 'date_pulled' | 'platform, campaign_id, spend_cents, date_pulled'): {
+      eq(col: 'session_id', v: string): {
+        eq(col: 'platform', v: 'meta'): {
+          order(col: 'date_pulled', o: { ascending: false }): {
+            limit(n: 1): PromiseLike<{ data: { date_pulled: string }[] | null; error: QueryError | null }>;
+          };
+          eq(col: 'date_pulled', v: string): PromiseLike<{ data: AdSpendRow[] | null; error: QueryError | null }>;
+        };
+      };
+    };
+  };
+};
+
+/**
+ * Meta's 30-day spend for one tenant, read without the dashboard's 100-row
+ * cap: find the newest Meta pull date, then read every campaign row from that
+ * pull (one row per campaign, per the (session, platform, campaign, day)
+ * unique index). Same answer as metaSpend30dCents over the full history. null
+ * when there is no Meta data or a read failed (logged).
+ */
+export async function fetchMetaSpend30dCents(supabase: AdSpendQuery, sessionId: string): Promise<number | null> {
+  const newest = await supabase.from('ad_metrics').select('date_pulled')
+    .eq('session_id', sessionId).eq('platform', 'meta')
+    .order('date_pulled', { ascending: false }).limit(1);
+  if (newest.error) {
+    console.error('[revenue] ad_metrics newest Meta pull read failed:', newest.error.code ?? '', newest.error.message);
+    return null;
+  }
+  const day = newest.data?.[0]?.date_pulled;
+  if (!day) return null;
+  const pull = await supabase.from('ad_metrics').select('platform, campaign_id, spend_cents, date_pulled')
+    .eq('session_id', sessionId).eq('platform', 'meta').eq('date_pulled', day);
+  if (pull.error || !pull.data) {
+    console.error('[revenue] ad_metrics Meta pull read failed:', pull.error?.code ?? '', pull.error?.message ?? 'no data');
+    return null;
+  }
+  return metaSpend30dCents(pull.data);
 }

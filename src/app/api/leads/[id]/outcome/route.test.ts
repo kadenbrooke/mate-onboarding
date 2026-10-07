@@ -17,7 +17,7 @@ const req = (body: unknown) => new Request('http://x', {
 });
 const call = (leadId: string, body: unknown) => PATCH(req(body) as never, { params: Promise.resolve({ id: leadId }) });
 
-const WON = { outcome: 'won', job_value_cents: 640000, collected_cents: 320000, session_id: TENANT_A };
+const WON = { outcome: 'won', job_value_cents: 640000, session_id: TENANT_A };
 
 beforeEach(() => {
   h.db = createFakeDb(seedTenants());
@@ -39,8 +39,10 @@ describe('PATCH /api/leads/[id]/outcome', () => {
   });
 
   it('rejects money on a lost job and bad amounts with 400', async () => {
-    expect((await call('lead-a', { outcome: 'lost', collected_cents: 100 })).status).toBe(400);
-    expect((await call('lead-a', { outcome: 'won', collected_cents: -1 })).status).toBe(400);
+    expect((await call('lead-a', { outcome: 'lost', job_value_cents: 100 })).status).toBe(400);
+    expect((await call('lead-a', { outcome: 'won', job_value_cents: -1 })).status).toBe(400);
+    // Cash is entered as payments, never as a total on the outcome.
+    expect((await call('lead-a', { outcome: 'won', collected_cents: 320000 })).status).toBe(400);
     expect((await call('lead-a', { outcome: 'won', job_value_cents: 12.5 })).status).toBe(400);
     expect((await call('lead-a', { outcome: 'won', lost_reason: 'price' })).status).toBe(400);
     expect(h.db.writes).toEqual([]);
@@ -85,7 +87,7 @@ describe('PATCH /api/leads/[id]/outcome', () => {
     expect(h.db.writes).toEqual([{
       table: 'client_leads', op: 'update',
       values: {
-        job_outcome: 'won', job_value_cents: 640000, collected_cents: 320000, lost_reason: null,
+        job_outcome: 'won', job_value_cents: 640000, lost_reason: null,
         outcome_recorded_by: USERS.memberA.id,
       },
       filters: [['id', 'lead-a'], ['session_id', TENANT_A]],
@@ -99,7 +101,7 @@ describe('PATCH /api/leads/[id]/outcome', () => {
     expect(h.db.writes).toEqual([{
       table: 'client_leads', op: 'update',
       values: {
-        job_outcome: 'lost', job_value_cents: null, collected_cents: null, lost_reason: 'went with a cheaper bid',
+        job_outcome: 'lost', job_value_cents: null, lost_reason: 'went with a cheaper bid',
         outcome_recorded_by: USERS.internal.id,
       },
       filters: [['id', 'lead-b'], ['session_id', TENANT_B]],
@@ -111,8 +113,25 @@ describe('PATCH /api/leads/[id]/outcome', () => {
     expect(res.status).toBe(200);
     expect(h.db.writes).toEqual([{
       table: 'client_leads', op: 'update',
-      values: { job_outcome: null, job_value_cents: null, collected_cents: null, lost_reason: null, outcome_recorded_by: null },
+      values: { job_outcome: null, job_value_cents: null, lost_reason: null, outcome_recorded_by: null },
       filters: [['id', 'lead-a'], ['session_id', TENANT_A]],
     }]);
+  });
+
+  it('refuses to change a won job that has payments (409), without writing', async () => {
+    h.db.tables.client_lead_payments = [{ id: 'pay-1', lead_id: 'lead-a', session_id: TENANT_A, amount_cents: 100000 }];
+    for (const body of [{ outcome: null }, { outcome: 'lost' }]) {
+      const res = await call('lead-a', { ...body, session_id: TENANT_A });
+      expect(res.status).toBe(409);
+      expect((await res.json()).error).toMatch(/payments recorded/);
+    }
+    expect(h.db.writes).toEqual([]);
+    // Updating the sold price of the won job is still fine.
+    expect((await call('lead-a', WON)).status).toBe(200);
+  });
+
+  it('a payment on another tenant\'s lead does not block this one', async () => {
+    h.db.tables.client_lead_payments = [{ id: 'pay-1', lead_id: 'lead-a', session_id: TENANT_B, amount_cents: 100000 }];
+    expect((await call('lead-a', { outcome: null, session_id: TENANT_A })).status).toBe(200);
   });
 });

@@ -2,6 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { assertAssistantAccess } from '@/lib/assistant/access';
 import { buildAssistantContext } from '@/lib/assistant/context';
+import { fetchRevenueBySource, type RevenueQuery } from '@/lib/metrics/revenue';
 import { portkeyChatStream, type ChatMessage } from '@/lib/demo/portkey';
 import type { Lead } from '@/lib/metrics/leads';
 
@@ -32,7 +33,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'chat not found' }, { status: 404 });
   }
 
-  const [{ data: session }, { data: leadsData }, { data: history }] = await Promise.all([
+  const [{ data: session }, { data: leadsData }, { data: history }, revenueRows] = await Promise.all([
     supabase.from('onboarding_sessions').select('collected').eq('id', session_id).maybeSingle(),
     // is_test excluded: the assistant answers questions about the client's book of
     // business, so reseller/founder demo leads must not show up in its context
@@ -40,6 +41,8 @@ export async function POST(request: NextRequest) {
     supabase.from('client_leads').select('*').eq('session_id', session_id).eq('is_test', false).limit(500),
     supabase.from('assistant_messages').select('role, content').eq('chat_id', chat_id)
       .order('created_at', { ascending: true }).limit(40),
+    // Return by lead source over the whole book (migration 0021 view).
+    fetchRevenueBySource(supabase as unknown as RevenueQuery, session_id),
   ]);
 
   let businessName: string | null = null;
@@ -47,7 +50,7 @@ export async function POST(request: NextRequest) {
   const company = collected?.company as { name?: string } | undefined;
   if (company?.name) businessName = company.name;
 
-  const system = buildAssistantContext((leadsData ?? []) as Lead[], businessName);
+  const system = buildAssistantContext((leadsData ?? []) as Lead[], businessName, revenueRows);
   const priorMsgs: ChatMessage[] = (history ?? []).map(m => ({ role: m.role as 'user' | 'assistant', content: m.content }));
   const messages: ChatMessage[] = [...priorMsgs, { role: 'user', content: content.trim() }];
 

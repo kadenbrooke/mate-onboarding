@@ -1,16 +1,16 @@
 import { describe, it, expect } from 'vitest';
-import { parseOutcomeBody, parseDollarsToCents, centsToInput, MAX_JOB_CENTS } from './outcome';
+import { parseOutcomeBody, parsePaymentBody, parseDollarsToCents, centsToInput, MAX_JOB_CENTS } from './outcome';
 
 describe('parseOutcomeBody', () => {
-  it('accepts a won job with value and cash', () => {
-    expect(parseOutcomeBody({ outcome: 'won', job_value_cents: 500000, collected_cents: 250000 })).toEqual({
-      ok: true, values: { job_outcome: 'won', job_value_cents: 500000, collected_cents: 250000, lost_reason: null },
+  it('accepts a won job with a sold price', () => {
+    expect(parseOutcomeBody({ outcome: 'won', job_value_cents: 500000 })).toEqual({
+      ok: true, values: { job_outcome: 'won', job_value_cents: 500000, lost_reason: null },
     });
   });
 
   it('accepts a won job with nothing entered yet', () => {
     expect(parseOutcomeBody({ outcome: 'won' })).toEqual({
-      ok: true, values: { job_outcome: 'won', job_value_cents: null, collected_cents: null, lost_reason: null },
+      ok: true, values: { job_outcome: 'won', job_value_cents: null, lost_reason: null },
     });
   });
 
@@ -21,19 +21,48 @@ describe('parseOutcomeBody', () => {
 
   it('null clears everything', () => {
     expect(parseOutcomeBody({ outcome: null })).toEqual({
-      ok: true, values: { job_outcome: null, job_value_cents: null, collected_cents: null, lost_reason: null },
+      ok: true, values: { job_outcome: null, job_value_cents: null, lost_reason: null },
     });
   });
 
   it('rejects what the 0021 CHECKs would reject', () => {
     const bad = [
       null, 'won', {}, { outcome: 'serviced' }, { outcome: 'won', job_value_cents: -5 },
-      { outcome: 'won', collected_cents: 1.5 }, { outcome: 'won', collected_cents: '100' },
-      { outcome: 'won', collected_cents: MAX_JOB_CENTS + 1 },
+      { outcome: 'won', job_value_cents: 1.5 }, { outcome: 'won', job_value_cents: '100' },
+      { outcome: 'won', job_value_cents: MAX_JOB_CENTS + 1 },
+      // cash is a payment, never a total on the outcome
+      { outcome: 'won', collected_cents: 100 },
       { outcome: 'lost', job_value_cents: 100 }, { outcome: 'won', lost_reason: 'x' },
       { outcome: 'lost', lost_reason: 'x'.repeat(201) }, { outcome: 'lost', lost_reason: 5 },
     ];
     for (const b of bad) expect(parseOutcomeBody(b).ok, JSON.stringify(b)).toBe(false);
+  });
+});
+
+describe('parsePaymentBody', () => {
+  const NOW = new Date('2026-10-07T18:00:00.000Z');
+
+  it('takes signed whole cents and an ISO date, defaulting the date to now', () => {
+    expect(parsePaymentBody({ amount_cents: 100000, paid_at: '2026-09-01T18:00:00Z' }, NOW)).toEqual({
+      ok: true, values: { amount_cents: 100000, paid_at: '2026-09-01T18:00:00.000Z' },
+    });
+    expect(parsePaymentBody({ amount_cents: -2500 }, NOW)).toEqual({
+      ok: true, values: { amount_cents: -2500, paid_at: NOW.toISOString() },
+    });
+  });
+
+  it('allows a day of clock slack for "today" but no future dates', () => {
+    expect(parsePaymentBody({ amount_cents: 1, paid_at: '2026-10-08T12:00:00Z' }, NOW).ok).toBe(true);
+    expect(parsePaymentBody({ amount_cents: 1, paid_at: '2026-10-09T12:00:00Z' }, NOW).ok).toBe(false);
+  });
+
+  it('rejects what the 0021 amount CHECK would reject', () => {
+    for (const b of [
+      null, {}, { amount_cents: 0 }, { amount_cents: 1.5 }, { amount_cents: '100' },
+      { amount_cents: MAX_JOB_CENTS + 1 }, { amount_cents: -(MAX_JOB_CENTS + 1) },
+      { amount_cents: 1, paid_at: 'last tuesday' }, { amount_cents: 1, paid_at: 5 },
+      { amount_cents: 1, paid_at: '1999-12-31T00:00:00Z' },
+    ]) expect(parsePaymentBody(b, NOW).ok, JSON.stringify(b)).toBe(false);
   });
 });
 

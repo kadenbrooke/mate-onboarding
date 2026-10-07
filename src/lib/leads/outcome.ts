@@ -12,7 +12,6 @@ export const MAX_LOST_REASON = 200;
 export type OutcomeValues = {
   job_outcome: JobOutcome | null;
   job_value_cents: number | null;
-  collected_cents: number | null;
   lost_reason: string | null;
 };
 
@@ -20,7 +19,7 @@ export type OutcomeParse =
   | { ok: true; values: OutcomeValues }
   | { ok: false; error: string };
 
-const CLEARED: OutcomeValues = { job_outcome: null, job_value_cents: null, collected_cents: null, lost_reason: null };
+const CLEARED: OutcomeValues = { job_outcome: null, job_value_cents: null, lost_reason: null };
 
 function centsField(v: unknown, label: string): { ok: true; cents: number | null } | { ok: false; error: string } {
   if (v === undefined || v === null) return { ok: true, cents: null };
@@ -32,9 +31,11 @@ function centsField(v: unknown, label: string): { ok: true; cents: number | null
 
 /**
  * Validate a PATCH body: { outcome: 'won'|'lost'|null, job_value_cents?,
- * collected_cents?, lost_reason? }. `outcome: null` clears every field.
- * Money belongs only to a won job and a reason only to a lost one, matching
- * the 0021 CHECK constraints, so a bad entry is a 400 here, not a 500 there.
+ * lost_reason? }. `outcome: null` clears every field. A sold price belongs
+ * only to a won job and a reason only to a lost one, matching the 0021 CHECK
+ * constraints, so a bad entry is a 400 here, not a 500 there. Cash collected
+ * is not part of the outcome: it is entered payment by payment
+ * (parsePaymentBody).
  */
 export function parseOutcomeBody(body: unknown): OutcomeParse {
   if (!body || typeof body !== 'object') return { ok: false, error: 'body must be an object' };
@@ -45,14 +46,15 @@ export function parseOutcomeBody(body: unknown): OutcomeParse {
     return { ok: false, error: 'outcome must be won, lost, or null' };
   }
 
+  if ('collected_cents' in b) {
+    return { ok: false, error: 'cash collected is recorded as payments, not on the outcome' };
+  }
   const value = centsField(b.job_value_cents, 'job_value_cents');
   if (!value.ok) return value;
-  const collected = centsField(b.collected_cents, 'collected_cents');
-  if (!collected.ok) return collected;
 
   if (b.outcome === 'lost') {
-    if (value.cents !== null || collected.cents !== null) {
-      return { ok: false, error: 'a lost job has no job value or collected cash' };
+    if (value.cents !== null) {
+      return { ok: false, error: 'a lost job has no job value' };
     }
     let reason: string | null = null;
     if (b.lost_reason !== undefined && b.lost_reason !== null) {
@@ -62,13 +64,49 @@ export function parseOutcomeBody(body: unknown): OutcomeParse {
         return { ok: false, error: `lost_reason is limited to ${MAX_LOST_REASON} characters` };
       }
     }
-    return { ok: true, values: { job_outcome: 'lost', job_value_cents: null, collected_cents: null, lost_reason: reason } };
+    return { ok: true, values: { job_outcome: 'lost', job_value_cents: null, lost_reason: reason } };
   }
 
   if (b.lost_reason !== undefined && b.lost_reason !== null && b.lost_reason !== '') {
     return { ok: false, error: 'lost_reason only applies to a lost job' };
   }
-  return { ok: true, values: { job_outcome: 'won', job_value_cents: value.cents, collected_cents: collected.cents, lost_reason: null } };
+  return { ok: true, values: { job_outcome: 'won', job_value_cents: value.cents, lost_reason: null } };
+}
+
+/** One payment write (client_lead_payments). Negative = refund / chargeback. */
+export type PaymentValues = { amount_cents: number; paid_at: string };
+
+export type PaymentParse =
+  | { ok: true; values: PaymentValues }
+  | { ok: false; error: string };
+
+// Clock skew allowance for "today": the panel sends local noon for a past
+// date and "now" for today, so anything past a day ahead is a mistyped date.
+const FUTURE_SLACK_MS = 86_400_000;
+const EARLIEST_PAYMENT = Date.UTC(2000, 0, 1);
+
+/**
+ * Validate a POST body: { amount_cents, paid_at? }. amount_cents is signed
+ * whole cents, never 0 (a refund or chargeback is negative). paid_at is an
+ * ISO timestamp for the day the money moved, not in the future; it defaults
+ * to now. Matches the 0021 amount CHECK, so a bad entry is a 400.
+ */
+export function parsePaymentBody(body: unknown, now = new Date()): PaymentParse {
+  if (!body || typeof body !== 'object') return { ok: false, error: 'body must be an object' };
+  const b = body as Record<string, unknown>;
+  const a = b.amount_cents;
+  if (typeof a !== 'number' || !Number.isInteger(a) || a === 0 || Math.abs(a) > MAX_JOB_CENTS) {
+    return { ok: false, error: `amount_cents must be whole cents, not 0, at most ${MAX_JOB_CENTS} either way` };
+  }
+  let paidAt = now.toISOString();
+  if (b.paid_at !== undefined && b.paid_at !== null) {
+    const t = typeof b.paid_at === 'string' ? Date.parse(b.paid_at) : NaN;
+    if (!Number.isFinite(t)) return { ok: false, error: 'paid_at must be an ISO date' };
+    if (t > now.getTime() + FUTURE_SLACK_MS) return { ok: false, error: 'paid_at cannot be in the future' };
+    if (t < EARLIEST_PAYMENT) return { ok: false, error: 'paid_at is too far in the past' };
+    paidAt = new Date(t).toISOString();
+  }
+  return { ok: true, values: { amount_cents: a, paid_at: paidAt } };
 }
 
 /**

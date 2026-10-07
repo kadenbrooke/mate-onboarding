@@ -44,9 +44,9 @@ export type Lead = {
   job_outcome?: 'won' | 'lost' | null;
   outcome_at?: string | null;
   job_value_cents?: number | null;
-  collected_cents?: number | null;
-  collected_at?: string | null;
   lost_reason?: string | null;
+  // Cash collected is NOT on the lead: it is the client_lead_payments ledger
+  // (one row per payment), so every window can sum the payments inside it.
 };
 
 /** Money is real once the job is serviced. This is the successor to the old

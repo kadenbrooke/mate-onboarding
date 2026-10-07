@@ -40,15 +40,21 @@ describe('buildAssistantContext', () => {
     const ctx = buildAssistantContext([], 'Acme').toLowerCase();
     expect(ctx).toContain('only');
   });
-  it('reports return by lead source once outcomes are entered, never the partner share', () => {
-    const won = { ...mk({ source: 'meta' }), job_outcome: 'won' as const, job_value_cents: 500000,
-      collected_cents: 250000, collected_at: '2026-07-02T00:00:00Z' };
-    const ctx = buildAssistantContext([won, mk({ source: 'meta' }), mk({ source: 'call' })], 'Acme', new Date('2026-07-10T00:00:00Z'));
+  it('reports return by lead source from the view rows, never the partner share', () => {
+    const rows = [
+      { source: 'meta', leads: 2, won: 1, lost: 0, job_value_cents: 500000, collected_cents: 250000, collected_in_window_cents: 250000, collected_30d_cents: 0 },
+      { source: 'call', leads: 1, won: 0, lost: 0, job_value_cents: 0, collected_cents: 0, collected_in_window_cents: 0, collected_30d_cents: 0 },
+    ];
+    const ctx = buildAssistantContext([mk({ source: 'meta' })], 'Acme', rows);
     expect(ctx).toContain('Meta Ads: 1 won, 0 lost of 2 leads, $5,000 sold, $2,500 collected');
     expect(ctx).not.toContain('Call:');
     expect(ctx).not.toMatch(/15%|partner/i);
   });
   it('says plainly when no outcomes are entered', () => {
-    expect(buildAssistantContext([mk({})], 'Acme')).toContain('no jobs have been marked won or lost yet');
+    const rows = [{ source: 'text', leads: 1, won: 0, lost: 0, job_value_cents: 0, collected_cents: 0, collected_in_window_cents: 0, collected_30d_cents: 0 }];
+    expect(buildAssistantContext([mk({})], 'Acme', rows)).toContain('no jobs have been marked won or lost yet');
+  });
+  it('says nothing about returns when they are unavailable', () => {
+    expect(buildAssistantContext([mk({})], 'Acme')).not.toMatch(/return by lead source/i);
   });
 });
