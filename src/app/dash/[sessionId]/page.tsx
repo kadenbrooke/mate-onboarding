@@ -12,6 +12,7 @@ import { fetchMoneyTotals, type MoneyQuery } from '@/lib/metrics/money';
 import { zoneLocks } from '@/lib/dash/locks';
 import { gateLockedZoneData } from '@/lib/dash/gate';
 import { fetchLiveScores, mergeLiveScores, type LiveScoreQuery } from '@/lib/leads/liveScores';
+import { fetchMetaSpend30dCents, fetchRevenueBySource, summarizeReturn, type AdSpendQuery, type RevenueQuery } from '@/lib/metrics/revenue';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
@@ -155,9 +156,18 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   // is and how recently they texted back RIGHT NOW. Same cast-through-unknown
   // reason as fetchMoneyTotals.
   const loadedLeads = (leadsResult.data ?? []) as Lead[];
-  const liveScores = await fetchLiveScores(
-    supabase as unknown as LiveScoreQuery, sessionId, loadedLeads.map(l => l.id),
-  );
+  // Return by lead source (migration 0021): per-source sums over the WHOLE
+  // book of business from a PII-free view, not the 500 leads above, because
+  // the partner-share basis must not quietly drop older jobs. null until 0021
+  // is applied (or on a failed read), which hides the card.
+  const [liveScores, revenueRows, metaSpend] = await Promise.all([
+    fetchLiveScores(supabase as unknown as LiveScoreQuery, sessionId, loadedLeads.map(l => l.id)),
+    fetchRevenueBySource(supabase as unknown as RevenueQuery, sessionId),
+    // Meta's 30-day spend for the return card, read on its own: the ad_metrics
+    // fetch above is capped at 100 rows for the Ad Performance zone, and a cap
+    // that cut the newest pull short would understate spend.
+    fetchMetaSpend30dCents(supabase as unknown as AdSpendQuery, sessionId),
+  ]);
 
   // Collapse ad_metrics to the latest snapshot PER PLATFORM, then compute zone
   // totals. Resolving one global latest date would silently drop a platform
@@ -171,6 +181,9 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   }
   const latestAdRows = allAdRows.filter((r) => newestPerPlatform.get(r.platform) === r.date_pulled);
   const ads = latestAdRows.length ? adTotals(latestAdRows) : null;
+  const returns = revenueRows
+    ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend })
+    : null;
 
   // Zone lock state, derived from signals already on the session row. `ads` is
   // null when the session has no ad_metrics rows, so it doubles as the ads gate
@@ -241,6 +254,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
         monthlyRetainerCents,
       }}
       leads={mergeLiveScores(loadedLeads, liveScores)}
+      returns={returns}
       data={data}
       locks={locks}
       glance={glance}

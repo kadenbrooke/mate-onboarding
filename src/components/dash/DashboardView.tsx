@@ -17,6 +17,8 @@ import { SourceDonut } from './leadflow/SourceDonut';
 import { ServiceShareBar } from './leadflow/ServiceShareBar';
 import { AreaBars } from './leadflow/AreaBars';
 import { TwinRings } from './pipeline/TwinRings';
+import { ReturnBySource } from './pipeline/ReturnBySource';
+import type { ReturnSummary } from '@/lib/metrics/revenue';
 import { RaceCard } from './speed/RaceCard';
 import { RescueRing } from './speed/RescueRing';
 import { DayClock } from './speed/DayClock';
@@ -62,7 +64,7 @@ function LinkCard({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function DashboardView({ session, leads, data, locks, glance }: {
+export function DashboardView({ session, leads, returns = null, data, locks, glance }: {
   session: {
     id: string; mate_name?: string | null;
     /** When this client came online with us. Anchors the manual/automated split
@@ -74,6 +76,9 @@ export function DashboardView({ session, leads, data, locks, glance }: {
     monthlyRetainerCents?: number | null;
   };
   leads: Lead[]; data: DashData;
+  /** Return by lead source + partner-share basis (page.tsx, migration 0021).
+   *  null until job outcomes are set up, which leaves the card out. */
+  returns?: ReturnSummary | null;
   locks: Record<ZoneId, ZoneLock | null>;
   /** Month Overview counts computed server-side from ungated data (page.tsx). */
   glance: { activeAgents: number; reviewsCollected: number };
@@ -199,7 +204,12 @@ export function DashboardView({ session, leads, data, locks, glance }: {
     // Operations), and the imbalance rendered as a grey void under the right
     // column. Pipeline over there roughly evens the two columns out.
     { id: 'zone-pipeline', x: 6, y: 3, w: 6, node: (
-      <SectionCard title="Pipeline"><TwinRings leads={leads} showLabel={false} /></SectionCard>
+      <SectionCard title="Pipeline">
+        <div style={{ display: 'grid', gap: 10 }}>
+          <TwinRings leads={leads} showLabel={false} />
+          {returns && <ReturnBySource summary={returns} sessionId={session.id} />}
+        </div>
+      </SectionCard>
     ) },
     { id: 'zone-reputation', x: 6, y: 4, w: 6, node: (
       <SectionCard title="Reputation" locked={lockFor('zone-reputation')}><ReputationZone reputation={data.reputation} reviews={data.reviews} showLabel={false} /></SectionCard>
@@ -253,6 +263,7 @@ export function DashboardView({ session, leads, data, locks, glance }: {
     ],
     money: [
       { id: 'm-pipeline', node: <TwinRings leads={leads} /> },
+      ...(returns ? [{ id: 'm-return', node: <ReturnBySource summary={returns} sessionId={session.id} /> }] : []),
       { id: 'm-revenue', node: mobileZone('zone-money', 'Revenue', moneyZone) },
       { id: 'm-ads', node: mobileZone('zone-ads', 'Ad performance', adPerformanceZone) },
       { id: 'm-followup', node: mobileZone('zone-followup', 'Follow-up engine', followUpZone) },
