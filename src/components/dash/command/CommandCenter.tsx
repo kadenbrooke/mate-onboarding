@@ -31,8 +31,8 @@ const STONE = '#f6f3f0';
 const EXTRA_LABELS: Record<string, string> = { typed: 'Typed in', lead_snapshot: 'Photo', meta: 'Meta' };
 const sourceLabel = (s: string) => EXTRA_LABELS[s] ?? SOURCE_LABELS[s] ?? s.replaceAll('_', ' ');
 
-function Section({ title, icon, count, area, children }: {
-  title: string; icon: ReactNode; count?: number; area: string; children: ReactNode;
+function Section({ title, icon, count, area, incomplete = false, children }: {
+  title: string; icon: ReactNode; count?: number; area: string; incomplete?: boolean; children: ReactNode;
 }) {
   return (
     <section className={`cc-${area}`} style={{
@@ -55,6 +55,13 @@ function Section({ title, icon, count, area, children }: {
         )}
       </h2>
       {children}
+      {/* A read that hit its page ceiling (or failed) is said out loud, never
+          passed off as the whole list. */}
+      {incomplete && (
+        <div data-testid={`incomplete-${area}`} style={{ fontFamily: FONT_BODY, fontSize: 12, color: TEXT_MUTED, marginTop: 8 }}>
+          Some not shown
+        </div>
+      )}
     </section>
   );
 }
@@ -231,7 +238,7 @@ function BooksView({ books, pipelineHref }: { books: Books; pipelineHref: string
         <Stat label="Collected" value={moneyShort(books.collectedCents)} color={books.collectedCents > 0 ? FREE_GREEN : INK} />
         <Stat
           label="To collect"
-          value={books.owedCents == null ? '-' : moneyShort(books.owedCents)}
+          value={moneyShort(books.owedCents)}
           color={books.owedCents ? brandVar : INK}
         />
       </div>
@@ -302,13 +309,13 @@ export function CommandCenter({ model, today, demo }: { model: CommandModel; tod
       </header>
 
       <div className="cc-grid">
-        <Section area="call" title="Call now" icon={<Fire size={18} weight="fill" />}>
+        <Section area="call" title="Call now" icon={<Fire size={18} weight="fill" />} incomplete={model.incomplete.call}>
           {call.length === 0
             ? <Empty>{model.scored ? 'Nobody to call' : 'Scoring not on yet'}</Empty>
             : <ul style={listStyle}>{call.map(r => <CallRowView key={r.id} r={r} demo={demo} />)}</ul>}
         </Section>
 
-        <Section area="wait" title="Waiting on you" icon={<ChatCircleDots size={18} weight="fill" />} count={waitTotal}>
+        <Section area="wait" title="Waiting on you" icon={<ChatCircleDots size={18} weight="fill" />} count={waitTotal} incomplete={model.incomplete.waiting}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 6 }}>
             {WAIT_KINDS.map(k => (
               <div key={k} data-testid={`wait-count-${k}`} style={{ background: STONE, borderRadius: 14, padding: '8px 10px' }}>
@@ -330,7 +337,7 @@ export function CommandCenter({ model, today, demo }: { model: CommandModel; tod
           {books ? <BooksView books={books} pipelineHref={model.pipelineHref} /> : <Empty>Not set up yet</Empty>}
         </Section>
 
-        <Section area="stuck" title="Stuck" icon={<HourglassMedium size={18} weight="fill" />} count={stuck.rows.length + stuck.more}>
+        <Section area="stuck" title="Stuck" icon={<HourglassMedium size={18} weight="fill" />} count={stuck.rows.length + stuck.more} incomplete={model.incomplete.stuck}>
           {stuck.rows.length === 0
             ? <Empty ok>Nothing stuck</Empty>
             : <ul style={listStyle}>{stuck.rows.map(r => <StuckRowView key={r.id} r={r} demo={demo} />)}</ul>}

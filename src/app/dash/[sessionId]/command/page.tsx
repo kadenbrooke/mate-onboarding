@@ -6,10 +6,9 @@ import {
   fetchMetaSpend30dCents, fetchRevenueBySource, summarizeReturn, type AdSpendQuery, type RevenueQuery,
 } from '@/lib/metrics/revenue';
 import {
-  fetchCallNow, fetchWaitingCandidates, fetchStuckCandidates, fetchLastOutbound, fetchPaidByLead,
-  type CommandDb,
+  fetchOpenBook, fetchWonLeads, fetchLastOutbound, fetchPaidByLead, type CommandDb,
 } from '@/lib/command/fetch';
-import { buildCommandModel, isClosed, type LeadSignal } from '@/lib/command/commandCenter';
+import { buildCommandModel, outboundCandidates, type LeadSignal } from '@/lib/command/commandCenter';
 import { leadLabel } from '@/components/dash/leads/leadName';
 import { CommandCenter } from '@/components/dash/command/CommandCenter';
 import { MobileNav } from '@/components/dash/MobileNav';
@@ -19,9 +18,10 @@ import { MobileNav } from '@/components/dash/MobileNav';
 // same tenant, or the public read-only demo). Read-only: every action on the
 // screen is a link (a tel: call, or the lead's thread in the pipeline).
 //
-// No "newest N leads" slice: each card runs its own tenant-scoped query for
-// exactly the leads it needs (lib/command/fetch.ts), so an older lead is never
-// missing from a list it belongs on.
+// No "newest N leads" slice: every open lead and every won lead is read in
+// full (eligibility filtered in SQL, paged to exhaustion; lib/command/fetch.ts),
+// so no card drops a row it claims to show. A scan that ever hits its page
+// ceiling is flagged and the card says so.
 //
 // The cast-through-unknown on each query mirrors /dash: the service client's
 // generics are far deeper than the small structural contracts need.
@@ -37,38 +37,32 @@ export default async function CommandPage({ params }: { params: Promise<{ sessio
   if (!session) notFound();
 
   const now = new Date();
-  const [callNow, waitingCandidates, stuckCandidates, revenueRows, metaSpend] = await Promise.all([
-    fetchCallNow(db, sessionId),
-    fetchWaitingCandidates(db, sessionId, now),
-    fetchStuckCandidates(db, sessionId, now),
+  const [open, won, revenueRows, metaSpend] = await Promise.all([
+    fetchOpenBook(db, sessionId),
+    fetchWonLeads(db, sessionId),
     fetchRevenueBySource(supabase as unknown as RevenueQuery, sessionId),
     fetchMetaSpend30dCents(supabase as unknown as AdSpendQuery, sessionId),
   ]);
+  const openLeads = open?.leads ?? [];
+  const signals = open?.signals ?? new Map<string, LeadSignal>();
 
-  const signals = new Map<string, LeadSignal>(waitingCandidates.signals);
-  if (callNow.status === 'live') for (const [id, s] of callNow.signals) signals.set(id, s);
-
-  // Outbound times only matter for open, human-handled leads that have texted
-  // in; payments only for won leads.
-  const repliedHuman = waitingCandidates.leads
-    .filter(l => !isClosed(l) && l.handler === 'human' && signals.get(l.id)?.last_lead_reply_at)
-    .map(l => l.id);
-  const won = stuckCandidates.won;
-  const [lastOutbound, paid] = await Promise.all([
-    fetchLastOutbound(db, sessionId, repliedHuman),
-    won ? fetchPaidByLead(db, sessionId, won.map(l => l.id)) : Promise.resolve(null),
+  // Outbound times only for open, human-handled leads that have texted in,
+  // and only after the earliest such text; payments only for won leads.
+  const outbound = outboundCandidates(openLeads, signals);
+  const [lastOutbound, paidByLead] = await Promise.all([
+    outbound.since ? fetchLastOutbound(db, sessionId, outbound.ids, outbound.since) : Promise.resolve(new Map<string, string>()),
+    won ? fetchPaidByLead(db, sessionId, won.leads.map(l => l.id)) : Promise.resolve(null),
   ]);
 
   const model = buildCommandModel({
     sessionId,
-    callLeads: callNow.status === 'live' ? callNow.leads : [],
-    // A failed ranking read says "not scored" rather than "nobody to call".
-    scored: callNow.status === 'live' && callNow.scored,
-    waitLeads: waitingCandidates.leads,
-    stuckLeads: [...(won ?? []), ...(stuckCandidates.staleQuotes ?? [])],
+    openLeads,
+    wonLeads: won?.leads ?? [],
     signals,
+    // A failed open-lead read is not "nothing open": flag the cards instead.
+    complete: { open: open?.complete ?? false, won: won?.complete ?? true },
     lastOutbound,
-    paidByLead: won ? paid : null,
+    paidByLead,
     summary: revenueRows ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend }) : null,
     now,
     label: leadLabel,

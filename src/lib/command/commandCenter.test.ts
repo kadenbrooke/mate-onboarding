@@ -3,6 +3,7 @@ import type { Lead } from '@/lib/metrics/leads';
 import { summarizeReturn, type SourceRevenueRow } from '@/lib/metrics/revenue';
 import {
   ago, telHref, hotReasons, callList, waitingOnMe, stuckList, booksSummary, buildCommandModel, isClosed,
+  outboundCandidates,
   WAIT_ROWS, type LeadSignal,
 } from './commandCenter';
 
@@ -161,6 +162,12 @@ describe('stuckList', () => {
     const items = stuckList([q20, q30, q5, decided], new Map(), NOW);
     expect(items.map(i => [i.lead.id, i.kind === 'quote_stale' ? i.days : null])).toEqual([[q30.id, 30], [q20.id, 20]]);
   });
+  it('counts a quote exactly 14 days old as stuck, and one a minute younger as not', () => {
+    const exactly = lead({ status: 'quoted', status_updated_at: daysAgo(14) });
+    const younger = lead({ status: 'quoted', status_updated_at: new Date(NOW.getTime() - 14 * 86_400_000 + 60_000).toISOString() });
+    const items = stuckList([exactly, younger], new Map(), NOW);
+    expect(items.map(i => [i.lead.id, i.kind === 'quote_stale' ? i.days : null])).toEqual([[exactly.id, 14]]);
+  });
   it('falls back to arrival time for a quote with no status stamp', () => {
     const q = lead({ status: 'quoted', status_updated_at: null, created_at: daysAgo(15) });
     expect(stuckList([q], new Map(), NOW)).toHaveLength(1);
@@ -174,12 +181,10 @@ const ROWS: SourceRevenueRow[] = [
 ];
 
 describe('booksSummary', () => {
-  it('carries totals, sources with leads and the Meta return, never the partner share', () => {
-    const owed = lead({ job_outcome: 'won', job_value_cents: 500_000 });
-    const stuck = stuckList([owed], new Map(), NOW);
-    const books = booksSummary(summarizeReturn(ROWS, { metaSpend30dCents: 200_000 }), stuck, true);
+  it('carries the view totals, sources with leads and the Meta return, never the partner share', () => {
+    const books = booksSummary(summarizeReturn(ROWS, { metaSpend30dCents: 200_000 }));
     expect(books).toEqual({
-      won: 5, soldCents: 3_300_000, collectedCents: 2_700_000, owedCents: 500_000, hasOutcomes: true,
+      won: 5, soldCents: 3_300_000, collectedCents: 2_700_000, owedCents: 600_000, hasOutcomes: true,
       sources: [
         { source: 'meta', leads: 40, won: 3, collectedCents: 1_800_000 },
         { source: 'referral', leads: 4, won: 2, collectedCents: 900_000 },
@@ -188,38 +193,68 @@ describe('booksSummary', () => {
     });
     expect(Object.keys(books)).not.toContain('partner');
   });
-  it('has no owed figure when payments are unknown', () => {
-    expect(booksSummary(summarizeReturn(ROWS), [], false).owedCents).toBeNull();
+  it('never shows a negative amount to collect', () => {
+    const over = ROWS.map(r => ({ ...r, collected_cents: r.job_value_cents + 1 }));
+    expect(booksSummary(summarizeReturn(over)).owedCents).toBe(0);
   });
+});
+
+describe('outboundCandidates', () => {
+  it('picks open human-handled leads that texted in, from the earliest such text', () => {
+    const a = lead({ handler: 'human' });
+    const b = lead({ handler: 'human' });
+    const agent = lead();
+    const closed = lead({ handler: 'human', job_outcome: 'won' });
+    const silent = lead({ handler: 'human' });
+    const r = outboundCandidates([a, b, agent, closed, silent], signalsOf(
+      sig(a, { last_lead_reply_at: hoursAgo(3) }), sig(b, { last_lead_reply_at: daysAgo(90) }),
+      sig(agent, { last_lead_reply_at: hoursAgo(1) }), sig(closed, { last_lead_reply_at: hoursAgo(1) }),
+    ));
+    expect(r).toEqual({ ids: [a.id, b.id], since: daysAgo(90) });
+  });
+  it('has nothing to read when no one qualifies', () => {
+    expect(outboundCandidates([lead()], new Map())).toEqual({ ids: [], since: null });
+  });
+});
+
+const model = (over: Partial<Parameters<typeof buildCommandModel>[0]>) => buildCommandModel({
+  sessionId: 's-1', openLeads: [], wonLeads: [], signals: new Map(), complete: { open: true, won: true },
+  lastOutbound: new Map(), paidByLead: new Map(), summary: null, now: NOW, label: l => l.name ?? '', ...over,
 });
 
 describe('buildCommandModel', () => {
   it('builds display rows with thread links and tel links', () => {
     const hot = lead({ score: 88, phone: '(801) 555-0123', created_at: hoursAgo(3) });
-    const model = buildCommandModel({
-      sessionId: 's-1', callLeads: [hot], scored: true, waitLeads: [hot], stuckLeads: [],
-      signals: signalsOf(sig(hot)), lastOutbound: new Map(), paidByLead: new Map(),
-      summary: null, now: NOW, label: l => l.name ?? '',
-    });
-    expect(model.call[0]).toMatchObject({
+    const m = model({ openLeads: [hot], signals: signalsOf(sig(hot)) });
+    expect(m.call[0]).toMatchObject({
       id: hot.id, score: 88, tel: 'tel:+18015550123', href: `/dash/s-1/pipeline?spotlight=${hot.id}`,
       reasons: ['New lead'],
     });
-    expect(model.waiting.rows[0]).toMatchObject({ kind: 'new', when: '3h' });
-    expect(model.books).toBeNull();
-    expect(model.scored).toBe(true);
+    expect(m.waiting.rows[0]).toMatchObject({ kind: 'new', when: '3h' });
+    expect(m.books).toBeNull();
+    expect(m.scored).toBe(true);
+    expect(m.incomplete).toEqual({ call: false, waiting: false, stuck: false });
   });
   it('caps the waiting list and reports the rest', () => {
     const leads = Array.from({ length: WAIT_ROWS + 3 }, () => lead({ created_at: hoursAgo(1), score: null }));
-    const model = buildCommandModel({
-      sessionId: 's-1', callLeads: [], scored: false, waitLeads: leads, stuckLeads: [],
-      signals: new Map(), lastOutbound: new Map(), paidByLead: new Map(),
-      summary: null, now: NOW, label: l => l.name ?? '',
-    });
-    expect(model.waiting.rows).toHaveLength(WAIT_ROWS);
-    expect(model.waiting.more).toBe(3);
-    expect(model.waiting.counts.new).toBe(WAIT_ROWS + 3);
-    expect(model.scored).toBe(false);
+    const m = model({ openLeads: leads });
+    expect(m.waiting.rows).toHaveLength(WAIT_ROWS);
+    expect(m.waiting.more).toBe(3);
+    expect(m.waiting.counts.new).toBe(WAIT_ROWS + 3);
+    expect(m.scored).toBe(false);
+  });
+  it('says nobody to call (not scoring off) when nothing is open', () => {
+    expect(model({}).scored).toBe(true);
+  });
+  it('puts owed won jobs and stale open quotes in Stuck', () => {
+    const won = lead({ job_outcome: 'won', job_value_cents: 400_000 });
+    const quote = lead({ status: 'quoted', status_updated_at: daysAgo(15) });
+    const m = model({ openLeads: [quote], wonLeads: [won] });
+    expect(m.stuck.rows.map(r => r.label)).toEqual(['Owes $4,000', 'Quote 15d']);
+  });
+  it('flags cards whose scans were cut short', () => {
+    expect(model({ complete: { open: false, won: true } }).incomplete).toEqual({ call: true, waiting: true, stuck: true });
+    expect(model({ complete: { open: true, won: false } }).incomplete).toEqual({ call: false, waiting: false, stuck: true });
   });
 });
 

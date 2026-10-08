@@ -51,12 +51,21 @@ describe('CommandCenter', () => {
     const empty: CommandModel = {
       call: [], scored: true, waiting: { rows: [], counts: { handed: 0, replied: 0, new: 0 }, more: 0 },
       stuck: { rows: [], more: 0 }, books: null, pipelineHref: '/dash/s-1/pipeline',
+      incomplete: { call: false, waiting: false, stuck: false },
     };
     render(<CommandCenter model={empty} today={today} demo={false} />);
     expect(screen.getByText('Nobody to call')).toBeInTheDocument();
     expect(screen.getByText('All caught up')).toBeInTheDocument();
     expect(screen.getByText('Nothing stuck')).toBeInTheDocument();
     expect(screen.getByText('Not set up yet')).toBeInTheDocument();
+  });
+
+  it('says when a card could not show everything, and only on that card', () => {
+    const { rerender } = render(<CommandCenter model={practiceModel()} today={today} demo={false} />);
+    expect(screen.queryByText('Some not shown')).toBeNull();
+    rerender(<CommandCenter model={{ ...practiceModel(), incomplete: { call: false, waiting: false, stuck: true } }} today={today} demo={false} />);
+    expect(screen.getByTestId('incomplete-stuck')).toHaveTextContent('Some not shown');
+    expect(screen.queryByTestId('incomplete-call')).toBeNull();
   });
 
   it('says scoring is off rather than claiming nobody is worth a call', () => {

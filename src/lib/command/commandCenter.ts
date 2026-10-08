@@ -175,6 +175,29 @@ export type StuckItem =
   | { lead: Lead; kind: 'quote_stale'; days: number };
 
 /**
+ * Which open leads need their newest outbound message, and from when: open,
+ * human-handled leads the lead has texted. `since` is the earliest of those
+ * texts, so fetchLastOutbound only reads messages that could answer one.
+ * null `since` means nothing to read.
+ */
+export function outboundCandidates(
+  open: Lead[], signals: Map<string, LeadSignal>,
+): { ids: string[]; since: string | null } {
+  const ids: string[] = [];
+  let since: string | null = null;
+  let sinceMs = Infinity;
+  for (const l of open) {
+    if (isClosed(l) || l.handler !== 'human') continue;
+    const at = signals.get(l.id)?.last_lead_reply_at ?? null;
+    const t = ms(at);
+    if (t == null) continue;
+    ids.push(l.id);
+    if (t < sinceMs) { sinceMs = t; since = at; }
+  }
+  return { ids, since };
+}
+
+/**
  * What is stuck:
  *
  *   owed         Marked won with a job value, and the payments recorded add up
@@ -218,8 +241,8 @@ export type Books = {
   won: number;
   soldCents: number;
   collectedCents: number;
-  /** Sum of what each won lead still owes. null when payments could not be read. */
-  owedCents: number | null;
+  /** Sold minus collected across the whole book (never below 0). */
+  owedCents: number;
   hasOutcomes: boolean;
   /** Sources with at least one lead, most cash collected first. */
   sources: BookSource[];
@@ -228,19 +251,20 @@ export type Books = {
 };
 
 /**
- * The "on the books" numbers. Won, sold and collected come from the
- * whole-book revenue view (same numbers as the Return by Source card); owed is
- * the sum of the per-lead balances stuckList found. The partner share in
- * `summary.partner` is dropped here on purpose.
+ * The "on the books" numbers, all from the whole-book revenue view (0021),
+ * which sums in SQL over every lead: the same numbers as the Return by Source
+ * card, and complete by construction. "To collect" is sold minus collected.
+ * Payments are only allowed on won leads, so this is what won jobs still owe,
+ * net: a job paid over its value offsets another's balance, where the Stuck
+ * rows show each job's own balance. The partner share in `summary.partner`
+ * is dropped here on purpose.
  */
-export function booksSummary(summary: ReturnSummary, stuck: StuckItem[], paymentsKnown: boolean): Books {
+export function booksSummary(summary: ReturnSummary): Books {
   return {
     won: summary.totals.won,
     soldCents: summary.totals.jobValueCents,
     collectedCents: summary.totals.collectedCents,
-    owedCents: paymentsKnown
-      ? stuck.reduce((t, s) => t + (s.kind === 'owed' ? s.owedCents : 0), 0)
-      : null,
+    owedCents: Math.max(0, summary.totals.jobValueCents - summary.totals.collectedCents),
     hasOutcomes: summary.hasOutcomes,
     sources: summary.rows
       .filter(r => r.leads > 0)
@@ -271,21 +295,22 @@ export type CommandModel = {
   stuck: { rows: StuckRow[]; more: number };
   /** null when the revenue view is not readable (0021 not applied, or a read error). */
   books: Books | null;
+  /** A card whose source scan hit its page ceiling shows "More not shown". */
+  incomplete: { call: boolean; waiting: boolean; stuck: boolean };
   pipelineHref: string;
 };
 
 export function buildCommandModel(input: {
   sessionId: string;
-  /** The tenant's top open leads by live score (fetchCallNow), already ranked globally. */
-  callLeads: Lead[];
-  /** False when no lead has a score at all (scoring not running). */
-  scored: boolean;
-  /** Every lead that could be waiting (fetchWaitingCandidates). */
-  waitLeads: Lead[];
-  /** Every won lead plus every stale quote (fetchStuckCandidates). */
-  stuckLeads: Lead[];
-  /** Score-view rows for the call and waiting leads. */
+  /** Every open lead, live score merged (fetchOpenBook). Call now, Waiting
+   *  and stale quotes all come from this one complete set. */
+  openLeads: Lead[];
+  /** Every lead marked won (fetchWonLeads), for the money-owed rows. */
+  wonLeads: Lead[];
+  /** Score-view rows for the open leads. */
   signals: Map<string, LeadSignal>;
+  /** False when a scan stopped at its page ceiling. */
+  complete: { open: boolean; won: boolean };
   lastOutbound: Map<string, string> | null;
   paidByLead: Map<string, number> | null;
   summary: ReturnSummary | null;
@@ -299,19 +324,20 @@ export function buildCommandModel(input: {
     id: l.id, name: label(l), tel: telHref(l.phone), href: `${pipelineHref}?spotlight=${l.id}`,
   });
 
-  const call = callList(input.callLeads).map(l => ({
+  const call = callList(input.openLeads).map(l => ({
     ...base(l),
     score: l.score!,
     reasons: hotReasons(l, signals.get(l.id), now),
     detail: [l.service, l.city].filter(Boolean).join(' · '),
   }));
 
-  const waiting = waitingOnMe(input.waitLeads, signals, input.lastOutbound, now);
-  const stuck = stuckList(input.stuckLeads, input.paidByLead, now);
+  const waiting = waitingOnMe(input.openLeads, signals, input.lastOutbound, now);
+  const stuck = stuckList([...input.wonLeads, ...input.openLeads], input.paidByLead, now);
 
   return {
     call,
-    scored: input.scored,
+    // No open leads is "nobody to call", not "scoring is off".
+    scored: input.openLeads.length === 0 || input.openLeads.some(l => l.score != null),
     waiting: {
       rows: waiting.items.slice(0, WAIT_ROWS).map(i => ({ ...base(i.lead), kind: i.kind, when: ago(i.at, now) })),
       counts: waiting.counts,
@@ -325,7 +351,12 @@ export function buildCommandModel(input: {
       })),
       more: Math.max(0, stuck.length - STUCK_ROWS),
     },
-    books: input.summary ? booksSummary(input.summary, stuck, input.paidByLead != null) : null,
+    books: input.summary ? booksSummary(input.summary) : null,
+    incomplete: {
+      call: !input.complete.open,
+      waiting: !input.complete.open,
+      stuck: !input.complete.open || !input.complete.won,
+    },
     pipelineHref,
   };
 }
