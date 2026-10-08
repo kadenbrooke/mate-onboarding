@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { handoffSignalEvent } from '@/lib/metrics/eventSources';
+import { practiceStatus } from '@/lib/portal/practice';
 
 // One-shot signal from the e2e preview page (served cross-origin from amos-ui),
 // e.g. "operator-flip ready". Params ride the query string so a no-cors POST
@@ -27,6 +28,13 @@ export async function POST(request: Request) {
   if (!kind) return NextResponse.json({ error: 'kind required' }, { status: 400, headers: CORS });
   const supabase = createServiceClient();
   const sessionId = url.searchParams.get('session_id');
+  if (sessionId) {
+    const practice = await practiceStatus(supabase, sessionId);
+    if (!practice.ok) return NextResponse.json({ error: practice.error }, { status: 500, headers: CORS });
+    if (practice.isPractice) {
+      return NextResponse.json({ error: 'Practice tenants cannot trigger agent signals.' }, { status: 403, headers: CORS });
+    }
+  }
   // `.select().single()` only so the signal's id can key the ticker event.
   const { data: signal, error } = await supabase.from('handoff_signals').insert({
     session_id: sessionId,

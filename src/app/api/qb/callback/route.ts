@@ -16,7 +16,9 @@
 // never persisted here.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
+import { practiceStatus } from '@/lib/portal/practice';
 import { qboEnvironment } from '@/lib/qbo/config';
 import { verifyState, qbStateSecret, QB_STATE_COOKIE } from '@/lib/qbo/state';
 import { requestTokenExchange } from '@/lib/qbo/rail';
@@ -62,6 +64,9 @@ export async function GET(req: NextRequest) {
   //    still be allowed to see this dashboard).
   const access = await requireDashAccess(state.sessionId);
   if (access === 'demo') return backToDash(req, state.sessionId, 'demo');
+  const practice = await practiceStatus(createServiceClient(), state.sessionId);
+  if (!practice.ok) return backToDash(req, state.sessionId, 'unavailable');
+  if (practice.isPractice) return backToDash(req, state.sessionId, 'practice');
 
   // 3. Hand off to the KVM2 rail for the actual token exchange + storage.
   const result = await requestTokenExchange({

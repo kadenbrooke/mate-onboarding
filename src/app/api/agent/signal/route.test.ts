@@ -3,11 +3,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const insertMock = vi.fn(() => ({
   select: () => ({ single: () => Promise.resolve({ data: { id: 'sig-1', created_at: '2026-08-17T18:00:00.000Z' }, error: null }) }),
 }));
+const practiceSession = { value: false };
 // Derived ticker rows the route mirrors into client_events.
 const emitted: Record<string, unknown>[] = [];
 vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: () => ({
     from: () => ({
+      select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { is_practice: practiceSession.value }, error: null }) }) }),
       insert: insertMock,
       upsert: (v: unknown) => { emitted.push(v as Record<string, unknown>); return Promise.resolve({ error: null }); },
     }),
@@ -19,7 +21,7 @@ import { POST, OPTIONS } from './route';
 const post = (qs: string) =>
   POST(new Request(`http://x/api/agent/signal?${qs}`, { method: 'POST' }) as never);
 
-beforeEach(() => { process.env.SIGNAL_TOKEN = 'sig'; insertMock.mockClear(); emitted.length = 0; });
+beforeEach(() => { process.env.SIGNAL_TOKEN = 'sig'; practiceSession.value = false; insertMock.mockClear(); emitted.length = 0; });
 
 describe('POST /api/agent/signal', () => {
   it('401s without the token', async () => {
@@ -34,6 +36,12 @@ describe('POST /api/agent/signal', () => {
     expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'operator_flip_ready', session_id: 's1', note: 'done' }),
     );
+  });
+  it('refuses a practice tenant before recording a signal', async () => {
+    practiceSession.value = true;
+    const res = await post('k=sig&kind=operator_flip&session_id=practice-session');
+    expect(res.status).toBe(403);
+    expect(insertMock).not.toHaveBeenCalled();
   });
   // handoff_signals is also the sink for internal readiness pings from the e2e
   // preview page, and a client must never see one of those in their ticker.

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
+import { practiceStatus } from "@/lib/portal/practice"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
@@ -53,6 +54,12 @@ export async function GET(req: NextRequest) {
   const sessionId = req.nextUrl.searchParams.get("state") ?? ""
   if (!code) {
     return backToOnboard(req, "missing_code")
+  }
+
+  if (sessionId) {
+    const practice = await practiceStatus(createServiceClient(), sessionId)
+    if (!practice.ok) return backToOnboard(req, "unavailable")
+    if (practice.isPractice) return backToOnboard(req, "practice")
   }
 
   // Exchange the authorization code for tokens.

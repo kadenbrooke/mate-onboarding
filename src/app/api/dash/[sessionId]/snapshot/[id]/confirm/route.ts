@@ -12,6 +12,7 @@ import { loadKnownNumbers, ownNumbers } from '@/lib/leads/knownNumbers';
 import { nextSendWindowStart, DEFAULT_OUTREACH_HOURS } from '@/lib/agent/quietHours';
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { describeLead } from '@/lib/metrics/eventSources';
+import { fakePracticeMessage } from '@/lib/portal/practice';
 
 // POST /api/dash/<sessionId>/snapshot/<id>/confirm
 //
@@ -72,26 +73,29 @@ export async function POST(req: NextRequest, { params }: Ctx) {
 
   const { data: session } = await service
     .from('onboarding_sessions')
-    .select('id, is_demo, contact_id, operator_phone')
+    .select('id, is_demo, is_practice, contact_id, operator_phone')
     .eq('id', sessionId)
     .maybeSingle();
   if (!session) return NextResponse.json({ error: 'session not found' }, { status: 404 });
-  if (session.is_demo) {
+  const isPractice = session.is_practice === true;
+  if (session.is_demo && !isPractice) {
     return NextResponse.json({ error: 'Lead Snapshot is not available on the demo dashboard.' }, { status: 400 });
   }
-  if (!session.contact_id) {
+  if (!isPractice && !session.contact_id) {
     return NextResponse.json({ error: 'Lead Snapshot is not enabled for this account.' }, { status: 403 });
   }
-  const { data: caps } = await service
-    .from('client_capabilities')
-    .select('capability_key, status')
-    .eq('contact_id', session.contact_id as string);
-  if (!canUseLeadSnapshot(caps, verdict.access)) {
-    return NextResponse.json({ error: 'Lead Snapshot is not enabled for this account.' }, { status: 403 });
+  if (!isPractice) {
+    const { data: caps } = await service
+      .from('client_capabilities')
+      .select('capability_key, status')
+      .eq('contact_id', session.contact_id as string);
+    if (!canUseLeadSnapshot(caps, verdict.access)) {
+      return NextResponse.json({ error: 'Lead Snapshot is not enabled for this account.' }, { status: 403 });
+    }
   }
 
-  const tenant = intakeTenantFor(sessionId);
-  if (!tenant) {
+  const tenant = isPractice ? null : intakeTenantFor(sessionId);
+  if (!isPractice && !tenant) {
     // Capability says live but nobody wired the SMS side. Loud, not silent.
     return NextResponse.json({ error: 'Texting is not set up for this account yet.' }, { status: 503 });
   }
@@ -200,9 +204,11 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       outcomes.push(await saveOne(service, v, sessionId, source, now));
       continue;
     }
-    const outcome = await sendOne(v, {
-      sessionId, snapshotId, tenant, webhookUrl, secret, hold, sendAfter, source,
-    });
+    const outcome = isPractice
+      ? await savePracticeOne(service, v, sessionId, source, now)
+      : await sendOne(v, {
+          sessionId, snapshotId, tenant: tenant!, webhookUrl, secret, hold, sendAfter, source,
+        });
     outcomes.push(outcome);
   }
 
@@ -250,6 +256,51 @@ function claimedConfirmed(rows: ConfirmRow[], plan: RowVerdict[], user: { id: st
     rows,
     consent: { attested: consent, user_id: user?.id ?? null, email: user?.email ?? null, at: now.toISOString() },
     plan: plan.map(v => ({ index: v.index, kind: v.kind, ...('reason' in v ? { reason: v.reason } : {}) })),
+  };
+}
+
+async function savePracticeOne(
+  service: ReturnType<typeof createServiceClient>,
+  v: Extract<RowVerdict, { kind: 'send' }>,
+  sessionId: string,
+  source: 'typed' | 'lead_snapshot',
+  now: Date,
+): Promise<ConfirmOutcome> {
+  const { data: lead, error: leadError } = await service.from('client_leads').insert({
+    session_id: sessionId,
+    name: v.lead.name,
+    phone: v.e164,
+    address: v.lead.address,
+    service: v.lead.service,
+    source,
+    status: 'open',
+    handler: 'human',
+    handler_changed_at: now.toISOString(),
+    handler_changed_by: 'practice',
+    created_at: now.toISOString(),
+  }).select('id').maybeSingle();
+  if (leadError || !lead?.id) {
+    return { index: v.index, outcome: 'failed', message: 'Practice intake could not be recorded.' };
+  }
+
+  const { error: messageError } = await service.from('lead_messages').insert({
+    lead_id: lead.id,
+    session_id: sessionId,
+    direction: 'outbound',
+    author: 'agent',
+    channel: 'sms',
+    body: fakePracticeMessage(
+      `Practice intake for ${v.lead.name ?? 'this lead'}${v.lead.service ? ` about ${v.lead.service}` : ''}.`,
+    ),
+  });
+  if (messageError) {
+    return { index: v.index, outcome: 'failed', message: 'Practice intake could not be recorded.' };
+  }
+  return {
+    index: v.index,
+    outcome: 'sent',
+    message: 'Practice fake sent. Nothing was delivered.',
+    lead_id: lead.id as string,
   };
 }
 

@@ -1,4 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
+import { createServiceClient } from "@/lib/supabase/service"
+import { practiceStatus } from "@/lib/portal/practice"
 
 /**
  * GET /api/connect/google?sessionId=... : start the Google OAuth flow.
@@ -41,6 +43,15 @@ export async function GET(req: NextRequest) {
   }
 
   const sessionId = req.nextUrl.searchParams.get("sessionId") ?? ""
+  if (sessionId) {
+    const practice = await practiceStatus(createServiceClient(), sessionId)
+    if (!practice.ok) {
+      return NextResponse.redirect(new URL(`/dash/${sessionId}?google=unavailable`, req.url))
+    }
+    if (practice.isPractice) {
+      return NextResponse.redirect(new URL(`/dash/${sessionId}?google=practice`, req.url))
+    }
+  }
 
   const params = new URLSearchParams({
     client_id: clientId,
