@@ -31,6 +31,9 @@ export type Lead = {
   // Optional + nullable because legacy/demo rows may predate the column or omit it;
   // the UI treats null/absent as 'agent' (see normalizeHandler).
   handler?: 'agent' | 'human' | null;
+  // When `handler` last flipped (stamped by setHandler). Optional + nullable:
+  // rows that were never handed over have none.
+  handler_changed_at?: string | null;
   contacted: boolean; after_hours: boolean; first_reply_seconds: number | null;
   created_at: string;
   // When `status` last changed, stamped by trg_client_leads_status_ts. For a
