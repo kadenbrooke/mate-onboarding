@@ -15,8 +15,10 @@
 //     to a session.
 
 import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/service';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
+import { practiceStatus } from '@/lib/portal/practice';
 import { qboOAuthConfig } from '@/lib/qbo/config';
 import { resolveEndpoints } from '@/lib/qbo/discovery';
 import { buildAuthorizeUrl } from '@/lib/qbo/oauth';
@@ -34,6 +36,13 @@ export async function GET(req: NextRequest) {
   // The public demo dashboard has no real books to connect.
   if (access === 'demo') {
     return NextResponse.redirect(new URL(`/dash/${rawSessionId}`, req.url));
+  }
+  const practice = await practiceStatus(createServiceClient(), sessionId);
+  if (!practice.ok) {
+    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=unavailable`, req.url));
+  }
+  if (practice.isPractice) {
+    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=practice`, req.url));
   }
 
   // OAuth app config (clientId + redirectUri; secret is not needed here and

@@ -68,10 +68,12 @@ export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
 export const TENANT_A = '61400e73-0570-4167-88d9-d3a69650b15b'; // mapped in intakeTenants
 export const TENANT_B = 'bbbbbbbb-0000-4000-8000-000000000002'; // real, not in intakeTenants
 export const DEMO = 'b7573135-d4ec-43bb-bf33-a1d365739784';
+export const PRACTICE = 'cccccccc-0000-4000-8000-000000000003';
 
 export const USERS = {
   memberA: { id: 'user-a', email: 'a@client-a.test' },
   memberB: { id: 'user-b', email: 'b@client-b.test' },
+  practice: { id: 'user-practice', email: 'practice@jc.test' },
   internal: { id: 'user-int', email: 'ops@mate.test' },
 } as const;
 
@@ -81,15 +83,18 @@ export function seedTenants(): Record<string, Row[]> {
       { id: TENANT_A, is_demo: false },
       { id: TENANT_B, is_demo: false },
       { id: DEMO, is_demo: true },
+      { id: PRACTICE, is_demo: false, is_practice: true },
     ],
     client_leads: [
       { id: 'lead-a', session_id: TENANT_A, phone: '+18015550001' },
       { id: 'lead-b', session_id: TENANT_B, phone: '+18015550002' },
       { id: 'lead-demo', session_id: DEMO, phone: '+18015550003' },
+      { id: 'lead-practice', session_id: PRACTICE, phone: '+18015550004' },
     ],
     portal_members: [
       { user_id: USERS.memberA.id, session_id: TENANT_A, role: 'owner' },
       { user_id: USERS.memberB.id, session_id: TENANT_B, role: 'owner' },
+      { user_id: USERS.practice.id, session_id: PRACTICE, role: 'owner' },
     ],
     portal_access: [{ email: USERS.internal.email, client_slug: 'mate' }],
   };

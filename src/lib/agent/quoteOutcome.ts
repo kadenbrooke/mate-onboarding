@@ -76,9 +76,11 @@ export async function applyQuoteOutcome(
 
 export type QuoteScanDeps = {
   supabase: SupabaseClient;
-  sendSms: (to: string, text: string) => Promise<{ ok: boolean }>;
+  sendSms: (to: string, text: string) => Promise<{ ok: boolean; practice?: boolean }>;
   sessionId: string;
   operatorPhone: string;
+  /** Records a provider-free send after the practice provider confirms it. */
+  onPracticeSend?: (text: string, conversationId: string | null) => Promise<void>;
   /** False = inside quiet hours; defer this cycle rather than texting the operator. */
   withinWindow: boolean;
   now?: () => Date;
@@ -95,9 +97,14 @@ export type QuoteScanDeps = {
 export async function runQuoteMenuScan(
   deps: QuoteScanDeps,
 ): Promise<{ opened: number; reasked: number; deferred: boolean }> {
-  const { supabase, sendSms, sessionId, operatorPhone, withinWindow, now = () => new Date() } = deps;
+  const { supabase, sendSms, sessionId, operatorPhone, onPracticeSend, withinWindow, now = () => new Date() } = deps;
   if (!withinWindow) return { opened: 0, reasked: 0, deferred: true };
   const nowIso = now().toISOString();
+  const sendMenu = async (conversationId: string | null) => {
+    const menu = buildQuoteOutcomeMenu();
+    const sent = await sendSms(operatorPhone, menu);
+    if (sent.practice) await onPracticeSend?.(menu, conversationId);
+  };
 
   // 1. Newly-due quote appointments -> open a menu.
   // jc_sms_conversations has no `id`; its natural key is from_number (text), so we
@@ -123,21 +130,21 @@ export async function runQuoteMenuScan(
       kind: 'quote',
       status: 'awaiting',
     });
-    await sendSms(operatorPhone, buildQuoteOutcomeMenu());
+    await sendMenu(conv.from_number);
     opened++;
   }
 
   // 2. Due re-asks (choice 4) -> re-send once, then clear reask_at.
   const { data: reask } = await supabase
     .from('lead_postcall')
-    .select('id')
+    .select('id, jc_conversation_id')
     .eq('kind', 'quote')
     .eq('status', 'awaiting')
     .not('reask_at', 'is', null)
     .lte('reask_at', nowIso);
   let reasked = 0;
-  for (const r of (reask ?? []) as Array<{ id: string }>) {
-    await sendSms(operatorPhone, buildQuoteOutcomeMenu());
+  for (const r of (reask ?? []) as Array<{ id: string; jc_conversation_id?: string | null }>) {
+    await sendMenu(r.jc_conversation_id ?? null);
     await supabase.from('lead_postcall').update({ reask_at: null }).eq('id', r.id);
     reasked++;
   }

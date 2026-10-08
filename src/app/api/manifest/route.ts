@@ -20,6 +20,7 @@ import { NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { resolveSessionId, DEMO_ALIAS, DEMO_SESSION_ID } from "@/lib/portal/demo";
 import { BG_PAGE } from "@/lib/theme";
+import { practiceCompanyName } from "@/lib/portal/practice";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -54,7 +55,7 @@ async function resolveBusinessName(sessionId: string): Promise<string | null> {
     const service = createServiceClient();
     const { data } = await service
       .from("onboarding_sessions")
-      .select("collected, contact_id")
+      .select("collected, contact_id, is_practice")
       .eq("id", sessionId)
       .maybeSingle();
 
@@ -62,7 +63,7 @@ async function resolveBusinessName(sessionId: string): Promise<string | null> {
     const company = collected?.company;
     if (company && typeof company === "object") {
       const name = (company as { name?: string }).name;
-      if (typeof name === "string" && name.trim()) return name.trim();
+      if (typeof name === "string" && name.trim()) return practiceCompanyName(name, data?.is_practice === true);
     }
 
     if (data?.contact_id) {
@@ -73,7 +74,7 @@ async function resolveBusinessName(sessionId: string): Promise<string | null> {
         .maybeSingle();
       const contactCompany = contact?.company;
       if (typeof contactCompany === "string" && contactCompany.trim()) {
-        return contactCompany.trim();
+        return practiceCompanyName(contactCompany, data?.is_practice === true);
       }
     }
   } catch {

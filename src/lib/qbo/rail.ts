@@ -16,6 +16,9 @@
 //   QBO_RAIL_EXCHANGE_URL  e.g. https://n8n.auto-mate.business/webhook/qbo-exchange
 //   QBO_PROXY_SECRET       shared secret, sent as x-proxy-secret
 
+import { createServiceClient } from '@/lib/supabase/service';
+import { practiceStatus } from '@/lib/portal/practice';
+
 export type RailExchangeInput = {
   sessionId: string;
   realmId: string;
@@ -36,6 +39,10 @@ export async function requestTokenExchange(
   input: RailExchangeInput,
   timeoutMs = 20_000,
 ): Promise<RailExchangeResult> {
+  const practice = await practiceStatus(createServiceClient(), input.sessionId);
+  if (!practice.ok) return { ok: false, error: 'Could not verify the tenant before connecting QuickBooks.' };
+  if (practice.isPractice) return { ok: false, error: 'QuickBooks is unavailable for a Practice tenant.' };
+
   const url = process.env.QBO_RAIL_EXCHANGE_URL;
   const secret = process.env.QBO_PROXY_SECRET;
   if (!url || !secret) {

@@ -8,6 +8,7 @@ import { CaretLeft } from "@phosphor-icons/react"
 import HomeTab, { type Baseline } from "./HomeTab"
 import AgentsTab from "./AgentsTab"
 import type { Cap, Req, AgentCard } from "@/lib/portal/capabilities"
+import { practiceCompanyName } from "@/lib/portal/practice"
 
 // Post-onboarding client Command Center. Three tabs: Home (baseline + honest
 // live-result placeholders), Agents (Auto Mate 5 status cards), Chat (Business
@@ -31,6 +32,7 @@ interface PortalData {
   agents: AgentCard[]
   baseline: Baseline | null
   businessName: string | null
+  isPractice: boolean
 }
 
 const S = {
@@ -152,6 +154,9 @@ export default function PortalPage() {
 
   const mateName = data?.mate_name ?? null
   const onboardingComplete = data?.onboardingComplete ?? false
+  const displayBusinessName = data?.businessName
+    ? practiceCompanyName(data.businessName, data.isPractice === true)
+    : null
 
   return (
     <div style={S.page}>
@@ -175,9 +180,13 @@ export default function PortalPage() {
         {ready && !error && !noSession && (
           <>
             <div>
-              <h1 style={S.heading}>{data?.businessName ?? "Command Center"}</h1>
+              <h1 style={S.heading}>{displayBusinessName ?? "Command Center"}</h1>
               {data?.businessName && <p style={S.sub}>Command Center</p>}
             </div>
+
+            {data?.isPractice && (
+              <p style={S.notice}>Practice | No real messages, calls, or emails are sent.</p>
+            )}
 
             {!onboardingComplete && (
               <p style={S.notice}>

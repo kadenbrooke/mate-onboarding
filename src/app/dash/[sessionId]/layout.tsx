@@ -12,6 +12,7 @@ import { TopBar } from '@/components/dash/chrome/TopBar';
 import { IconRail } from '@/components/dash/chrome/IconRail';
 import { DashEditingProvider } from '@/lib/dashEditing';
 import { resolveSessionId } from '@/lib/portal/demo';
+import { practiceCompanyName } from '@/lib/portal/practice';
 
 async function signOutAction() {
   'use server';
@@ -48,13 +49,14 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
   let brand: Brand | null = null;
   let businessName: string | null = null;
   let logoUrl: string | null = null;
+  let isPractice = false;
   let openIncidents = 0;
   try {
     const supabase = createServiceClient();
     const [{ data: session }, incidentsResult] = await Promise.all([
       supabase
         .from('onboarding_sessions')
-        .select('brand, collected')
+        .select('brand, collected, is_practice')
         .eq('id', sessionId)
         .maybeSingle(),
       supabase
@@ -74,6 +76,7 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
         businessName = (company as { name?: string }).name ?? null;
       }
     }
+    isPractice = session?.is_practice === true;
     openIncidents = incidentsResult.count ?? 0;
   } catch {
     // Non-fatal: layout still renders with defaults.
@@ -171,12 +174,24 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
       <DashEditingProvider>
         <TopBar
           sessionId={sessionId}
-          businessName={businessName}
+          businessName={practiceCompanyName(businessName, isPractice)}
           logoUrl={logoUrl}
           openIncidents={openIncidents}
           signedIn={signedIn}
           signOutAction={signOutAction}
         />
+        {isPractice && (
+          <div
+            role="status"
+            data-testid="practice-banner"
+            style={{
+              maxWidth: 1100, margin: '0 auto', padding: '0 16px 8px',
+              color: TEXT_DARK, fontSize: 12, fontWeight: 700, textAlign: 'center',
+            }}
+          >
+            Practice | No real messages, calls, or emails are sent.
+          </div>
+        )}
         <IconRail />
 
         <div className="dash-shell" style={{ maxWidth: 1480, margin: '0 auto' }}>

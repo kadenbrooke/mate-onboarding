@@ -54,6 +54,11 @@ describe('TopBar', () => {
     expect(screen.getByAltText('J&C Asphalt')).toHaveAttribute('src', 'https://x.test/logo.png');
   });
 
+  it('shows the Practice label in the tenant chrome', () => {
+    renderTopBar({ sessionId: 's1', businessName: 'Practice | J&C Asphalt Paving', logoUrl: null, openIncidents: 0 });
+    expect(screen.getByTestId('practice-label')).toHaveTextContent('Practice');
+  });
+
   it('shows the incident badge only when incidents are open', () => {
     const { rerender } = render(
       <DashEditingProvider>

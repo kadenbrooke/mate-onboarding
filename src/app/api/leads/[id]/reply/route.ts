@@ -5,11 +5,11 @@ import { setHandler } from '@/lib/agent/handler';
 import { logMessage } from '@/lib/agent/messages';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
+import { fakePracticeMessage, practiceStatus } from '@/lib/portal/practice';
 
 // Human reply from the dashboard: send to the lead, log it, and auto-take-over
-// (typing = takeover). This sends a real SMS, so the caller must be signed in
-// and hold access to the lead's tenant (derived from the lead row, never from
-// the body). Demo sessions and tenants not wired in intakeTenants never send.
+// (typing = takeover). Practice tenants never reach a provider. They log a
+// marked fake receipt so Aranza can rehearse the workflow safely.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   let body: { session_id?: string; text?: string };
@@ -20,23 +20,30 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const gate = await checkLeadApiAccess(id, body.session_id);
   if (!gate.ok) return NextResponse.json({ error: gate.error }, { status: gate.status });
   const { lead, access } = gate;
-  if (access === 'demo' || !intakeTenantFor(lead.session_id)) {
+  const supabase = createServiceClient();
+  const practice = await practiceStatus(supabase, lead.session_id);
+  if (!practice.ok) return NextResponse.json({ error: practice.error }, { status: 500 });
+  if (access === 'demo' || (!practice.isPractice && !intakeTenantFor(lead.session_id))) {
     return NextResponse.json({ error: 'replies are not enabled for this dashboard' }, { status: 403 });
   }
 
   // Phone is read only now that the caller is authorized for this tenant.
-  const supabase = createServiceClient();
   const { data: contact } = await supabase.from('client_leads')
     .select('phone').eq('id', id).eq('session_id', lead.session_id).maybeSingle();
   if (!contact?.phone) return NextResponse.json({ error: 'lead not found or has no phone' }, { status: 404 });
 
-  const sent = await sendSms(contact.phone, text);
+  const sent = practice.isPractice
+    ? { ok: true, practice: true, error: undefined }
+    : await sendSms(contact.phone, text);
   if (!sent.ok) return NextResponse.json({ error: sent.error ?? 'send failed' }, { status: 502 });
 
-  const logRes = await logMessage(supabase, { leadId: id, sessionId: lead.session_id, direction: 'outbound', author: 'human', body: text });
+  const logRes = await logMessage(supabase, {
+    leadId: id, sessionId: lead.session_id, direction: 'outbound', author: 'human',
+    body: practice.isPractice ? fakePracticeMessage(text) : text,
+  });
   const flipRes = await setHandler(supabase, { leadId: id, sessionId: lead.session_id, handler: 'human', by: 'dashboard' });
   // The SMS already went out; a post-send DB write failure is non-fatal but must be observable.
   // We still return ok:true (do not fail the request over a bookkeeping miss), just surface it in logs.
   if (logRes.error || flipRes.error) console.warn('reply post-send write failed', { id, logErr: logRes.error, flipErr: flipRes.error });
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, practice: practice.isPractice });
 }

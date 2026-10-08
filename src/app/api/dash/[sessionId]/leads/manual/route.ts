@@ -29,22 +29,25 @@ export async function POST(_req: NextRequest, { params }: { params: Promise<{ se
   const service = createServiceClient();
   const { data: session } = await service
     .from('onboarding_sessions')
-    .select('id, is_demo, contact_id')
+    .select('id, is_demo, is_practice, contact_id')
     .eq('id', sessionId)
     .maybeSingle();
   if (!session) return NextResponse.json({ error: 'session not found' }, { status: 404 });
-  if (session.is_demo) {
+  const isPractice = session.is_practice === true;
+  if (session.is_demo && !isPractice) {
     return NextResponse.json({ error: 'Not available on the demo dashboard.' }, { status: 400 });
   }
-  if (!session.contact_id) {
+  if (!isPractice && !session.contact_id) {
     return NextResponse.json({ error: 'Not enabled for this account.' }, { status: 403 });
   }
-  const { data: caps } = await service
-    .from('client_capabilities')
-    .select('capability_key, status')
-    .eq('contact_id', session.contact_id as string);
-  if (!canUseLeadSnapshot(caps, verdict.access)) {
-    return NextResponse.json({ error: 'Not enabled for this account.' }, { status: 403 });
+  if (!isPractice) {
+    const { data: caps } = await service
+      .from('client_capabilities')
+      .select('capability_key, status')
+      .eq('contact_id', session.contact_id as string);
+    if (!canUseLeadSnapshot(caps, verdict.access)) {
+      return NextResponse.json({ error: 'Not enabled for this account.' }, { status: 403 });
+    }
   }
 
   const hourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
