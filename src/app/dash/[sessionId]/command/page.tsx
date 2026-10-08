@@ -60,7 +60,8 @@ export default async function CommandPage({ params }: { params: Promise<{ sessio
     wonLeads: won?.leads ?? [],
     signals,
     // A failed open-lead read is not "nothing open": flag the cards instead.
-    complete: { open: open?.complete ?? false, won: won?.complete ?? true },
+    // Any failed or capped read counts as incomplete, never as empty.
+    complete: { open: open?.complete ?? false, won: won?.complete ?? false, paid: paidByLead != null },
     lastOutbound,
     paidByLead,
     summary: revenueRows ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend }) : null,

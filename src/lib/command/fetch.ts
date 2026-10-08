@@ -132,11 +132,13 @@ export async function fetchOpenBook(db: CommandDb, sessionId: string): Promise<O
   return { leads: merged, signals, complete: scan.complete };
 }
 
-/** Every lead marked won. null before 0021 (no column) or on a failed read. */
+/** Every lead marked won. Before 0021 there is no job_outcome column and so no
+ *  won leads: an empty, complete list. null on a failed read. */
 export async function fetchWonLeads(db: CommandDb, sessionId: string): Promise<{ leads: Lead[]; complete: boolean } | null> {
   const scan = await scanAll(() => leadsTable(db, sessionId).eq('job_outcome', 'won').order('id', { ascending: true }));
   if ('error' in scan) {
-    if (scan.error.code !== NO_COLUMN) logFail('client_leads (won)', scan.error);
+    if (scan.error.code === NO_COLUMN) return { leads: [], complete: true };
+    logFail('client_leads (won)', scan.error);
     return null;
   }
   return { leads: scan.rows as unknown as Lead[], complete: scan.complete };

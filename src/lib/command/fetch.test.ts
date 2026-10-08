@@ -143,12 +143,20 @@ describe('fetchWonLeads', () => {
     expect(r?.complete).toBe(true);
     expect(f.reads[0].where).toEqual([`eq session_id ${A}`, 'eq is_test false', 'eq job_outcome won']);
   });
-  it('is null (and quiet) before job outcomes exist', async () => {
+  it('is empty and complete (and quiet) before job outcomes exist', async () => {
     const err = vi.spyOn(console, 'error').mockImplementation(() => {});
     const f = seed([]);
     f.failTable('client_leads', { message: 'no column', code: '42703' });
-    expect(await fetchWonLeads(dbOf(f), A)).toBeNull();
+    expect(await fetchWonLeads(dbOf(f), A)).toEqual({ leads: [], complete: true });
     expect(err).not.toHaveBeenCalled();
+  });
+  it('is null on a failed read, and incomplete when capped', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const broken = seed([]);
+    broken.failTable('client_leads', { message: 'boom' });
+    expect(await fetchWonLeads(dbOf(broken), A)).toBeNull();
+    const many = seed(Array.from({ length: PAGE * MAX_PAGES + 1 }, (_, i) => ({ id: `w${pad(i)}`, job_outcome: 'won' })));
+    expect((await fetchWonLeads(dbOf(many), A))?.complete).toBe(false);
   });
 });
 
@@ -199,6 +207,11 @@ describe('fetchPaidByLead', () => {
       where: [`eq session_id ${A}`, 'in lead_id a,b'], order: ['id asc'], limit: null, range: [0, PAGE - 1],
     });
     expect(f.reads).toHaveLength(2);
+  });
+  it('returns null, not a partial sum, when a chunk hits the page ceiling', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const rows = Array.from({ length: PAGE * MAX_PAGES + 1 }, (_, i) => ({ id: `p${pad(i)}`, lead_id: 'a', session_id: A, amount_cents: 1 }));
+    expect(await fetchPaidByLead(dbOf(createFakeQueryDb({ client_lead_payments: rows })), A, ['a'])).toBeNull();
   });
   it('returns null when the ledger is missing', async () => {
     const f = createFakeQueryDb({});

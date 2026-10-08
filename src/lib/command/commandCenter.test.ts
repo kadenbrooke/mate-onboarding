@@ -3,7 +3,7 @@ import type { Lead } from '@/lib/metrics/leads';
 import { summarizeReturn, type SourceRevenueRow } from '@/lib/metrics/revenue';
 import {
   ago, telHref, hotReasons, callList, waitingOnMe, stuckList, booksSummary, buildCommandModel, isClosed,
-  outboundCandidates,
+  outboundCandidates, owedTotal,
   WAIT_ROWS, type LeadSignal,
 } from './commandCenter';
 
@@ -181,10 +181,10 @@ const ROWS: SourceRevenueRow[] = [
 ];
 
 describe('booksSummary', () => {
-  it('carries the view totals, sources with leads and the Meta return, never the partner share', () => {
-    const books = booksSummary(summarizeReturn(ROWS, { metaSpend30dCents: 200_000 }));
+  it('carries the view totals, the passed owed sum and the Meta return, never the partner share', () => {
+    const books = booksSummary(summarizeReturn(ROWS, { metaSpend30dCents: 200_000 }), 450_000);
     expect(books).toEqual({
-      won: 5, soldCents: 3_300_000, collectedCents: 2_700_000, owedCents: 600_000, hasOutcomes: true,
+      won: 5, soldCents: 3_300_000, collectedCents: 2_700_000, owedCents: 450_000, hasOutcomes: true,
       sources: [
         { source: 'meta', leads: 40, won: 3, collectedCents: 1_800_000 },
         { source: 'referral', leads: 4, won: 2, collectedCents: 900_000 },
@@ -193,9 +193,18 @@ describe('booksSummary', () => {
     });
     expect(Object.keys(books)).not.toContain('partner');
   });
-  it('never shows a negative amount to collect', () => {
-    const over = ROWS.map(r => ({ ...r, collected_cents: r.job_value_cents + 1 }));
-    expect(booksSummary(summarizeReturn(over)).owedCents).toBe(0);
+  it('keeps an unknown owed amount unknown', () => {
+    expect(booksSummary(summarizeReturn(ROWS), null).owedCents).toBeNull();
+  });
+});
+
+describe('owedTotal', () => {
+  it('sums each job\'s own balance, so an overpaid job never hides another\'s', () => {
+    const over = lead({ job_outcome: 'won', job_value_cents: 300_000 });
+    const owing = lead({ job_outcome: 'won', job_value_cents: 500_000 });
+    const stuck = stuckList([over, owing], new Map([[over.id, 450_000], [owing.id, 100_000]]), NOW);
+    // Account-wide sold minus collected would be 800k - 550k = 250k.
+    expect(owedTotal(stuck)).toBe(400_000);
   });
 });
 
@@ -218,7 +227,7 @@ describe('outboundCandidates', () => {
 });
 
 const model = (over: Partial<Parameters<typeof buildCommandModel>[0]>) => buildCommandModel({
-  sessionId: 's-1', openLeads: [], wonLeads: [], signals: new Map(), complete: { open: true, won: true },
+  sessionId: 's-1', openLeads: [], wonLeads: [], signals: new Map(), complete: { open: true, won: true, paid: true },
   lastOutbound: new Map(), paidByLead: new Map(), summary: null, now: NOW, label: l => l.name ?? '', ...over,
 });
 
@@ -233,7 +242,7 @@ describe('buildCommandModel', () => {
     expect(m.waiting.rows[0]).toMatchObject({ kind: 'new', when: '3h' });
     expect(m.books).toBeNull();
     expect(m.scored).toBe(true);
-    expect(m.incomplete).toEqual({ call: false, waiting: false, stuck: false });
+    expect(m.incomplete).toEqual({ call: false, waiting: false, stuck: false, books: false });
   });
   it('caps the waiting list and reports the rest', () => {
     const leads = Array.from({ length: WAIT_ROWS + 3 }, () => lead({ created_at: hoursAgo(1), score: null }));
@@ -252,10 +261,33 @@ describe('buildCommandModel', () => {
     const m = model({ openLeads: [quote], wonLeads: [won] });
     expect(m.stuck.rows.map(r => r.label)).toEqual(['Owes $4,000', 'Quote 15d']);
   });
-  it('flags cards whose scans were cut short', () => {
-    expect(model({ complete: { open: false, won: true } }).incomplete).toEqual({ call: true, waiting: true, stuck: true });
-    expect(model({ complete: { open: true, won: false } }).incomplete).toEqual({ call: false, waiting: false, stuck: true });
+  it('flags cards whose reads were cut short or failed', () => {
+    expect(model({ complete: { open: false, won: true, paid: true } }).incomplete)
+      .toEqual({ call: true, waiting: true, stuck: true, books: false });
   });
+  it('makes To collect match the Stuck rows, across a cross-job overpayment', () => {
+    const over = lead({ job_outcome: 'won', job_value_cents: 300_000 });
+    const owing = lead({ job_outcome: 'won', job_value_cents: 500_000 });
+    const m = model({
+      wonLeads: [over, owing], paidByLead: new Map([[over.id, 450_000], [owing.id, 100_000]]),
+      summary: summarizeReturn(ROWS),
+    });
+    expect(m.stuck.rows.map(r => r.label)).toEqual(['Owes $4,000']);
+    expect(m.books?.owedCents).toBe(400_000);
+    expect(m.incomplete.books).toBe(false);
+  });
+  for (const [why, complete, paid] of [
+    ['won-lead read failed or capped', { open: true, won: false, paid: true }, new Map<string, number>()],
+    ['payment read failed or capped', { open: true, won: true, paid: false }, null],
+  ] as const) {
+    it(`leaves money owed unknown, never "nothing stuck", when the ${why}`, () => {
+      const owing = lead({ job_outcome: 'won', job_value_cents: 500_000 });
+      const m = model({ wonLeads: [owing], complete, paidByLead: paid, summary: summarizeReturn(ROWS) });
+      expect(m.stuck.rows).toEqual([]);
+      expect(m.books?.owedCents).toBeNull();
+      expect(m.incomplete).toMatchObject({ stuck: true, books: true });
+    });
+  }
 });
 
 describe('isClosed', () => {

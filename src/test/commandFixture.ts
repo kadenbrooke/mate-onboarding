@@ -59,7 +59,7 @@ export function practiceModel(sessionId = 'practice'): CommandModel {
     sessionId,
     openLeads: PRACTICE_LEADS.filter(l => l.status !== 'serviced' && l.job_outcome == null),
     wonLeads: PRACTICE_LEADS.filter(l => l.job_outcome === 'won'),
-    complete: { open: true, won: true },
+    complete: { open: true, won: true, paid: true },
     signals: new Map(PRACTICE_SIGNALS.map(s => [s.lead_id, s])),
     // Owen texted after the last answer; nobody has answered him yet.
     lastOutbound: new Map([['p4', h(4)]]),

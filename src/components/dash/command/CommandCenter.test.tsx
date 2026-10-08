@@ -51,7 +51,7 @@ describe('CommandCenter', () => {
     const empty: CommandModel = {
       call: [], scored: true, waiting: { rows: [], counts: { handed: 0, replied: 0, new: 0 }, more: 0 },
       stuck: { rows: [], more: 0 }, books: null, pipelineHref: '/dash/s-1/pipeline',
-      incomplete: { call: false, waiting: false, stuck: false },
+      incomplete: { call: false, waiting: false, stuck: false, books: false },
     };
     render(<CommandCenter model={empty} today={today} demo={false} />);
     expect(screen.getByText('Nobody to call')).toBeInTheDocument();
@@ -63,9 +63,25 @@ describe('CommandCenter', () => {
   it('says when a card could not show everything, and only on that card', () => {
     const { rerender } = render(<CommandCenter model={practiceModel()} today={today} demo={false} />);
     expect(screen.queryByText('Some not shown')).toBeNull();
-    rerender(<CommandCenter model={{ ...practiceModel(), incomplete: { call: false, waiting: false, stuck: true } }} today={today} demo={false} />);
+    rerender(<CommandCenter model={{ ...practiceModel(), incomplete: { call: false, waiting: false, stuck: true, books: false } }} today={today} demo={false} />);
     expect(screen.getByTestId('incomplete-stuck')).toHaveTextContent('Some not shown');
     expect(screen.queryByTestId('incomplete-call')).toBeNull();
+  });
+
+  it('shows To collect as unknown, with the note, when owed money could not be read', () => {
+    const base = practiceModel();
+    const model = { ...base, books: { ...base.books!, owedCents: null }, incomplete: { ...base.incomplete, stuck: true, books: true } };
+    render(<CommandCenter model={model} today={today} demo={false} />);
+    expect(screen.getByText('To collect').nextSibling).toHaveTextContent('-');
+    expect(screen.getByTestId('incomplete-books')).toHaveTextContent('Some not shown');
+    expect(screen.getByTestId('incomplete-stuck')).toHaveTextContent('Some not shown');
+  });
+
+  it('shows practice To collect equal to the Stuck "Owes" rows', () => {
+    render(<CommandCenter model={practiceModel()} today={today} demo={false} />);
+    expect(screen.getByText('To collect').nextSibling).toHaveTextContent('$8,500');
+    expect(screen.getByText('Owes $6,100')).toBeInTheDocument();
+    expect(screen.getByText('Owes $2,400')).toBeInTheDocument();
   });
 
   it('says scoring is off rather than claiming nobody is worth a call', () => {

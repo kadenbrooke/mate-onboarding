@@ -238,7 +238,7 @@ function BooksView({ books, pipelineHref }: { books: Books; pipelineHref: string
         <Stat label="Collected" value={moneyShort(books.collectedCents)} color={books.collectedCents > 0 ? FREE_GREEN : INK} />
         <Stat
           label="To collect"
-          value={moneyShort(books.owedCents)}
+          value={books.owedCents == null ? '-' : moneyShort(books.owedCents)}
           color={books.owedCents ? brandVar : INK}
         />
       </div>
@@ -333,7 +333,7 @@ export function CommandCenter({ model, today, demo }: { model: CommandModel; tod
           <More n={waiting.more} href={model.pipelineHref} />
         </Section>
 
-        <Section area="books" title="On the books" icon={<CurrencyDollar size={18} weight="bold" />}>
+        <Section area="books" title="On the books" icon={<CurrencyDollar size={18} weight="bold" />} incomplete={model.incomplete.books}>
           {books ? <BooksView books={books} pipelineHref={model.pipelineHref} /> : <Empty>Not set up yet</Empty>}
         </Section>
 

@@ -174,6 +174,11 @@ export type StuckItem =
   | { lead: Lead; kind: 'owed'; owedCents: number }
   | { lead: Lead; kind: 'quote_stale'; days: number };
 
+/** What won jobs still owe: each job's own balance, floored at 0, summed. */
+export function owedTotal(stuck: StuckItem[]): number {
+  return stuck.reduce((t, s) => t + (s.kind === 'owed' ? s.owedCents : 0), 0);
+}
+
 /**
  * Which open leads need their newest outbound message, and from when: open,
  * human-handled leads the lead has texted. `since` is the earliest of those
@@ -241,8 +246,9 @@ export type Books = {
   won: number;
   soldCents: number;
   collectedCents: number;
-  /** Sold minus collected across the whole book (never below 0). */
-  owedCents: number;
+  /** Sum of each won job's own positive balance. null when the won-lead or
+   *  payment reads were not complete: unknown, never a guess. */
+  owedCents: number | null;
   hasOutcomes: boolean;
   /** Sources with at least one lead, most cash collected first. */
   sources: BookSource[];
@@ -251,20 +257,19 @@ export type Books = {
 };
 
 /**
- * The "on the books" numbers, all from the whole-book revenue view (0021),
- * which sums in SQL over every lead: the same numbers as the Return by Source
- * card, and complete by construction. "To collect" is sold minus collected.
- * Payments are only allowed on won leads, so this is what won jobs still owe,
- * net: a job paid over its value offsets another's balance, where the Stuck
- * rows show each job's own balance. The partner share in `summary.partner`
- * is dropped here on purpose.
+ * The "on the books" numbers. Won, sold and collected come from the
+ * whole-book revenue view (0021, summed in SQL; the same numbers as the
+ * Return by Source card). "To collect" is passed in: the sum of every won
+ * job's own balance, each floored at 0 (owedTotal), so a job paid over its
+ * value never hides money owed on another and the tile equals the Stuck
+ * "Owes" rows. The partner share in `summary.partner` is dropped on purpose.
  */
-export function booksSummary(summary: ReturnSummary): Books {
+export function booksSummary(summary: ReturnSummary, owedCents: number | null): Books {
   return {
     won: summary.totals.won,
     soldCents: summary.totals.jobValueCents,
     collectedCents: summary.totals.collectedCents,
-    owedCents: Math.max(0, summary.totals.jobValueCents - summary.totals.collectedCents),
+    owedCents,
     hasOutcomes: summary.hasOutcomes,
     sources: summary.rows
       .filter(r => r.leads > 0)
@@ -296,7 +301,7 @@ export type CommandModel = {
   /** null when the revenue view is not readable (0021 not applied, or a read error). */
   books: Books | null;
   /** A card whose source scan hit its page ceiling shows "More not shown". */
-  incomplete: { call: boolean; waiting: boolean; stuck: boolean };
+  incomplete: { call: boolean; waiting: boolean; stuck: boolean; books: boolean };
   pipelineHref: string;
 };
 
@@ -309,8 +314,9 @@ export function buildCommandModel(input: {
   wonLeads: Lead[];
   /** Score-view rows for the open leads. */
   signals: Map<string, LeadSignal>;
-  /** False when a scan stopped at its page ceiling. */
-  complete: { open: boolean; won: boolean };
+  /** False when a read failed or stopped at its page ceiling. `won` covers
+   *  the won-lead scan, `paid` the payment reads for those leads. */
+  complete: { open: boolean; won: boolean; paid: boolean };
   lastOutbound: Map<string, string> | null;
   paidByLead: Map<string, number> | null;
   summary: ReturnSummary | null;
@@ -332,7 +338,10 @@ export function buildCommandModel(input: {
   }));
 
   const waiting = waitingOnMe(input.openLeads, signals, input.lastOutbound, now);
-  const stuck = stuckList([...input.wonLeads, ...input.openLeads], input.paidByLead, now);
+  // Money owed is only known when every won lead AND all their payments
+  // were read; anything less leaves both the tile and the rows unknown.
+  const owedKnown = input.complete.won && input.complete.paid && input.paidByLead != null;
+  const stuck = stuckList([...input.wonLeads, ...input.openLeads], owedKnown ? input.paidByLead : null, now);
 
   return {
     call,
@@ -351,11 +360,12 @@ export function buildCommandModel(input: {
       })),
       more: Math.max(0, stuck.length - STUCK_ROWS),
     },
-    books: input.summary ? booksSummary(input.summary) : null,
+    books: input.summary ? booksSummary(input.summary, owedKnown ? owedTotal(stuck) : null) : null,
     incomplete: {
       call: !input.complete.open,
       waiting: !input.complete.open,
-      stuck: !input.complete.open || !input.complete.won,
+      stuck: !input.complete.open || !owedKnown,
+      books: input.summary != null && !owedKnown,
     },
     pipelineHref,
   };
