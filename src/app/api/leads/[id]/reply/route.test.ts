@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createFakeDb, seedTenants, USERS, TENANT_A, TENANT_B, type FakeDb } from '@/test/fakeSupabase';
+import { createFakeDb, seedTenants, USERS, TENANT_A, TENANT_B, PRACTICE, type FakeDb } from '@/test/fakeSupabase';
 
 // Real gates run (lead-gate -> api-gate -> dash-access) against an in-memory DB;
 // only the Supabase clients and the Telnyx sender are faked.
@@ -84,6 +84,18 @@ describe('POST /api/leads/[id]/reply', () => {
     expect(sendSmsMock).toHaveBeenCalledWith('+18015550001', 'hello there');
     expect(h.db.writes.map(w => [w.table, w.op])).toEqual([['lead_messages', 'insert'], ['client_leads', 'update']]);
     expect(h.db.writes[1].filters).toEqual([['id', 'lead-a'], ['session_id', TENANT_A]]);
+  });
+
+  it('records a marked fake send for a practice tenant without calling Telnyx', async () => {
+    h.user = USERS.practice;
+    const res = await call('lead-practice', { session_id: PRACTICE, text: 'Hello from the office' });
+    expect(res.status).toBe(200);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+    expect(h.db.writes.find(w => w.table === 'lead_messages')?.values).toMatchObject({
+      body: '[Practice fake sent to lead] Hello from the office',
+      direction: 'outbound',
+      author: 'human',
+    });
   });
 
   it('allows an internal (portal_access mate) user', async () => {

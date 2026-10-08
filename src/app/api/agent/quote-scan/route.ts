@@ -29,21 +29,25 @@ export async function POST(request: Request) {
   }
 
   const supabase = createServiceClient();
-  const { data: session } = await supabase
+  const { data: session, error: sessionError } = await supabase
     .from('onboarding_sessions')
-    .select('operator_phone')
+    .select('operator_phone, is_practice')
     .eq('id', sessionId)
     .maybeSingle();
+  if (sessionError) return NextResponse.json({ error: sessionError.message }, { status: 500 });
   if (!session?.operator_phone) {
     return NextResponse.json({ ok: true, opened: 0, reasked: 0, skipped: 'no operator_phone' });
   }
 
+  const provider = session.is_practice
+    ? async () => ({ ok: true })
+    : sendSms;
   const result = await runQuoteMenuScan({
     supabase,
-    sendSms,
+    sendSms: provider,
     sessionId,
     operatorPhone: session.operator_phone,
     withinWindow: isWithinSendWindow(JC_QUIET_HOURS),
   });
-  return NextResponse.json({ ok: true, ...result });
+  return NextResponse.json({ ok: true, practice: session.is_practice === true, ...result });
 }

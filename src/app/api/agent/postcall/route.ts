@@ -8,6 +8,7 @@ import { logMessage } from '@/lib/agent/messages';
 import { applyNoteToLead } from '@/lib/agent/noteExtract';
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { postcallOpenedEvent, postcallResolvedEvent, quoteOutcomeEvent } from '@/lib/metrics/eventSources';
+import { fakePracticeMessage } from '@/lib/portal/practice';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -46,16 +47,27 @@ export async function POST(request: Request) {
       lead = ins.data;
     }
     if (!lead) return NextResponse.json({ error: 'could not resolve lead' }, { status: 500 });
-    const { data: config } = await supabase.from('onboarding_sessions')
-      .select('operator_phone, onboarding_form_url, faq_url').eq('id', body.session_id).single();
-    if (!config?.operator_phone) return NextResponse.json({ error: 'no operator_phone configured' }, { status: 409 });
+    const { data: config, error: configError } = await supabase.from('onboarding_sessions')
+      .select('operator_phone, onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
+    if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
+    if (!config?.operator_phone && config?.is_practice !== true) {
+      return NextResponse.json({ error: 'no operator_phone configured' }, { status: 409 });
+    }
     // `.select().single()` only so the new row's id can key the ticker event.
     // A failure here is already non-fatal below: no id means no event, and the
     // operator menu still goes out.
     const { data: opened } = await supabase.from('lead_postcall').insert({
       lead_id: lead.id, session_id: body.session_id, status: 'awaiting', created_by_fire: createdByFire,
     }).select('id, opened_at').single();
-    await sendSms(config.operator_phone, buildMenuText(body.caller));
+    const menu = buildMenuText(body.caller);
+    if (config.is_practice === true) {
+      await logMessage(supabase, {
+        leadId: lead.id, sessionId: body.session_id, direction: 'outbound', author: 'system', channel: 'system',
+        body: fakePracticeMessage(menu, 'office'),
+      });
+    } else {
+      await sendSms(config.operator_phone, menu);
+    }
     if (opened) {
       await emitClientEvent(supabase, postcallOpenedEvent({
         postcallId: opened.id as string,
@@ -115,8 +127,9 @@ export async function POST(request: Request) {
 
     const { data: lead } = await supabase.from('client_leads')
       .select('id, session_id, phone, name').eq('id', pc.lead_id).single();
-    const { data: config } = await supabase.from('onboarding_sessions')
-      .select('onboarding_form_url, faq_url').eq('id', body.session_id).single();
+    const { data: config, error: configError } = await supabase.from('onboarding_sessions')
+      .select('onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
+    if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
     const { choice, notes } = classifyReply(body.text);
 
     // "4 / Ignore" on a lead this call just created means the caller was never
@@ -139,7 +152,10 @@ export async function POST(request: Request) {
       await applyNoteToLead(supabase, { leadId: lead.id, sessionId: lead.session_id, note: notes });
     }
     if (choice && lead) {
-      await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms });
+      const sendForSession = async (to: string, text: string) => (
+        config?.is_practice === true ? { ok: true, practice: true } : sendSms(to, text)
+      );
+      await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
       const resolvedAt = new Date().toISOString();
       await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
       await emitClientEvent(supabase, postcallResolvedEvent({

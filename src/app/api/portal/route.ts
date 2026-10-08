@@ -48,9 +48,10 @@ interface EmptyPortal {
   agents: []
   baseline: null
   businessName: null
+  isPractice: boolean
 }
 
-function emptyPortal(mateName: string | null): EmptyPortal {
+function emptyPortal(mateName: string | null, isPractice = false): EmptyPortal {
   return {
     capabilities: [],
     buildRequests: [],
@@ -59,6 +60,7 @@ function emptyPortal(mateName: string | null): EmptyPortal {
     agents: [],
     baseline: null,
     businessName: null,
+    isPractice,
   }
 }
 
@@ -100,7 +102,7 @@ export async function GET(req: NextRequest) {
   //    is a soft miss, not an error.
   const { data: session, error: sessionErr } = await supabase
     .from("onboarding_sessions")
-    .select("id, contact_id, mate_name, collected")
+    .select("id, contact_id, mate_name, collected, is_practice")
     .eq("id", sessionId)
     .maybeSingle()
 
@@ -113,11 +115,12 @@ export async function GET(req: NextRequest) {
     typeof session.mate_name === "string" && session.mate_name.trim() !== ""
       ? session.mate_name
       : null
+  const isPractice = session.is_practice === true
 
   // No contact linked yet -> onboarding not finished. Render the shell with the
   // unfinished state; no capabilities/requests to show.
   if (!session.contact_id) {
-    return NextResponse.json(emptyPortal(mateName))
+    return NextResponse.json(emptyPortal(mateName, isPractice))
   }
 
   const contactId = session.contact_id as string
@@ -198,5 +201,6 @@ export async function GET(req: NextRequest) {
             avgJobValue: ajv,
           },
     businessName: typeof businessName === "string" && businessName.trim() !== "" ? businessName : null,
+    isPractice,
   })
 }

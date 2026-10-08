@@ -59,6 +59,7 @@ beforeEach(() => {
   emitted.length = 0;
   deleteError = null;
   applyNoteToLead.mockClear();
+  (sendSms as ReturnType<typeof vi.fn>).mockClear();
 });
 
 const url = (qs: string) => `http://x/api/agent/postcall?${qs}`;
@@ -74,6 +75,29 @@ describe('POST /api/agent/postcall', () => {
     const res = await post('action=fire&k=tok', { session_id: 's1', caller: '+18015551234' });
     expect(res.status).toBe(200);
     expect(sendSms).toHaveBeenCalledWith('+18019414398', expect.stringContaining('What next?'));
+  });
+
+  it('fire records a fake practice menu without calling the provider', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 'practice', phone: '+18015550101', name: 'Practice Lead' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18015550199', is_practice: true, onboarding_form_url: null, faq_url: null }, error: null });
+    const res = await post('action=fire&k=tok', { session_id: 'practice', caller: '+18015550101' });
+    expect(res.status).toBe(200);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(inserts.find(([table]) => table === 'lead_messages')?.[1]).toMatchObject({
+      body: expect.stringContaining('[Practice fake sent to office]'),
+    });
+  });
+
+  it('operator reply records a fake practice lead message without calling the provider', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'pc1', lead_id: 'l1', kind: 'call', jc_conversation_id: null, created_by_fire: false }, error: null });
+    single.mockResolvedValueOnce({ data: { id: 'l1', session_id: 'practice', phone: '+18015550101', name: 'Practice Lead' }, error: null });
+    single.mockResolvedValueOnce({ data: { onboarding_form_url: null, faq_url: null, is_practice: true }, error: null });
+    const res = await post('action=operator_reply&k=tok', { session_id: 'practice', text: '2' });
+    expect(res.status).toBe(200);
+    expect(sendSms).not.toHaveBeenCalled();
+    expect(inserts.find(([table]) => table === 'lead_messages')?.[1]).toMatchObject({
+      body: expect.stringContaining('[Practice fake sent to lead]'),
+    });
   });
 
   it('routes a quote-menu reply (choice 1) through the quote path', async () => {

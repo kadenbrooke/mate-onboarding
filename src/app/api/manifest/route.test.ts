@@ -57,6 +57,16 @@ describe('GET /api/manifest', () => {
     expect(contactSelect).not.toHaveBeenCalled();
   });
 
+  it('keeps a practice tenant labeled in the installed app name', async () => {
+    sessionMaybeSingle.mockResolvedValue({
+      data: { collected: { company: { name: 'J&C Asphalt Paving' } }, contact_id: null, is_practice: true },
+      error: null,
+    });
+    const body = await (await call(`?session=${SESSION}`)).json();
+    expect(body.name).toBe('Practice | J&C Asphalt Paving');
+    expect(body.short_name).toBe('Practice | J');
+  });
+
   it('falls back to contacts.company for a founder-provisioned session', async () => {
     // J&C's real shape: collected is empty, contact_id carries the business.
     sessionMaybeSingle.mockResolvedValue({

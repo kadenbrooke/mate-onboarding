@@ -7,6 +7,7 @@ import { useDashEditing } from '@/lib/dashEditing';
 import {
   BG_CARD, CARD_SHADOW, FONT_BODY, TEXT_DARK, TEXT_MUTED, brandVar, MQ_DASH_MOBILE,
 } from '@/lib/theme';
+import { PRACTICE_LABEL } from '@/lib/portal/practice';
 
 // Dash chrome top bar (InvestIQ reference): logo chip far left, pill nav
 // center (active = white pill + dark circular icon chip), bell + avatar
@@ -108,6 +109,18 @@ export function TopBar({ sessionId, businessName, logoUrl, openIncidents, signed
           height={34}
           style={{ width: 'auto', maxWidth: 220, objectFit: 'contain', display: 'block' }}
         />
+        {businessName?.toLowerCase().includes(PRACTICE_LABEL.toLowerCase()) && (
+          <span
+            data-testid="practice-label"
+            style={{
+              marginLeft: 8, padding: '4px 8px', borderRadius: 99,
+              background: TEXT_DARK, color: '#fff', fontSize: 10, fontWeight: 700,
+              fontFamily: FONT_BODY,
+            }}
+          >
+            {PRACTICE_LABEL}
+          </span>
+        )}
       </span>
 
       {/* Center pill nav */}
