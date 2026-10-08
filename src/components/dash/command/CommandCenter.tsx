@@ -71,7 +71,7 @@ function CallButton({ tel, name, demo }: { tel: string | null; name: string; dem
   if (!tel) return <span aria-hidden style={{ width: 48, flexShrink: 0 }} />;
   if (demo) {
     return (
-      <span data-testid="call-disabled" aria-disabled="true" aria-label={`Call ${name}`} style={{ ...style, opacity: 0.35 }}>
+      <span data-testid="call-disabled" role="img" aria-label={`Call ${name} (off in the demo)`} style={{ ...style, opacity: 0.35 }}>
         <Phone size={22} weight="fill" aria-hidden />
       </span>
     );
@@ -219,7 +219,9 @@ function Stat({ label, value, color = INK }: { label: string; value: string; col
 }
 
 function BooksView({ books, pipelineHref }: { books: Books; pipelineHref: string }) {
-  const top = books.sources.slice(0, 4);
+  // Every source with a lead, most cash first. J&C has a handful, so the
+  // whole list fits; the "+N more" pattern would hide where money came from.
+  const top = books.sources;
   const max = Math.max(1, ...top.map(s => s.collectedCents));
   return (
     <>

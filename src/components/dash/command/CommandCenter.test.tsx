@@ -37,6 +37,14 @@ describe('CommandCenter', () => {
     const { container } = render(<CommandCenter model={practiceModel()} today={today} demo />);
     expect(container.querySelectorAll('a[href^="tel:"]')).toHaveLength(0);
     expect(screen.getAllByTestId('call-disabled').length).toBeGreaterThan(0);
+    expect(screen.getAllByRole('img', { name: 'Call Dana Whitfield (off in the demo)' }).length).toBeGreaterThan(0);
+  });
+
+  it('lists every lead source in By source, not a top slice', () => {
+    const base = practiceModel();
+    const sources = Array.from({ length: 7 }, (_, i) => ({ source: `src${i}`, leads: 3, won: 1, collectedCents: (7 - i) * 10_000 }));
+    render(<CommandCenter model={{ ...base, books: { ...base.books!, sources } }} today={today} demo={false} />);
+    expect(screen.getAllByTestId(/^source-/)).toHaveLength(7);
   });
 
   it('says so when there is nothing to do', () => {

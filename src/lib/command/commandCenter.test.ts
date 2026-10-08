@@ -149,6 +149,10 @@ describe('stuckList', () => {
     const won = lead({ job_outcome: 'won', job_value_cents: 300_000 });
     expect(stuckList([won], null, NOW)).toEqual([]);
   });
+  it('counts a lead once when merged query results repeat it', () => {
+    const won = lead({ job_outcome: 'won', job_value_cents: 300_000, status: 'quoted' });
+    expect(stuckList([won, won], new Map(), NOW)).toHaveLength(1);
+  });
   it('lists quotes with no answer after 14 days, oldest first', () => {
     const q20 = lead({ status: 'quoted', status_updated_at: daysAgo(20) });
     const q30 = lead({ status: 'quoted', status_updated_at: daysAgo(30) });
@@ -193,7 +197,8 @@ describe('buildCommandModel', () => {
   it('builds display rows with thread links and tel links', () => {
     const hot = lead({ score: 88, phone: '(801) 555-0123', created_at: hoursAgo(3) });
     const model = buildCommandModel({
-      sessionId: 's-1', leads: [hot], signals: signalsOf(sig(hot)), lastOutbound: new Map(), paidByLead: new Map(),
+      sessionId: 's-1', callLeads: [hot], scored: true, waitLeads: [hot], stuckLeads: [],
+      signals: signalsOf(sig(hot)), lastOutbound: new Map(), paidByLead: new Map(),
       summary: null, now: NOW, label: l => l.name ?? '',
     });
     expect(model.call[0]).toMatchObject({
@@ -207,7 +212,8 @@ describe('buildCommandModel', () => {
   it('caps the waiting list and reports the rest', () => {
     const leads = Array.from({ length: WAIT_ROWS + 3 }, () => lead({ created_at: hoursAgo(1), score: null }));
     const model = buildCommandModel({
-      sessionId: 's-1', leads, signals: new Map(), lastOutbound: new Map(), paidByLead: new Map(),
+      sessionId: 's-1', callLeads: [], scored: false, waitLeads: leads, stuckLeads: [],
+      signals: new Map(), lastOutbound: new Map(), paidByLead: new Map(),
       summary: null, now: NOW, label: l => l.name ?? '',
     });
     expect(model.waiting.rows).toHaveLength(WAIT_ROWS);

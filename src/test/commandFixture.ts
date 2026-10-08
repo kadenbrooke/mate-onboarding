@@ -57,7 +57,10 @@ const PRACTICE_SOURCES: SourceRevenueRow[] = [
 export function practiceModel(sessionId = 'practice'): CommandModel {
   return buildCommandModel({
     sessionId,
-    leads: PRACTICE_LEADS,
+    callLeads: PRACTICE_LEADS.filter(l => l.score != null).map(l => ({ ...l })),
+    scored: true,
+    waitLeads: PRACTICE_LEADS,
+    stuckLeads: PRACTICE_LEADS.filter(l => l.job_outcome === 'won' || l.status === 'quoted'),
     signals: new Map(PRACTICE_SIGNALS.map(s => [s.lead_id, s])),
     // Owen texted after the last answer; nobody has answered him yet.
     lastOutbound: new Map([['p4', h(4)]]),

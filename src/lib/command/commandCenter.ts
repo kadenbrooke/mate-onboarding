@@ -190,7 +190,11 @@ export type StuckItem =
 export function stuckList(leads: Lead[], paidByLead: Map<string, number> | null, now: Date): StuckItem[] {
   const owed: StuckItem[] = [];
   const stale: StuckItem[] = [];
+  const seen = new Set<string>();
   for (const l of leads) {
+    // Callers merge several queries (won leads, stale quotes); a lead counts once.
+    if (seen.has(l.id)) continue;
+    seen.add(l.id);
     if (paidByLead && l.job_outcome === 'won' && (l.job_value_cents ?? 0) > 0) {
       const due = l.job_value_cents! - (paidByLead.get(l.id) ?? 0);
       if (due > 0) owed.push({ lead: l, kind: 'owed', owedCents: due });
@@ -272,7 +276,15 @@ export type CommandModel = {
 
 export function buildCommandModel(input: {
   sessionId: string;
-  leads: Lead[];
+  /** The tenant's top open leads by live score (fetchCallNow), already ranked globally. */
+  callLeads: Lead[];
+  /** False when no lead has a score at all (scoring not running). */
+  scored: boolean;
+  /** Every lead that could be waiting (fetchWaitingCandidates). */
+  waitLeads: Lead[];
+  /** Every won lead plus every stale quote (fetchStuckCandidates). */
+  stuckLeads: Lead[];
+  /** Score-view rows for the call and waiting leads. */
   signals: Map<string, LeadSignal>;
   lastOutbound: Map<string, string> | null;
   paidByLead: Map<string, number> | null;
@@ -281,25 +293,25 @@ export function buildCommandModel(input: {
   /** Turns a lead into its display name (leadLabel on the page). */
   label: (l: Lead) => string;
 }): CommandModel {
-  const { sessionId, leads, signals, now, label } = input;
+  const { sessionId, signals, now, label } = input;
   const pipelineHref = `/dash/${sessionId}/pipeline`;
   const base = (l: Lead): RowBase => ({
     id: l.id, name: label(l), tel: telHref(l.phone), href: `${pipelineHref}?spotlight=${l.id}`,
   });
 
-  const call = callList(leads).map(l => ({
+  const call = callList(input.callLeads).map(l => ({
     ...base(l),
     score: l.score!,
     reasons: hotReasons(l, signals.get(l.id), now),
     detail: [l.service, l.city].filter(Boolean).join(' · '),
   }));
 
-  const waiting = waitingOnMe(leads, signals, input.lastOutbound, now);
-  const stuck = stuckList(leads, input.paidByLead, now);
+  const waiting = waitingOnMe(input.waitLeads, signals, input.lastOutbound, now);
+  const stuck = stuckList(input.stuckLeads, input.paidByLead, now);
 
   return {
     call,
-    scored: leads.some(l => l.score != null),
+    scored: input.scored,
     waiting: {
       rows: waiting.items.slice(0, WAIT_ROWS).map(i => ({ ...base(i.lead), kind: i.kind, when: ago(i.at, now) })),
       counts: waiting.counts,
