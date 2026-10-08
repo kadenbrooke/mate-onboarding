@@ -3,6 +3,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { sendSms } from '@/lib/agent/telnyx';
 import { runQuoteMenuScan } from '@/lib/agent/quoteOutcome';
 import { isWithinSendWindow, type QuietHours } from '@/lib/agent/quietHours';
+import { logMessage } from '@/lib/agent/messages';
+import { fakePracticeMessage } from '@/lib/portal/practice';
 
 export const runtime = 'nodejs';
 
@@ -40,13 +42,30 @@ export async function POST(request: Request) {
   }
 
   const provider = session.is_practice
-    ? async () => ({ ok: true })
+    ? async () => ({ ok: true, practice: true })
     : sendSms;
+  const onPracticeSend = session.is_practice
+    ? async (text: string, conversationId: string | null) => {
+        if (!conversationId) return;
+        const { data: lead } = await supabase.from('client_leads')
+          .select('id').eq('session_id', sessionId).eq('phone', conversationId).maybeSingle();
+        if (!lead?.id) return;
+        await logMessage(supabase, {
+          leadId: lead.id as string,
+          sessionId,
+          direction: 'outbound',
+          author: 'system',
+          channel: 'system',
+          body: fakePracticeMessage(text, 'office'),
+        });
+      }
+    : undefined;
   const result = await runQuoteMenuScan({
     supabase,
     sendSms: provider,
     sessionId,
     operatorPhone: session.operator_phone,
+    onPracticeSend,
     withinWindow: isWithinSendWindow(JC_QUIET_HOURS),
   });
   return NextResponse.json({ ok: true, practice: session.is_practice === true, ...result });

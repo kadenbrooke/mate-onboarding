@@ -72,6 +72,7 @@ async function ensurePracticeLogin() {
 
 async function main() {
   const now = new Date().toISOString();
+  // PRACTICE_SESSION_ID stays fixed so every reset is idempotent for one tenant.
   await must('create or reset practice session', supabase.from('onboarding_sessions').upsert({
     id: PRACTICE_SESSION_ID,
     mate_name: 'Practice Mate',
