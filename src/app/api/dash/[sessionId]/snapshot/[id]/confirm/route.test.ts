@@ -101,7 +101,7 @@ const requestBody = {
   rows: [{
     index: 0,
     include: true,
-    source: 'self_sourced',
+    source: 'lead_snapshot',
     name: 'Fake Lead',
     phone: '+18015550101',
     address: '100 Fake Street, Orem, UT 84057',
@@ -152,18 +152,24 @@ describe('POST /api/dash/[sessionId]/snapshot/[id]/confirm', () => {
 
   it('uses the intake webhook for a normal tenant', async () => {
     state.practice = false;
-    const response = await post();
+    const response = await POST(
+      new Request('http://x/api/dash/session/snapshot/snapshot-1/confirm', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, rows: [{ ...requestBody.rows[0], source: 'self_sourced', text: true }] }),
+      }) as never,
+      { params: Promise.resolve({ sessionId: 'normal-session', id: 'snapshot-1' }) },
+    );
 
     expect(response.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(JSON.parse(fetchMock.mock.calls[0][0] ? fetchMock.mock.calls[0][1].body : '{}')).toMatchObject({
-      lead: { source: 'self_sourced' },
+      source: 'lead_snapshot', lead: { source: 'self_sourced' },
     });
   });
 
   it('saves a self-sourced lead as human-owned without handing it to intake', async () => {
     state.practice = true;
-    const body = { ...requestBody, rows: [{ ...requestBody.rows[0], text: false }] };
+    const body = { ...requestBody, rows: [{ ...requestBody.rows[0], source: 'self_sourced', text: false }] };
     const response = await POST(
       new Request('http://x/api/dash/session/snapshot/snapshot-1/confirm', {
         method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body),

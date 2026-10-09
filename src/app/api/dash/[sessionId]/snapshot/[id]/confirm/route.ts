@@ -315,7 +315,9 @@ async function sendOne(
   const opening = snapshotOpening(ctx.tenant, { name: v.lead.name, service: v.lead.service });
   const payload = {
     session_id: ctx.sessionId,
-    source: v.source,
+    // The live Lead Snapshot workflow routes on this envelope source. Keep it
+    // stable; the selected attribution belongs to the lead payload below.
+    source: 'lead_snapshot',
     snapshot_id: ctx.snapshotId,
     // Idempotency key the workflow can use if it ever grows a ledger.
     intake_key: `${ctx.snapshotId}:${v.leadKey}`,

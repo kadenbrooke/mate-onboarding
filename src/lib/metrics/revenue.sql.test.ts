@@ -25,7 +25,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
-import { revenueRowsFromLeads, summarizeReturn, type LeadPayment, type SourceRevenueRow } from './revenue';
+import { revenueRowsFromLeads, summarizeReturn, type LeadPayment, type RevenueLeadMessage, type SourceRevenueRow } from './revenue';
 import type { Lead } from './leads';
 
 const MIGRATION = readFileSync(
@@ -104,12 +104,15 @@ async function newSession(): Promise<string> {
 
 async function viewRows(sessionId: string): Promise<SourceRevenueRow[]> {
   const { rows } = await db.query<Record<string, unknown>>(
-    `select source, leads, won, lost, job_value_cents, collected_cents, collected_in_window_cents, collected_30d_cents
+    `select source, leads, won, lost, job_value_cents, collected_cents, collected_in_window_cents, collected_30d_cents, partner_collected_in_window_cents
        from client_lead_revenue_by_source where session_id = $1 order by source`, [sessionId]);
   return rows.map(r => ({
     source: String(r.source), leads: Number(r.leads), won: Number(r.won), lost: Number(r.lost),
     job_value_cents: Number(r.job_value_cents), collected_cents: Number(r.collected_cents),
     collected_in_window_cents: Number(r.collected_in_window_cents), collected_30d_cents: Number(r.collected_30d_cents),
+    ...(String(r.source) === 'self_sourced'
+      ? { partner_collected_in_window_cents: Number(r.partner_collected_in_window_cents) }
+      : {}),
   }));
 }
 
@@ -274,7 +277,7 @@ describe('view parity with the TypeScript twin', () => {
     const now = Date.now();
     const at = (d: number) => new Date(now - d * DAY).toISOString();
 
-    type Fixture = { lead: Partial<Lead>; payments?: [number, string][] };
+    type Fixture = { lead: Partial<Lead>; payments?: [number, string][]; agentMessage?: boolean };
     const fixtures: Fixture[] = [
       { lead: { source: 'meta', created_at: at(400), job_outcome: 'won', job_value_cents: 500000 },
         payments: [[200000, at(380)], [250000, at(40)], [50000, at(5)]] },
@@ -293,10 +296,15 @@ describe('view parity with the TypeScript twin', () => {
         payments: [[100000, at(1)]] },
       { lead: { source: 'text', created_at: at(8), job_outcome: 'lost' } },
       { lead: { source: 'typed', created_at: at(7) } },
+      { lead: { source: 'self_sourced', created_at: at(5), job_outcome: 'won', job_value_cents: 120000 },
+        payments: [[70000, at(4)]], agentMessage: true },
+      { lead: { source: 'self_sourced', created_at: at(5), job_outcome: 'won', job_value_cents: 100000 },
+        payments: [[30000, at(4)]] },
     ];
 
     const leads: Lead[] = [];
     const payments: LeadPayment[] = [];
+    const messages: RevenueLeadMessage[] = [];
     for (const f of fixtures) {
       const cols: Record<string, unknown> = { source: f.lead.source, created_at: f.lead.created_at };
       const id = await insertLead(S, cols);
@@ -308,6 +316,13 @@ describe('view parity with the TypeScript twin', () => {
         await addPayment(id, S, amount, paidAt);
         payments.push({ lead_id: id, amount_cents: amount, paid_at: paidAt });
       }
+      if (f.agentMessage) {
+        await db.query(
+          `insert into lead_messages (lead_id, session_id, direction, author, body)
+           values ($1, $2, 'outbound', 'agent', 'fake agent message')`, [id, S],
+        );
+        messages.push({ lead_id: id, direction: 'outbound', author: 'agent' });
+      }
       leads.push({
         id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
         status: 'open', quote_cents: null, contacted: false, after_hours: false, first_reply_seconds: null,
@@ -316,7 +331,7 @@ describe('view parity with the TypeScript twin', () => {
     }
 
     const sql = await viewRows(S);
-    const ts = revenueRowsFromLeads(leads, payments, new Date()).sort((a, b) => a.source.localeCompare(b.source));
+    const ts = revenueRowsFromLeads(leads, payments, new Date(), messages).sort((a, b) => a.source.localeCompare(b.source));
     expect(sql).toEqual(ts);
     // Pin the numbers so a shared bug in both twins cannot pass.
     expect(sql.find(r => r.source === 'meta')).toMatchObject({
@@ -325,6 +340,12 @@ describe('view parity with the TypeScript twin', () => {
     });
     expect(sql.find(r => r.source === 'web_form')).toMatchObject({
       collected_cents: 133300, collected_in_window_cents: 52200,
+    });
+    expect(sql.find(r => r.source === 'self_sourced')).toMatchObject({
+      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
+    });
+    expect(ts.find(r => r.source === 'self_sourced')).toMatchObject({
+      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
     });
   });
 });

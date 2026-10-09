@@ -11,6 +11,10 @@ describe('buildMenuText', () => {
     expect(t).toContain("4 - Ignore (you've got it handled)");
     expect(t).toContain('Text me any notes from the call and I\'ll log them.');
   });
+
+  it('uses the tenant agent display name in the handoff option', () => {
+    expect(buildMenuText('+18015551234', 'Ashley')).toContain('2 - Hand to Ashley (agent takes over)');
+  });
 });
 
 describe('classifyReply', () => {

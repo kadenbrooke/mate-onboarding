@@ -1,8 +1,18 @@
-import type { ReturnSummary } from './revenue';
+import type { ReturnSummary, SourceReturn } from './revenue';
 
-export type ClientReturnSummary = Omit<ReturnSummary, 'partner'> & { partner: null };
+export type ClientSourceReturn = Omit<SourceReturn, 'owner' | 'partner_collected_in_window_cents'> & {
+  owner?: never;
+  partner_collected_in_window_cents?: never;
+};
+export type ClientReturnSummary = Omit<ReturnSummary, 'partner' | 'rows'> & {
+  partner: null;
+  rows: ClientSourceReturn[];
+};
 
-/** Remove the internal 15% basis before a client user's RSC payload is built. */
+/** Remove all partner-basis metadata before a client user's RSC payload is built. */
 export function hidePartnerBasis(summary: ReturnSummary): ClientReturnSummary {
-  return { ...summary, partner: null };
+  const rows = summary.rows.map(row => Object.fromEntries(
+    Object.entries(row).filter(([key]) => key !== 'owner' && key !== 'partner_collected_in_window_cents'),
+  ) as unknown as ClientSourceReturn);
+  return { ...summary, rows, partner: null };
 }

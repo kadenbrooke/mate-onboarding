@@ -66,6 +66,9 @@ export function updateRow(rows: EditableRow[], index: number, patch: Partial<Edi
     if (r.index !== index) return r;
     // A duplicate stays excluded whatever the patch says.
     const next = { ...r, ...patch };
+    // Choosing self-sourced means the person keeps the lead unless they make
+    // the separate, explicit choice to hand it to the agent.
+    if (patch.source === 'self_sourced' && patch.text === undefined) next.text = false;
     if (next.duplicate) next.include = false;
     return next;
   });

@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import type { ReturnSummary, SourceReturn } from '@/lib/metrics/revenue';
-import type { ClientReturnSummary } from '@/lib/metrics/revenueVisibility';
+import type { ClientReturnSummary, ClientSourceReturn } from '@/lib/metrics/revenueVisibility';
 import { SOURCE_LABELS } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
 import { PARTNER_CHANNEL_SOURCES } from '@/lib/metrics/partnerChannels';
@@ -22,7 +22,7 @@ const pct = (bps: number) => `${bps / 100}%`;
 const PARTNER_NAMES = Object.entries(PARTNER_CHANNEL_SOURCES)
   .filter(([, owner]) => owner === 'partner').map(([source]) => label(source)).join(', ');
 
-function SourceRow({ r }: { r: SourceReturn }) {
+function SourceRow({ r }: { r: SourceReturn | ClientSourceReturn }) {
   return (
     <div data-testid={`return-${r.source}`} style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,

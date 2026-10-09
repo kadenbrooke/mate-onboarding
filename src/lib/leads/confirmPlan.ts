@@ -104,7 +104,9 @@ export function planConfirm(
     seenInBatch.add(phone.leadKey);
     return {
       kind: 'send',
-      mode: row.text === false ? 'save' : 'text',
+      // Self-sourced work is never handed to the live agent implicitly. The
+      // person must explicitly turn texting on after selecting this source.
+      mode: row.source === 'self_sourced' && row.text !== true ? 'save' : row.text === false ? 'save' : 'text',
       index: row.index,
       e164: phone.e164,
       leadKey: phone.leadKey,

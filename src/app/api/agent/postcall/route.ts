@@ -9,6 +9,7 @@ import { applyNoteToLead } from '@/lib/agent/noteExtract';
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { postcallOpenedEvent, postcallResolvedEvent, quoteOutcomeEvent } from '@/lib/metrics/eventSources';
 import { fakePracticeMessage } from '@/lib/portal/practice';
+import { agentDisplayNameForSession } from '@/lib/agent/displayName';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     const { data: opened } = await supabase.from('lead_postcall').insert({
       lead_id: lead.id, session_id: body.session_id, status: 'awaiting', created_by_fire: createdByFire,
     }).select('id, opened_at').single();
-    const menu = buildMenuText(body.caller);
+    const menu = buildMenuText(body.caller, agentDisplayNameForSession(body.session_id));
     if (config.is_practice === true) {
       await logMessage(supabase, {
         leadId: lead.id, sessionId: body.session_id, direction: 'outbound', author: 'system', channel: 'system',

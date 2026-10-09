@@ -4,6 +4,7 @@ import type { Lead } from '@/lib/metrics/leads';
 import { Card } from '../Card';
 import { RingStat } from '../RingStat';
 import { AGENT_GREEN, HUMAN_AMBER, CARD_MUTED, FONT_BODY } from '@/lib/theme';
+import { DEFAULT_AGENT_DISPLAY_NAME } from '@/lib/agent/displayName';
 
 // Manual vs. Automated -- how much of the conversation load the agent is
 // carrying. Replaces the HOURS SAVED and ACTIONS hero cards, which both
@@ -15,7 +16,7 @@ import { AGENT_GREEN, HUMAN_AMBER, CARD_MUTED, FONT_BODY } from '@/lib/theme';
 // Colors are the Driver pill's, so the card and the pipeline table's DRIVER
 // column say the same thing in the same green and amber.
 
-export function DriverSplitCard({ leads, since, showLabel = true, agentName = 'Mate' }: {
+export function DriverSplitCard({ leads, since, showLabel = true, agentName = DEFAULT_AGENT_DISPLAY_NAME }: {
   leads: Lead[];
   /** Agent-live instant (the session's created_at). Leads older than this are
    *  pre-agent history and are excluded: a backfilled book of human-handled

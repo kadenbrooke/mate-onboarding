@@ -6,7 +6,7 @@ import {
 import type { SnapshotCandidate } from '@/lib/leads/snapshotParse';
 
 const cand = (o: Partial<SnapshotCandidate> = {}): SnapshotCandidate => ({
-  name: 'Rynell Davis', phone: '801-577-5322', address: null, service: null, notes: null,
+  name: 'Faux Sample', phone: '801-577-5322', address: null, service: null, notes: null,
   confidence: { name: 0.9, phone: 0.9, address: 0 }, withheld: [], ...o,
 });
 
@@ -31,6 +31,11 @@ describe('rowsFromCandidates', () => {
 
   it('blankRow is an empty, included, texting card', () => {
     expect(blankRow(3)).toMatchObject({ index: 3, include: true, text: true, phone: '', duplicate: null });
+  });
+
+  it('turns texting off when the source is changed to self-sourced', () => {
+    const rows = rowsFromCandidates([cand()]);
+    expect(updateRow(rows, 0, { source: 'self_sourced' })[0]).toMatchObject({ source: 'self_sourced', text: false });
   });
 });
 

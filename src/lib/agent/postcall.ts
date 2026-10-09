@@ -1,10 +1,12 @@
+import { DEFAULT_AGENT_DISPLAY_NAME } from './displayName';
+
 export type PostcallChoice = '1' | '2' | '3' | '4';
 
-export function buildMenuText(callerNumber: string): string {
+export function buildMenuText(callerNumber: string, agentName = DEFAULT_AGENT_DISPLAY_NAME): string {
   return [
     `Call w/ ${callerNumber} done. What next? Reply:`,
     '1 - Send onboarding form',
-    '2 - Hand to Mate (agent takes over)',
+    `2 - Hand to ${agentName} (agent takes over)`,
     '3 - Send FAQ',
     "4 - Ignore (you've got it handled)",
     '',

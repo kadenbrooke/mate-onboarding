@@ -27,6 +27,7 @@ alter table public.client_leads add constraint client_leads_source_check
 create or replace function public.lock_client_leads_self_sourced()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   if old.source is distinct from new.source
