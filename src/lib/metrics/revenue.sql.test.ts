@@ -236,6 +236,17 @@ describe('cash is counted by payment date', () => {
 });
 
 describe('self-sourced partner exception', () => {
+  it('locks source transitions to and from self_sourced after insert', async () => {
+    const S = await newSession();
+    const ordinary = await insertLead(S, { source: 'call' });
+    const selfSourced = await insertLead(S, { source: 'self_sourced' });
+
+    await expect(db.query(`update client_leads set source = 'self_sourced' where id = $1`, [ordinary]))
+      .rejects.toThrow(/source.*self_sourced|self_sourced.*source/i);
+    await expect(db.query(`update client_leads set source = 'call' where id = $1`, [selfSourced]))
+      .rejects.toThrow(/source.*self_sourced|self_sourced.*source/i);
+  });
+
   it('includes self-sourced cash only after an outbound agent message', async () => {
     const S = await newSession();
     const agentLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });

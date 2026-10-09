@@ -34,9 +34,6 @@ export type Lead = {
   // When `handler` last flipped (stamped by setHandler). Optional + nullable:
   // rows that were never handed over have none.
   handler_changed_at?: string | null;
-  /** True when the AI texting agent has sent at least one message. Used only
-   *  for the self_sourced partner-basis exception. */
-  agent_message_sent?: boolean;
   contacted: boolean; after_hours: boolean; first_reply_seconds: number | null;
   created_at: string;
   // When `status` last changed, stamped by trg_client_leads_status_ts. For a

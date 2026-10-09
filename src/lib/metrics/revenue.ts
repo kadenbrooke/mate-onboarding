@@ -69,6 +69,13 @@ const cents = (v: number | null | undefined) => (typeof v === 'number' && Number
 /** One client_lead_payments row, as far as the math needs it. */
 export type LeadPayment = { lead_id: string; amount_cents: number; paid_at: string };
 
+/** The lead_messages fields needed to mirror the SQL agent-touch predicate. */
+export type RevenueLeadMessage = {
+  lead_id: string;
+  direction: 'inbound' | 'outbound';
+  author: 'lead' | 'agent' | 'human' | 'system';
+};
+
 /**
  * The TypeScript twin of client_lead_revenue_by_source for one tenant's leads
  * and their payments. Callers pass leads already filtered to the tenant and to
@@ -77,10 +84,15 @@ export type LeadPayment = { lead_id: string; amount_cents: number; paid_at: stri
  * in first-seen order.
  */
 export function revenueRowsFromLeads(
-  leads: Lead[], payments: LeadPayment[] = [], now = new Date(),
+  leads: Lead[], payments: LeadPayment[] = [], now = new Date(), messages: RevenueLeadMessage[] = [],
 ): SourceRevenueRow[] {
   const bySource = new Map<string, SourceRevenueRow>();
   const since30d = now.getTime() - 30 * DAY_MS;
+  const agentMessagedLeadIds = new Set(
+    messages
+      .filter(m => m.direction === 'outbound' && m.author === 'agent')
+      .map(m => m.lead_id),
+  );
   const paymentsByLead = new Map<string, LeadPayment[]>();
   for (const p of payments) {
     const list = paymentsByLead.get(p.lead_id);
@@ -110,7 +122,7 @@ export function revenueRowsFromLeads(
       const at = new Date(p.paid_at).getTime();
       row.collected_cents += amount;
       if (at < windowEnd) row.collected_in_window_cents += amount;
-      if (at < windowEnd && (l.source !== 'self_sourced' || l.agent_message_sent === true)) {
+      if (at < windowEnd && (l.source !== 'self_sourced' || agentMessagedLeadIds.has(l.id))) {
         if (row.partner_collected_in_window_cents !== undefined) row.partner_collected_in_window_cents += amount;
       }
       if (at >= since30d) row.collected_30d_cents += amount;

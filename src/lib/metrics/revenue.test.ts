@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   revenueRowsFromLeads, summarizeReturn, metaSpend30dCents, fetchMetaSpend30dCents, addMonthsUtc,
-  type SourceRevenueRow, type LeadPayment, type AdSpendQuery,
+  type SourceRevenueRow, type LeadPayment, type AdSpendQuery, type RevenueLeadMessage,
 } from './revenue';
 import { PARTNER_CHANNEL_SOURCES, channelOwner, partnerShareCents } from './partnerChannels';
 import type { Lead } from './leads';
@@ -44,13 +44,16 @@ describe('partner-channel config', () => {
   });
 
   it('counts a self-sourced lead only after the agent has messaged it', () => {
-    const handedToAgent = lead({ source: 'self_sourced' as Lead['source'], agent_message_sent: true, job_outcome: 'won', job_value_cents: 100000 });
-    const keptByOwner = lead({ source: 'self_sourced' as Lead['source'], agent_message_sent: false, job_outcome: 'won', job_value_cents: 100000 });
+    const handedToAgent = lead({ source: 'self_sourced' as Lead['source'], job_outcome: 'won', job_value_cents: 100000 });
+    const keptByOwner = lead({ source: 'self_sourced' as Lead['source'], job_outcome: 'won', job_value_cents: 100000 });
     const payments = [
       payFor(handedToAgent, 10000),
       payFor(keptByOwner, 20000),
     ];
-    const summary = summarizeReturn(revenueRowsFromLeads([handedToAgent, keptByOwner], payments, NOW));
+    const messages: RevenueLeadMessage[] = [
+      { lead_id: handedToAgent.id, direction: 'outbound', author: 'agent' },
+    ];
+    const summary = summarizeReturn(revenueRowsFromLeads([handedToAgent, keptByOwner], payments, NOW, messages));
     expect(summary.rows.find(r => r.source === 'self_sourced')).toMatchObject({
       collected_cents: 30000,
       collected_in_window_cents: 30000,

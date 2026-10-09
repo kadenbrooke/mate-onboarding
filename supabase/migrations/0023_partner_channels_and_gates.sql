@@ -18,6 +18,30 @@ alter table public.client_leads add constraint client_leads_source_check
     'lead_snapshot'::text, 'typed'::text, 'self_sourced'::text
   ])));
 
+-- Source is first-touch attribution. In particular, a self_sourced lead must
+-- not be relabelled after entry to evade the partner basis, nor relabelled away
+-- after entry to become an ordinary partner lead. All existing writers either
+-- insert source or leave it untouched on an existing row (including the J&C
+-- conversation upserts), so this trigger protects both directions without
+-- changing a legitimate enrichment path.
+create or replace function public.lock_client_leads_self_sourced()
+returns trigger
+language plpgsql
+as $$
+begin
+  if old.source is distinct from new.source
+     and (old.source = 'self_sourced' or new.source = 'self_sourced') then
+    raise exception 'client_leads.source cannot change to or from self_sourced (lead %)', old.id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_client_leads_self_sourced_lock on public.client_leads;
+create trigger trg_client_leads_self_sourced_lock
+  before update of source on public.client_leads
+  for each row execute function public.lock_client_leads_self_sourced();
+
 -- 0021 created this view with eight columns. The new basis column is appended
 -- so CREATE OR REPLACE VIEW remains compatible with PostgreSQL's column rules.
 create or replace view public.client_lead_revenue_by_source
