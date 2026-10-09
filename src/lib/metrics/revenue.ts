@@ -15,10 +15,12 @@
 //     numbers in a real Postgres.
 // Both produce SourceRevenueRow[]; summarizeReturn() turns either into the card.
 //
-// The 15% figure is an ESTIMATE. The growth-partner agreement is a draft, and
-// one of its exclusions (anyone on a quote, job or invoice in the prior 12
-// months) is not computed because Mate has no record of the client's prior
-// customers. Which sources count as partner channels: partnerChannels.ts.
+// The 15% figure is an ESTIMATE. Every source counts toward the partner basis;
+// the sole exception is self_sourced work that never received an AI-agent
+// message. The prior-12-month customer exclusion is not computed because Mate
+// has no record of the client's prior customers. Which source is eligible is
+// decided in partnerChannels.ts and the message condition is supplied by the
+// SQL view (0023).
 
 import type { Lead } from './leads';
 import type { AdMetricRow } from './ads';
@@ -38,6 +40,8 @@ export type SourceRevenueRow = {
   collected_in_window_cents: number;
   /** Payments dated in the last 30 days. */
   collected_30d_cents: number;
+  /** For self_sourced rows, only cash from leads the AI agent messaged. */
+  partner_collected_in_window_cents?: number;
 };
 
 const DAY_MS = 86_400_000;
@@ -65,6 +69,13 @@ const cents = (v: number | null | undefined) => (typeof v === 'number' && Number
 /** One client_lead_payments row, as far as the math needs it. */
 export type LeadPayment = { lead_id: string; amount_cents: number; paid_at: string };
 
+/** The lead_messages fields needed to mirror the SQL agent-touch predicate. */
+export type RevenueLeadMessage = {
+  lead_id: string;
+  direction: 'inbound' | 'outbound';
+  author: 'lead' | 'agent' | 'human' | 'system';
+};
+
 /**
  * The TypeScript twin of client_lead_revenue_by_source for one tenant's leads
  * and their payments. Callers pass leads already filtered to the tenant and to
@@ -73,10 +84,15 @@ export type LeadPayment = { lead_id: string; amount_cents: number; paid_at: stri
  * in first-seen order.
  */
 export function revenueRowsFromLeads(
-  leads: Lead[], payments: LeadPayment[] = [], now = new Date(),
+  leads: Lead[], payments: LeadPayment[] = [], now = new Date(), messages: RevenueLeadMessage[] = [],
 ): SourceRevenueRow[] {
   const bySource = new Map<string, SourceRevenueRow>();
   const since30d = now.getTime() - 30 * DAY_MS;
+  const agentMessagedLeadIds = new Set(
+    messages
+      .filter(m => m.direction === 'outbound' && m.author === 'agent')
+      .map(m => m.lead_id),
+  );
   const paymentsByLead = new Map<string, LeadPayment[]>();
   for (const p of payments) {
     const list = paymentsByLead.get(p.lead_id);
@@ -89,6 +105,7 @@ export function revenueRowsFromLeads(
         source: l.source, leads: 0, won: 0, lost: 0, job_value_cents: 0,
         collected_cents: 0, collected_in_window_cents: 0, collected_30d_cents: 0,
       };
+      if (l.source === 'self_sourced') row.partner_collected_in_window_cents = 0;
       bySource.set(l.source, row);
     }
     row.leads += 1;
@@ -105,6 +122,9 @@ export function revenueRowsFromLeads(
       const at = new Date(p.paid_at).getTime();
       row.collected_cents += amount;
       if (at < windowEnd) row.collected_in_window_cents += amount;
+      if (at < windowEnd && (l.source !== 'self_sourced' || agentMessagedLeadIds.has(l.id))) {
+        if (row.partner_collected_in_window_cents !== undefined) row.partner_collected_in_window_cents += amount;
+      }
       if (at >= since30d) row.collected_30d_cents += amount;
     }
   }
@@ -175,6 +195,9 @@ export function summarizeReturn(
     collected_cents: Number(r.collected_cents),
     collected_in_window_cents: Number(r.collected_in_window_cents),
     collected_30d_cents: Number(r.collected_30d_cents),
+    ...(r.partner_collected_in_window_cents !== undefined
+      ? { partner_collected_in_window_cents: Number(r.partner_collected_in_window_cents) }
+      : {}),
     owner: channelOwner(r.source),
     winRate: Number(r.leads) > 0 ? Math.round((Number(r.won) / Number(r.leads)) * 100) : null,
   })).sort((a, b) => b.collected_cents - a.collected_cents || b.won - a.won || b.leads - a.leads
@@ -182,7 +205,9 @@ export function summarizeReturn(
 
   const sum = (f: (r: SourceReturn) => number, rs = rows) => rs.reduce((t, r) => t + f(r), 0);
   const partnerRows = rows.filter(r => r.owner === 'partner');
-  const partnerCollected = sum(r => r.collected_in_window_cents, partnerRows);
+  const partnerCollected = sum(r => r.source === 'self_sourced'
+    ? (r.partner_collected_in_window_cents ?? 0)
+    : r.collected_in_window_cents, partnerRows);
   const metaRows = rows.filter(r => r.source === 'meta');
   const spend = opts.metaSpend30dCents ?? null;
   const metaCollected30d = sum(r => r.collected_30d_cents, metaRows);
@@ -216,7 +241,7 @@ export function summarizeReturn(
 type QueryError = { message: string; code?: string };
 
 const REVENUE_COLS =
-  'source, leads, won, lost, job_value_cents, collected_cents, collected_in_window_cents, collected_30d_cents' as const;
+  'source, leads, won, lost, job_value_cents, collected_cents, collected_in_window_cents, collected_30d_cents, partner_collected_in_window_cents' as const;
 
 /** The slice of a Supabase client this needs (structural, so tests can stub it). */
 export type RevenueQuery = {

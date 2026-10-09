@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveDashAccess } from "./dash-access";
+import { canViewCommandCenter, resolveDashAccess } from "./dash-access";
 
 describe("resolveDashAccess", () => {
   it("404 when session missing regardless of auth", () => {
@@ -25,5 +25,11 @@ describe("resolveDashAccess", () => {
   it("authed stranger is forbidden", () => {
     expect(resolveDashAccess({ sessionExists: true, isDemo: false, hasUser: true, isMember: false, isInternal: false }))
       .toBe("forbidden");
+  });
+
+  it('keeps the draft Command Center staff-only', () => {
+    expect(canViewCommandCenter('member')).toBe(false);
+    expect(canViewCommandCenter('demo')).toBe(false);
+    expect(canViewCommandCenter('internal')).toBe(true);
   });
 });

@@ -7,15 +7,15 @@ import { SnapshotFlow } from './SnapshotFlow';
 // button stays dead until the consent box is ticked, and a duplicate cannot
 // be switched on.
 
-const opener = { agentName: 'Jeffery', businessName: 'J&C Asphalt', optOutLine: 'Txt STOP to opt out anytime.' };
+const opener = { agentName: 'Test Agent', businessName: 'Practice Paving', optOutLine: 'Txt STOP to opt out anytime.' };
 
 const extractReply = {
   snapshot_id: 'snap-1',
   unreadable: null,
   candidates: [
-    { name: 'Rynell Davis', phone: '801-577-5322', address: '4958 W 8620 S', service: 'driveway', notes: null,
+    { name: 'Faux Sample', phone: '801-577-5322', address: '100 Fake Street', service: 'driveway', notes: null,
       confidence: { name: 0.95, phone: 0.92, address: 0.9 }, withheld: [] },
-    { name: 'Shawn Keller', phone: '801-309-8290', address: null, service: null, notes: null,
+    { name: 'Faux Second', phone: '801-309-8290', address: null, service: null, notes: null,
       confidence: { name: 0.9, phone: 0.9, address: 0 }, withheld: [] },
   ],
   duplicates: [{ index: 1, reason: 'in-pipeline', lead_id: 'lead-9' }],
@@ -75,7 +75,7 @@ describe('SnapshotFlow', () => {
 
   it('shows what will be texted, using the tenant opener', async () => {
     await readOnePhoto();
-    expect(screen.getByText(/this is Jeffery with J&C Asphalt\. You left your info with us about driveway/)).toBeInTheDocument();
+    expect(screen.getByText(/this is Test Agent with Practice Paving\. You left your info with us about driveway/)).toBeInTheDocument();
   });
 
   it('disables Send again when the phone is edited into something untextable', async () => {
@@ -90,7 +90,7 @@ describe('SnapshotFlow', () => {
 
   it('posts consent:true and the edited rows, then shows outcomes', async () => {
     await readOnePhoto();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name for lead 1' }), { target: { value: 'Rynell D.' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name for lead 1' }), { target: { value: 'Faux S.' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /These people asked us to contact them/ }));
     fetchMock.mockImplementationOnce(() => jsonResponse({
       snapshot_id: 'snap-1', hold: false, send_after: null,
@@ -105,9 +105,24 @@ describe('SnapshotFlow', () => {
     const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(String(init.body));
     expect(body.consent).toBe(true);
-    expect(body.rows[0]).toMatchObject({ index: 0, include: true, text: true, name: 'Rynell D.', phone: '801-577-5322' });
+    expect(body.rows[0]).toMatchObject({ index: 0, include: true, text: true, name: 'Faux S.', phone: '801-577-5322' });
     expect(body.rows[1]).toMatchObject({ index: 1, include: false });
     expect(screen.getByRole('link', { name: /Open the conversation/ })).toHaveAttribute('href', '/dash/s1/pipeline?spotlight=lead-1');
+  });
+
+  it('lets the person mark a photographed lead as self-sourced', async () => {
+    await readOnePhoto();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Source for lead 1' }), { target: { value: 'self_sourced' } });
+    expect(screen.getByRole('switch', { name: 'Text lead 1' })).not.toBeChecked();
+    expect(screen.getByRole('button', { name: /Save 1 lead/ })).toBeEnabled();
+    fetchMock.mockImplementationOnce(() => jsonResponse({
+      snapshot_id: 'snap-1', hold: false, send_after: null,
+      outcomes: [{ index: 0, outcome: 'saved', message: 'Saved. Yours to work.', lead_id: 'lead-1' }],
+    }));
+    fireEvent.click(screen.getByRole('button', { name: /Save 1 lead/ }));
+    await waitFor(() => expect(screen.getByText('1 lead saved for you.')).toBeInTheDocument());
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).rows[0]).toMatchObject({ source: 'self_sourced', text: false });
   });
 
   it('surfaces a reader failure and returns to capture', async () => {

@@ -6,9 +6,9 @@ const jc = intakeTenantFor('61400e73-0570-4167-88d9-d3a69650b15b')!;
 
 describe('snapshotOpening', () => {
   it('says why we are texting before it asks anything', () => {
-    const text = snapshotOpening(jc, { name: 'Rynell Davis', service: 'driveway' });
+    const text = snapshotOpening(jc, { name: 'Faux Sample', service: 'driveway' });
     expect(text).toBe(
-      'Hi Rynell, this is Jeffery with J&C Asphalt. You left your info with us about driveway, so I wanted to reach out. ' +
+      'Hi Faux, this is Ashley with J&C Asphalt. You left your info with us about driveway, so I wanted to reach out. ' +
       'Can you tell me a bit about the job and the property address? Txt STOP to opt out anytime.',
     );
   });
@@ -16,7 +16,7 @@ describe('snapshotOpening', () => {
   it('falls back to the cold ask with no service', () => {
     const text = snapshotOpening(jc, { name: null, service: null });
     expect(text).toBe(
-      'Hi, this is Jeffery with J&C Asphalt. You left your info with us, so I wanted to reach out. ' +
+      'Hi, this is Ashley with J&C Asphalt. You left your info with us, so I wanted to reach out. ' +
       'What work do you need done, and what is the property address? Txt STOP to opt out anytime.',
     );
   });
@@ -32,9 +32,9 @@ describe('snapshotOpening', () => {
   });
 
   it('uses the first name only, once', () => {
-    const text = snapshotOpening(jc, { name: '  Sam Carson ' });
-    expect(text.startsWith('Hi Sam, ')).toBe(true);
-    expect(text.match(/Sam/g)).toHaveLength(1);
+    const text = snapshotOpening(jc, { name: '  Faux Person ' });
+    expect(text.startsWith('Hi Faux, ')).toBe(true);
+    expect(text.match(/Faux/g)).toHaveLength(1);
   });
 
   it('contains no em dashes', () => {
@@ -44,7 +44,7 @@ describe('snapshotOpening', () => {
 
 describe('helpers', () => {
   it('firstNameOf', () => {
-    expect(firstNameOf('Rynell Davis')).toBe('Rynell');
+    expect(firstNameOf('Faux Sample')).toBe('Faux');
     expect(firstNameOf('  ')).toBeNull();
     expect(firstNameOf(null)).toBeNull();
   });

@@ -6,6 +6,7 @@
 // a unit test can pin it.
 
 import { toE164, phoneRejectionMessage } from './phone';
+import type { LeadEntrySource } from '@/components/dash/leads/snapshot/confirmState';
 
 /** One row as the confirm screen sends it back. */
 export type ConfirmRow = {
@@ -18,6 +19,7 @@ export type ConfirmRow = {
    * the photo flow's original payload keeps its meaning.
    */
   text?: boolean;
+  source?: LeadEntrySource;
   name: string | null;
   phone: string | null;
   address: string | null;
@@ -42,6 +44,7 @@ export type RowVerdict =
       index: number;
       e164: string;
       leadKey: string;
+      source: LeadEntrySource;
       lead: { name: string | null; phone: string; address: string | null; service: string | null; notes: string | null };
     }
   | { kind: 'skipped'; index: number; reason: 'excluded' }
@@ -56,6 +59,7 @@ export function planConfirm(
   known: KnownNumbers,
   now: Date = new Date(),
   blocked: Set<string> = new Set(),
+  defaultSource: LeadEntrySource = 'typed',
 ): RowVerdict[] {
   const seenInBatch = new Set<string>();
   const recentCutoff = now.getTime() - RECENT_CONTACT_DAYS * 24 * 60 * 60 * 1000;
@@ -100,10 +104,13 @@ export function planConfirm(
     seenInBatch.add(phone.leadKey);
     return {
       kind: 'send',
-      mode: row.text === false ? 'save' : 'text',
+      // Self-sourced work is never handed to the live agent implicitly. The
+      // person must explicitly turn texting on after selecting this source.
+      mode: row.source === 'self_sourced' && row.text !== true ? 'save' : row.text === false ? 'save' : 'text',
       index: row.index,
       e164: phone.e164,
       leadKey: phone.leadKey,
+      source: row.source ?? defaultSource,
       lead: {
         name: clean(row.name),
         phone: phone.e164,

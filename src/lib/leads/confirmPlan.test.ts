@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { planConfirm, verdictMessage, RECENT_CONTACT_DAYS, type ConfirmRow, type KnownNumbers } from './confirmPlan';
 
 const row = (o: Partial<ConfirmRow> & { index: number }): ConfirmRow => ({
-  include: true, name: 'Rynell Davis', phone: '801-577-5322', address: null, service: null, notes: null, ...o,
+  include: true, name: 'Faux Sample', phone: '801-577-5322', address: null, service: null, notes: null, ...o,
 });
 const empty = (): KnownNumbers => ({ leadKeys: new Set(), conversations: new Map() });
 const NOW = new Date('2026-09-11T18:00:00Z');
@@ -116,6 +116,16 @@ describe('planConfirm modes', () => {
     const [v] = planConfirm([row({ index: 0, text: false })], empty(), NOW);
     expect(v).toMatchObject({ kind: 'send', mode: 'save' });
     expect(verdictMessage(v)).toBe('Ready to save.');
+  });
+
+  it('carries the selected self-sourced origin into the send plan', () => {
+    const [v] = planConfirm([row({ index: 0, source: 'self_sourced' })], empty(), NOW);
+    expect(v).toMatchObject({ kind: 'send', mode: 'save', source: 'self_sourced' });
+  });
+
+  it('allows an explicit self-sourced handoff to text', () => {
+    const [v] = planConfirm([row({ index: 0, source: 'self_sourced', text: true })], empty(), NOW);
+    expect(v).toMatchObject({ kind: 'send', mode: 'text', source: 'self_sourced' });
   });
 
   it('still refuses a duplicate in save mode: a second row is the harm', () => {

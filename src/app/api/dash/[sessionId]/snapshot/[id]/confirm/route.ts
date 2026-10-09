@@ -6,6 +6,7 @@ import { resolveSessionId } from '@/lib/portal/demo';
 import { canUseLeadSnapshot } from '@/lib/leads/capability';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
 import { planConfirm, verdictMessage, type ConfirmRow, type RowVerdict } from '@/lib/leads/confirmPlan';
+import { LEAD_ENTRY_SOURCES, type LeadEntrySource } from '@/components/dash/leads/snapshot/confirmState';
 import { snapshotOpening } from '@/lib/leads/snapshotOpening';
 import { toE164 } from '@/lib/leads/phone';
 import { loadKnownNumbers, ownNumbers } from '@/lib/leads/knownNumbers';
@@ -58,6 +59,7 @@ function isRow(v: unknown): v is ConfirmRow {
     typeof r.index === 'number' &&
     typeof r.include === 'boolean' &&
     (r.text === undefined || typeof r.text === 'boolean') &&
+    (r.source === undefined || (typeof r.source === 'string' && (LEAD_ENTRY_SOURCES as readonly string[]).includes(r.source))) &&
     str(r.name) && str(r.phone) && str(r.address) && str(r.service) && str(r.notes)
   );
 }
@@ -159,7 +161,8 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const blocked = ownNumbers(tenant, session.operator_phone as string | null);
 
   const now = new Date();
-  const plan = planConfirm(rows, known, now, blocked);
+  const defaultSource: LeadEntrySource = snapshot.storage_path === 'typed' ? 'typed' : 'lead_snapshot';
+  const plan = planConfirm(rows, known, now, blocked, defaultSource);
 
   // ---- who is attesting --------------------------------------------------------
 
@@ -192,8 +195,6 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const sendAfter = nextSendWindowStart(DEFAULT_OUTREACH_HOURS, now);
   const hold = sendAfter.getTime() > now.getTime();
 
-  const source = snapshot.storage_path === 'typed' ? 'typed' : 'lead_snapshot';
-
   const outcomes: ConfirmOutcome[] = [];
   for (const v of plan) {
     if (v.kind !== 'send') {
@@ -201,13 +202,13 @@ export async function POST(req: NextRequest, { params }: Ctx) {
       continue;
     }
     if (v.mode === 'save') {
-      outcomes.push(await saveOne(service, v, sessionId, source, now));
+      outcomes.push(await saveOne(service, v, sessionId, now));
       continue;
     }
     const outcome = isPractice
-      ? await savePracticeOne(service, v, sessionId, source, now)
+      ? await savePracticeOne(service, v, sessionId, now)
       : await sendOne(v, {
-          sessionId, snapshotId, tenant: tenant!, webhookUrl, secret, hold, sendAfter, source,
+          sessionId, snapshotId, tenant: tenant!, webhookUrl, secret, hold, sendAfter,
         });
     outcomes.push(outcome);
   }
@@ -263,7 +264,6 @@ async function savePracticeOne(
   service: ReturnType<typeof createServiceClient>,
   v: Extract<RowVerdict, { kind: 'send' }>,
   sessionId: string,
-  source: 'typed' | 'lead_snapshot',
   now: Date,
 ): Promise<ConfirmOutcome> {
   const { data: lead, error: leadError } = await service.from('client_leads').insert({
@@ -272,7 +272,7 @@ async function savePracticeOne(
     phone: v.e164,
     address: v.lead.address,
     service: v.lead.service,
-    source,
+    source: v.source,
     status: 'open',
     handler: 'human',
     handler_changed_at: now.toISOString(),
@@ -309,17 +309,19 @@ async function sendOne(
   ctx: {
     sessionId: string; snapshotId: string;
     tenant: NonNullable<ReturnType<typeof intakeTenantFor>>;
-    webhookUrl: string; secret: string; hold: boolean; sendAfter: Date; source: 'typed' | 'lead_snapshot';
+    webhookUrl: string; secret: string; hold: boolean; sendAfter: Date;
   },
 ): Promise<ConfirmOutcome> {
   const opening = snapshotOpening(ctx.tenant, { name: v.lead.name, service: v.lead.service });
   const payload = {
     session_id: ctx.sessionId,
+    // The live Lead Snapshot workflow routes on this envelope source. Keep it
+    // stable; the selected attribution belongs to the lead payload below.
     source: 'lead_snapshot',
     snapshot_id: ctx.snapshotId,
     // Idempotency key the workflow can use if it ever grows a ledger.
     intake_key: `${ctx.snapshotId}:${v.leadKey}`,
-    lead: { ...v.lead, source: ctx.source, created_at: new Date().toISOString() },
+    lead: { ...v.lead, source: v.source, created_at: new Date().toISOString() },
     tenant: {
       contact_id: ctx.tenant.contactId,
       sms_from: ctx.tenant.smsFrom,
@@ -373,7 +375,6 @@ async function saveOne(
   service: ReturnType<typeof createServiceClient>,
   v: Extract<RowVerdict, { kind: 'send' }>,
   sessionId: string,
-  source: 'typed' | 'lead_snapshot',
   now: Date,
 ): Promise<ConfirmOutcome> {
   const { data, error } = await service
@@ -384,7 +385,7 @@ async function saveOne(
       phone: v.e164,
       address: v.lead.address,
       service: v.lead.service,
-      source,
+    source: v.source,
       status: 'open',
       handler: 'human',
       handler_changed_at: now.toISOString(),

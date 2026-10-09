@@ -10,11 +10,16 @@ export type DuplicateReason = 'in-pipeline' | 'in-conversation' | 'recent-contac
 
 export type DuplicateNote = { index: number; reason: DuplicateReason; lead_id: string | null };
 
+export const LEAD_ENTRY_SOURCES = ['typed', 'lead_snapshot', 'self_sourced'] as const;
+export type LeadEntrySource = (typeof LEAD_ENTRY_SOURCES)[number];
+
 export type EditableRow = {
   index: number;
   include: boolean;
   /** The "Text them" switch. Off = save the lead for the client to work. */
   text: boolean;
+  /** Where this lead came from. */
+  source: LeadEntrySource;
   name: string;
   phone: string;
   address: string;
@@ -35,6 +40,7 @@ export function rowsFromCandidates(candidates: SnapshotCandidate[], duplicates: 
       // A duplicate cannot be sent or saved, so it starts (and stays) off.
       include: duplicate === null,
       text: true,
+      source: 'lead_snapshot',
       name: c.name ?? '',
       phone: c.phone ?? '',
       address: c.address ?? '',
@@ -49,7 +55,7 @@ export function rowsFromCandidates(candidates: SnapshotCandidate[], duplicates: 
 /** An empty card for the typed-in flow. */
 export function blankRow(index: number): EditableRow {
   return {
-    index, include: true, text: true,
+    index, include: true, text: true, source: 'typed',
     name: '', phone: '', address: '', service: '', notes: '',
     withheld: [], duplicate: null,
   };
@@ -60,6 +66,9 @@ export function updateRow(rows: EditableRow[], index: number, patch: Partial<Edi
     if (r.index !== index) return r;
     // A duplicate stays excluded whatever the patch says.
     const next = { ...r, ...patch };
+    // Choosing self-sourced means the person keeps the lead unless they make
+    // the separate, explicit choice to hand it to the agent.
+    if (patch.source === 'self_sourced' && patch.text === undefined) next.text = false;
     if (next.duplicate) next.include = false;
     return next;
   });

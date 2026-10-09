@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   revenueRowsFromLeads, summarizeReturn, metaSpend30dCents, fetchMetaSpend30dCents, addMonthsUtc,
-  type SourceRevenueRow, type LeadPayment, type AdSpendQuery,
+  type SourceRevenueRow, type LeadPayment, type AdSpendQuery, type RevenueLeadMessage,
 } from './revenue';
 import { PARTNER_CHANNEL_SOURCES, channelOwner, partnerShareCents } from './partnerChannels';
 import type { Lead } from './leads';
@@ -21,15 +21,13 @@ function lead(over: Partial<Lead>): Lead {
 }
 
 describe('partner-channel config', () => {
-  it('defaults: Meta ads and the partner web form are partner, the company lines are not', () => {
-    expect(channelOwner('meta')).toBe('partner');
-    expect(channelOwner('web_form')).toBe('partner');
-    for (const s of ['call', 'text', 'typed', 'lead_snapshot', 'referral', 'google']) {
-      expect(channelOwner(s), s).toBe('company');
+  it('counts every known source as a partner channel', () => {
+    for (const s of ['meta', 'web_form', 'revived', 'google', 'referral', 'call', 'text', 'typed', 'lead_snapshot', 'missed_call', 'texted_in', 'unknown', 'self_sourced']) {
+      expect(channelOwner(s), s).toBe('partner');
     }
   });
 
-  it('never claims an unmapped or retired source', () => {
+  it('does not claim an unmapped source', () => {
     expect(channelOwner('meta_ads')).toBe('company');
     expect(channelOwner('nextdoor')).toBe('company');
   });
@@ -44,7 +42,30 @@ describe('partner-channel config', () => {
     expect(partnerShareCents(3)).toBe(0);
     expect(partnerShareCents(10)).toBe(2);
   });
+
+  it('counts a self-sourced lead only after the agent has messaged it', () => {
+    const handedToAgent = lead({ source: 'self_sourced' as Lead['source'], job_outcome: 'won', job_value_cents: 100000 });
+    const keptByOwner = lead({ source: 'self_sourced' as Lead['source'], job_outcome: 'won', job_value_cents: 100000 });
+    const payments = [
+      payFor(handedToAgent, 10000),
+      payFor(keptByOwner, 20000),
+    ];
+    const messages: RevenueLeadMessage[] = [
+      { lead_id: handedToAgent.id, direction: 'outbound', author: 'agent' },
+    ];
+    const summary = summarizeReturn(revenueRowsFromLeads([handedToAgent, keptByOwner], payments, NOW, messages));
+    expect(summary.rows.find(r => r.source === 'self_sourced')).toMatchObject({
+      collected_cents: 30000,
+      collected_in_window_cents: 30000,
+      partner_collected_in_window_cents: 10000,
+    });
+    expect(summary.partner).toMatchObject({ collectedCents: 10000, shareCents: 1500 });
+  });
 });
+
+function payFor(l: Lead, amount_cents: number): LeadPayment {
+  return { lead_id: l.id, amount_cents, paid_at: ago(1) };
+}
 
 describe('addMonthsUtc (Postgres month arithmetic in a UTC session)', () => {
   it('keeps the day and time, clamping to month end', () => {
@@ -77,7 +98,7 @@ describe('return per source', () => {
       job_value_cents: 640000, collected_cents: 320000, collected_in_window_cents: 320000, collected_30d_cents: 320000,
     });
     expect(after.rows[0].source).toBe('meta'); // most cash first
-    expect(after.partner).toEqual({ collectedCents: 320000, shareBps: 1500, shareCents: 48000, sources: ['meta', 'web_form'] });
+    expect(after.partner).toEqual({ collectedCents: 320000, shareBps: 1500, shareCents: 48000, sources: ['meta', 'call', 'web_form'] });
     expect(after.meta).toEqual({ spend30dCents: 80000, collected30dCents: 320000, collectedCents: 320000, returnPerDollar: 4 });
     expect(after.totals).toEqual({ leads: 4, won: 1, lost: 0, jobValueCents: 640000, collectedCents: 320000 });
   });
@@ -109,15 +130,15 @@ describe('return per source', () => {
     expect(rows[0]).toMatchObject({ collected_cents: 350000, collected_in_window_cents: 350000, collected_30d_cents: -50000 });
   });
 
-  it('company-channel cash shows in the source return but never in the 15% basis', () => {
+  it('every ordinary source cash amount enters the 15% basis', () => {
     const call = lead({ source: 'call', job_outcome: 'won', job_value_cents: 900000 });
     const web = lead({ source: 'web_form', job_outcome: 'won', job_value_cents: 200000 });
     const leads = [call, web, lead({ source: 'text', job_outcome: 'lost' })];
     const s = summarizeReturn(revenueRowsFromLeads(leads, [pay(call, 900000, ago(1)), pay(web, 100000, ago(1))], NOW));
-    expect(s.rows.find(r => r.source === 'call')).toMatchObject({ owner: 'company', collected_cents: 900000 });
+    expect(s.rows.find(r => r.source === 'call')).toMatchObject({ owner: 'partner', collected_cents: 900000 });
     expect(s.rows.find(r => r.source === 'text')).toMatchObject({ lost: 1, winRate: 0 });
-    expect(s.partner.collectedCents).toBe(100000);
-    expect(s.partner.shareCents).toBe(15000);
+    expect(s.partner.collectedCents).toBe(1000000);
+    expect(s.partner.shareCents).toBe(150000);
     expect(s.hasOutcomes).toBe(true);
   });
 

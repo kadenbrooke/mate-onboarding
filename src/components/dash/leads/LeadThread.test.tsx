@@ -22,6 +22,19 @@ describe('LeadThread', () => {
     expect(screen.getByText('you around?')).toBeTruthy();
     expect(screen.getByText('yep, whats up')).toBeTruthy();
   });
+
+  it('uses the tenant agent name in the thread and hand-back control', () => {
+    render(<LeadThread leadId="l1" sessionId="s1" handler="human" messages={msgs} agentName="Ashley" />);
+    expect(screen.getByText('Driver: You')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /hand back to ashley/i })).toBeTruthy();
+    expect(screen.getByText('Ashley')).toBeTruthy();
+  });
+
+  it('uses the tenant agent name for agent-authored messages', () => {
+    render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} agentName="Ashley" />);
+    expect(screen.getByText('Ashley')).toBeTruthy();
+    expect(screen.queryByText('Mate')).toBeNull();
+  });
   it('POSTs a reply to the reply route', async () => {
     render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} />);
     fireEvent.change(screen.getByPlaceholderText(/type a reply/i), { target: { value: 'on my way' } });

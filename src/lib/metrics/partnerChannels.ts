@@ -2,20 +2,14 @@
 //
 // WHICH LEAD SOURCES COUNT AS PARTNER CHANNELS. The one place this is decided.
 //
-// The draft growth-partner agreement (unsigned as of 2026-10-06) pays the
-// partner a share of cash ACTUALLY COLLECTED from Partner Channels:
-//   * partner-run ads (Meta, Google, Nextdoor),
-//   * partner-built sites, forms, chat and instant quote,
-//   * partner reactivation and referral campaigns.
-// The company's own channels are excluded. So is anyone who was on a quote,
-// job or invoice in the prior 12 months, which Mate cannot see and therefore
-// does NOT compute (see revenue.ts).
+// The draft growth-partner agreement pays the partner a share of cash ACTUALLY
+// COLLECTED from every current and legacy lead source. The sole exception is a
+// self_sourced deal (door knock / cold call) that was serviced without the AI
+// texting agent. The source is selected at intake; revenue.ts and the SQL view
+// apply the message-sent condition for that exception.
 //
-// Each client_leads.source maps to 'partner' or 'company'. The default leans
-// toward 'company' wherever the source alone cannot prove the partner brought
-// the lead in, so the estimate under-claims rather than over-claims. Changing
-// a mapping is a founder decision, not a code cleanup: the open questions are
-// marked OPEN below.
+// The prior-12-month customer caveat remains outside this app: Mate has no
+// record of the client's prior customers, so the estimate does not compute it.
 
 import type { Lead } from './leads';
 
@@ -33,31 +27,20 @@ export const PARTNER_WINDOW_MONTHS = 24;
  * new source cannot ship without someone deciding which side it is on.
  */
 export const PARTNER_CHANNEL_SOURCES: Record<Lead['source'], ChannelOwner> = {
-  // Partner-run Meta ads (lead forms and the Meta poller).
+  // All current and legacy sources count toward the basis.
   meta: 'partner',
-  // The partner-built web intake (J&C's site form / instant quote posts as
-  // web_form).
+  call: 'partner',
+  text: 'partner',
+  referral: 'partner',
+  google: 'partner',
+  typed: 'partner',
+  lead_snapshot: 'partner',
   web_form: 'partner',
-  // The Reactivator re-engaging a dormant customer: a partner reactivation
-  // campaign. OPEN: only demo rows carry it today.
   revived: 'partner',
-  // OPEN: 'google' does not say whether it was a partner-run Google ad or the
-  // company's own Google Business Profile / organic search. No Google ads run
-  // today (no Google ad_metrics rows), so it stays the company's.
-  google: 'company',
-  // OPEN: a plain referral is the company's word of mouth. A partner referral
-  // CAMPAIGN would count, but the source does not distinguish them.
-  referral: 'company',
-  // The company's own phone line and texts, and leads typed or photographed in
-  // by the company's own people.
-  call: 'company',
-  text: 'company',
-  typed: 'company',
-  lead_snapshot: 'company',
-  // Legacy and fallback values: no claim without evidence.
-  missed_call: 'company',
-  texted_in: 'company',
-  unknown: 'company',
+  missed_call: 'partner',
+  texted_in: 'partner',
+  self_sourced: 'partner',
+  unknown: 'partner',
 };
 
 /** Owner of a source string; anything unmapped is the company's. */

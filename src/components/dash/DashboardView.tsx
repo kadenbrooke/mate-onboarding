@@ -19,6 +19,7 @@ import { AreaBars } from './leadflow/AreaBars';
 import { TwinRings } from './pipeline/TwinRings';
 import { ReturnBySource } from './pipeline/ReturnBySource';
 import type { ReturnSummary } from '@/lib/metrics/revenue';
+import type { ClientReturnSummary } from '@/lib/metrics/revenueVisibility';
 import { RaceCard } from './speed/RaceCard';
 import { RescueRing } from './speed/RescueRing';
 import { DayClock } from './speed/DayClock';
@@ -67,6 +68,7 @@ function LinkCard({ href, label }: { href: string; label: string }) {
 export function DashboardView({ session, leads, returns = null, data, locks, glance }: {
   session: {
     id: string; mate_name?: string | null;
+    agent_name?: string;
     /** When this client came online with us. Anchors the manual/automated split
      *  so pre-agent backfilled leads cannot distort a post-agent stat. */
     created_at?: string | null;
@@ -78,7 +80,7 @@ export function DashboardView({ session, leads, returns = null, data, locks, gla
   leads: Lead[]; data: DashData;
   /** Return by lead source + partner-share basis (page.tsx, migration 0021).
    *  null until job outcomes are set up, which leaves the card out. */
-  returns?: ReturnSummary | null;
+  returns?: ReturnSummary | ClientReturnSummary | null;
   locks: Record<ZoneId, ZoneLock | null>;
   /** Month Overview counts computed server-side from ungated data (page.tsx). */
   glance: { activeAgents: number; reviewsCollected: number };
@@ -305,6 +307,7 @@ export function DashboardView({ session, leads, returns = null, data, locks, gla
           recovered={recovered}
           leads={leads}
           agentLiveAt={session.created_at}
+          agentName={session.agent_name}
         />
         <Ticker events={data.events} sessionId={session.id} leads={leads} />
         <MovableDashGrid
@@ -345,6 +348,7 @@ export function DashboardView({ session, leads, returns = null, data, locks, gla
                   recovered={recovered}
                   leads={leads}
                   agentLiveAt={session.created_at}
+                  agentName={session.agent_name}
                 />
                 <Ticker events={data.events} sessionId={session.id} leads={leads} />
               </>

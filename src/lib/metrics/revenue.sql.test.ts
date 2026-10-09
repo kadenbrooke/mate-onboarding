@@ -25,11 +25,14 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
-import { revenueRowsFromLeads, summarizeReturn, type LeadPayment, type SourceRevenueRow } from './revenue';
+import { revenueRowsFromLeads, summarizeReturn, type LeadPayment, type RevenueLeadMessage, type SourceRevenueRow } from './revenue';
 import type { Lead } from './leads';
 
 const MIGRATION = readFileSync(
   path.join(process.cwd(), 'supabase/migrations/0021_lead_job_outcome.sql'), 'utf8',
+);
+const PARTNER_MIGRATION = readFileSync(
+  path.join(process.cwd(), 'supabase/migrations/0023_partner_channels_and_gates.sql'), 'utf8',
 );
 
 const BASE_SCHEMA = (withIsTest: boolean) => `
@@ -49,6 +52,14 @@ const BASE_SCHEMA = (withIsTest: boolean) => `
     created_at timestamptz not null default now(),
     status_updated_at timestamptz,
     unique (session_id, phone)
+  );
+  create table lead_messages (
+    id uuid primary key default gen_random_uuid(),
+    lead_id uuid not null references client_leads(id) on delete cascade,
+    session_id uuid not null references onboarding_sessions(id) on delete cascade,
+    direction text not null,
+    author text not null,
+    body text not null default ''
   );
   -- The live status stamp (amos migration 020), so the test can prove an
   -- outcome or payment write never moves it.
@@ -76,6 +87,8 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   // Re-running must be harmless.
   await db.exec(MIGRATION);
+  await db.exec(PARTNER_MIGRATION);
+  await db.exec(PARTNER_MIGRATION);
   await db.query('insert into onboarding_sessions (id) values ($1), ($2)', [TENANT, OTHER]);
 }, 60000);
 
@@ -91,12 +104,15 @@ async function newSession(): Promise<string> {
 
 async function viewRows(sessionId: string): Promise<SourceRevenueRow[]> {
   const { rows } = await db.query<Record<string, unknown>>(
-    `select source, leads, won, lost, job_value_cents, collected_cents, collected_in_window_cents, collected_30d_cents
+    `select source, leads, won, lost, job_value_cents, collected_cents, collected_in_window_cents, collected_30d_cents, partner_collected_in_window_cents
        from client_lead_revenue_by_source where session_id = $1 order by source`, [sessionId]);
   return rows.map(r => ({
     source: String(r.source), leads: Number(r.leads), won: Number(r.won), lost: Number(r.lost),
     job_value_cents: Number(r.job_value_cents), collected_cents: Number(r.collected_cents),
     collected_in_window_cents: Number(r.collected_in_window_cents), collected_30d_cents: Number(r.collected_30d_cents),
+    ...(String(r.source) === 'self_sourced'
+      ? { partner_collected_in_window_cents: Number(r.partner_collected_in_window_cents) }
+      : {}),
   }));
 }
 
@@ -222,13 +238,46 @@ describe('cash is counted by payment date', () => {
   });
 });
 
+describe('self-sourced partner exception', () => {
+  it('locks source transitions to and from self_sourced after insert', async () => {
+    const S = await newSession();
+    const ordinary = await insertLead(S, { source: 'call' });
+    const selfSourced = await insertLead(S, { source: 'self_sourced' });
+
+    await expect(db.query(`update client_leads set source = 'self_sourced' where id = $1`, [ordinary]))
+      .rejects.toThrow(/source.*self_sourced|self_sourced.*source/i);
+    await expect(db.query(`update client_leads set source = 'call' where id = $1`, [selfSourced]))
+      .rejects.toThrow(/source.*self_sourced|self_sourced.*source/i);
+  });
+
+  it('includes self-sourced cash only after an outbound agent message', async () => {
+    const S = await newSession();
+    const agentLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
+    const ownerLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
+    await markWon(agentLead, S, 100000);
+    await markWon(ownerLead, S, 100000);
+    await addPayment(agentLead, S, 10000, daysAgo(1));
+    await addPayment(ownerLead, S, 20000, daysAgo(1));
+    await db.query(
+      `insert into lead_messages (lead_id, session_id, direction, author, body)
+       values ($1, $2, 'outbound', 'agent', 'practice message')`, [agentLead, S],
+    );
+
+    const { rows } = await db.query<Record<string, unknown>>(
+      `select collected_in_window_cents, partner_collected_in_window_cents
+         from client_lead_revenue_by_source where session_id = $1 and source = 'self_sourced'`, [S],
+    );
+    expect(rows[0]).toMatchObject({ collected_in_window_cents: 30000, partner_collected_in_window_cents: 10000 });
+  });
+});
+
 describe('view parity with the TypeScript twin', () => {
   it('agrees on every source with several payments per lead, across both window edges', async () => {
     const S = await newSession();
     const now = Date.now();
     const at = (d: number) => new Date(now - d * DAY).toISOString();
 
-    type Fixture = { lead: Partial<Lead>; payments?: [number, string][] };
+    type Fixture = { lead: Partial<Lead>; payments?: [number, string][]; agentMessage?: boolean };
     const fixtures: Fixture[] = [
       { lead: { source: 'meta', created_at: at(400), job_outcome: 'won', job_value_cents: 500000 },
         payments: [[200000, at(380)], [250000, at(40)], [50000, at(5)]] },
@@ -247,10 +296,15 @@ describe('view parity with the TypeScript twin', () => {
         payments: [[100000, at(1)]] },
       { lead: { source: 'text', created_at: at(8), job_outcome: 'lost' } },
       { lead: { source: 'typed', created_at: at(7) } },
+      { lead: { source: 'self_sourced', created_at: at(5), job_outcome: 'won', job_value_cents: 120000 },
+        payments: [[70000, at(4)]], agentMessage: true },
+      { lead: { source: 'self_sourced', created_at: at(5), job_outcome: 'won', job_value_cents: 100000 },
+        payments: [[30000, at(4)]] },
     ];
 
     const leads: Lead[] = [];
     const payments: LeadPayment[] = [];
+    const messages: RevenueLeadMessage[] = [];
     for (const f of fixtures) {
       const cols: Record<string, unknown> = { source: f.lead.source, created_at: f.lead.created_at };
       const id = await insertLead(S, cols);
@@ -262,6 +316,13 @@ describe('view parity with the TypeScript twin', () => {
         await addPayment(id, S, amount, paidAt);
         payments.push({ lead_id: id, amount_cents: amount, paid_at: paidAt });
       }
+      if (f.agentMessage) {
+        await db.query(
+          `insert into lead_messages (lead_id, session_id, direction, author, body)
+           values ($1, $2, 'outbound', 'agent', 'fake agent message')`, [id, S],
+        );
+        messages.push({ lead_id: id, direction: 'outbound', author: 'agent' });
+      }
       leads.push({
         id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
         status: 'open', quote_cents: null, contacted: false, after_hours: false, first_reply_seconds: null,
@@ -270,7 +331,7 @@ describe('view parity with the TypeScript twin', () => {
     }
 
     const sql = await viewRows(S);
-    const ts = revenueRowsFromLeads(leads, payments, new Date()).sort((a, b) => a.source.localeCompare(b.source));
+    const ts = revenueRowsFromLeads(leads, payments, new Date(), messages).sort((a, b) => a.source.localeCompare(b.source));
     expect(sql).toEqual(ts);
     // Pin the numbers so a shared bug in both twins cannot pass.
     expect(sql.find(r => r.source === 'meta')).toMatchObject({
@@ -279,6 +340,12 @@ describe('view parity with the TypeScript twin', () => {
     });
     expect(sql.find(r => r.source === 'web_form')).toMatchObject({
       collected_cents: 133300, collected_in_window_cents: 52200,
+    });
+    expect(sql.find(r => r.source === 'self_sourced')).toMatchObject({
+      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
+    });
+    expect(ts.find(r => r.source === 'self_sourced')).toMatchObject({
+      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
     });
   });
 });

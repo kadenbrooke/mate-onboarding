@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { X } from '@phosphor-icons/react';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, BORDER_SOFT, FONT_BODY, TEXT_DARK, TEXT_MUTED } from '@/lib/theme';
+import { DEFAULT_AGENT_DISPLAY_NAME } from '@/lib/agent/displayName';
 
 // The lead's conversation, opened by clicking a row in the pipeline table
 // (which sets ?spotlight=<leadId>).
@@ -15,13 +16,16 @@ import { BG_CARD, BORDER_SOFT, FONT_BODY, TEXT_DARK, TEXT_MUTED } from '@/lib/th
 // which read as "clicking a row does nothing". Hence the scroll-into-view keyed
 // on leadId: it fires on first open AND on every switch to a different lead.
 
-const AUTHOR_LABEL: Record<LeadMessage['author'], string> = {
-  lead: 'Lead', agent: 'Mate', human: 'You', system: 'System',
-};
+function authorLabel(author: LeadMessage['author'], agentName: string): string {
+  if (author === 'agent') return agentName;
+  if (author === 'lead') return 'Lead';
+  if (author === 'human') return 'You';
+  return 'System';
+}
 
-export function LeadThread({ leadId, sessionId, handler, messages, leadName }: {
+export function LeadThread({ leadId, sessionId, handler, messages, leadName, agentName }: {
   leadId: string; sessionId: string; handler: 'agent' | 'human'; messages: LeadMessage[];
-  leadName?: string | null;
+  leadName?: string | null; agentName?: string;
 }) {
   const router = useRouter();
   const [text, setText] = useState('');
@@ -29,6 +33,7 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName }: {
   const [busy, setBusy] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const who = leadName?.trim() || 'this lead';
+  const displayAgentName = agentName?.trim() || DEFAULT_AGENT_DISPLAY_NAME;
 
   useEffect(() => {
     // Re-runs whenever a different lead is spotlighted, not just on mount.
@@ -92,10 +97,10 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName }: {
         </button>
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>Driver: {driver === 'agent' ? 'Mate' : 'You'}</span>
+        <span style={{ color: TEXT_MUTED, fontSize: 13 }}>Driver: {driver === 'agent' ? displayAgentName : 'You'}</span>
         {driver === 'agent'
           ? <button onClick={() => toggle('human')} disabled={busy}>Take over</button>
-          : <button onClick={() => toggle('agent')} disabled={busy}>Hand back to Mate</button>}
+          : <button onClick={() => toggle('agent')} disabled={busy}>Hand back to {displayAgentName}</button>}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
         {messages.length === 0 && (
@@ -105,7 +110,7 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName }: {
         )}
         {messages.map(m => (
           <div key={m.id} style={{ alignSelf: m.direction === 'outbound' ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
-            <div style={{ fontSize: 11, color: TEXT_MUTED }}>{AUTHOR_LABEL[m.author]}{m.channel === 'call_note' ? ' (call note)' : ''}</div>
+            <div style={{ fontSize: 11, color: TEXT_MUTED }}>{authorLabel(m.author, displayAgentName)}{m.channel === 'call_note' ? ' (call note)' : ''}</div>
             <div style={{ color: TEXT_DARK, fontSize: 14 }}>{m.body}</div>
           </div>
         ))}

@@ -13,7 +13,7 @@ import { snapshotOpening, type OpeningTenant } from '@/lib/leads/snapshotOpening
 import { MAX_IMAGES_PER_REQUEST } from '@/lib/leads/snapshotImage';
 import {
   rowsFromCandidates, blankRow, updateRow, submitState, sendLabel, sendableRows, displayPhone, duplicateMessage,
-  type EditableRow, type DuplicateNote,
+  LEAD_ENTRY_SOURCES, type EditableRow, type DuplicateNote, type LeadEntrySource,
 } from './confirmState';
 
 // Add a lead, two ways in and one screen out:
@@ -148,6 +148,7 @@ export function SnapshotFlow({ sessionId, opener }: { sessionId: string; opener:
           consent,
           rows: rows.map(r => ({
             index: r.index, include: r.include && !r.duplicate, text: r.text,
+            source: r.source,
             name: r.name || null, phone: r.phone || null, address: r.address || null,
             service: r.service || null, notes: r.notes || null,
           })),
@@ -422,6 +423,14 @@ function CandidateCard({ sessionId, row, disabled, autoFocus, onChange }: {
         <input type="text" value={row.name} disabled={locked} onChange={e => onChange({ name: e.target.value })}
           aria-label={`Name for lead ${row.index + 1}`} style={input} autoCapitalize="words" />
       </Field>
+      <Field label="Source">
+        <select value={row.source} disabled={locked} onChange={e => onChange({ source: e.target.value as LeadEntrySource })}
+          aria-label={`Source for lead ${row.index + 1}`} style={input}>
+          {LEAD_ENTRY_SOURCES.map(source => (
+            <option key={source} value={source}>{sourceLabel(source)}</option>
+          ))}
+        </select>
+      </Field>
       <Field label="Address" hint={withheld('address') ? 'Could not read this.' : null} flag={withheld('address')}>
         <input type="text" value={row.address} disabled={locked} onChange={e => onChange({ address: e.target.value })}
           aria-label={`Address for lead ${row.index + 1}`} style={input} />
@@ -438,6 +447,12 @@ function CandidateCard({ sessionId, row, disabled, autoFocus, onChange }: {
       </div>
     </div>
   );
+}
+
+function sourceLabel(source: LeadEntrySource): string {
+  if (source === 'typed') return 'Typed in';
+  if (source === 'lead_snapshot') return 'From a photo';
+  return 'We found it (door knock / cold call)';
 }
 
 function Field({ label: text, hint, flag, children }: { label: string; hint?: string | null; flag?: boolean; children: React.ReactNode }) {

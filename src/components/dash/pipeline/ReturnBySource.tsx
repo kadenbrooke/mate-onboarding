@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import type { ReturnSummary, SourceReturn } from '@/lib/metrics/revenue';
+import type { ClientReturnSummary, ClientSourceReturn } from '@/lib/metrics/revenueVisibility';
 import { SOURCE_LABELS } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
 import { PARTNER_CHANNEL_SOURCES } from '@/lib/metrics/partnerChannels';
@@ -13,7 +14,7 @@ import {
 // partner revenue-share basis. The math lives in revenue.ts; which sources are
 // partner channels lives in partnerChannels.ts.
 
-const EXTRA_LABELS: Record<string, string> = { typed: 'Typed in', lead_snapshot: 'Lead snapshot' };
+const EXTRA_LABELS: Record<string, string> = { typed: 'Typed in', lead_snapshot: 'Lead snapshot', self_sourced: 'We found it (door knock / cold call)' };
 const label = (source: string) => SOURCE_LABELS[source] ?? EXTRA_LABELS[source] ?? source.replaceAll('_', ' ');
 const pct = (bps: number) => `${bps / 100}%`;
 // Every source the config counts as a partner channel, whether or not it has
@@ -21,7 +22,7 @@ const pct = (bps: number) => `${bps / 100}%`;
 const PARTNER_NAMES = Object.entries(PARTNER_CHANNEL_SOURCES)
   .filter(([, owner]) => owner === 'partner').map(([source]) => label(source)).join(', ');
 
-function SourceRow({ r }: { r: SourceReturn }) {
+function SourceRow({ r }: { r: SourceReturn | ClientSourceReturn }) {
   return (
     <div data-testid={`return-${r.source}`} style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
@@ -52,7 +53,7 @@ function SourceRow({ r }: { r: SourceReturn }) {
 }
 
 export function ReturnBySource({ summary, sessionId, showLabel = true }: {
-  summary: ReturnSummary; sessionId: string; showLabel?: boolean;
+  summary: ReturnSummary | ClientReturnSummary; sessionId: string; showLabel?: boolean;
 }) {
   const { rows, partner, meta } = summary;
 
@@ -77,7 +78,7 @@ export function ReturnBySource({ summary, sessionId, showLabel = true }: {
           </div>
         )}
 
-        <div data-testid="return-partner-basis" style={{ marginTop: 10, padding: 12, borderRadius: 12, background: CARD_INSET }}>
+        {partner && <div data-testid="return-partner-basis" style={{ marginTop: 10, padding: 12, borderRadius: 12, background: CARD_INSET }}>
           <div style={{ fontSize: 11, letterSpacing: 2, fontWeight: 600, color: CARD_MUTED }}>
             {pct(partner.shareBps)} BASIS · ESTIMATE
           </div>
@@ -91,7 +92,7 @@ export function ReturnBySource({ summary, sessionId, showLabel = true }: {
             Pending the signed agreement. Partner channels counted: {PARTNER_NAMES}. Cash within 24 months of first contact.
             Does not yet exclude customers who had a quote, job or invoice in the prior 12 months.
           </div>
-        </div>
+        </div>}
       </div>
     </Card>
   );
