@@ -20,11 +20,11 @@ export type Lead = {
   // client_leads by a DB trigger, migration 0010). Nullable: most rows have a
   // phone and nothing else until the conversation gets going.
   email?: string | null; address?: string | null;
-  // Closed taxonomy going forward: meta | call | text | referral | google (2026-08-05).
+  // Closed taxonomy going forward: meta | call | text | referral | google | self_sourced (2026-08-05).
   // Legacy values (missed_call, meta_ads, unknown) were renamed/removed table-wide;
   // texted_in/web_form/revived are kept only because live demo-session rows still use
   // them (out of scope to migrate -- see reference_mate_jc_data_exposure_incident).
-  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'lead_snapshot' | 'typed' | 'unknown';
+  source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'lead_snapshot' | 'typed' | 'self_sourced' | 'unknown';
   referrer_name: string | null; score: number | null;
   status: LeadStatus; quote_cents: number | null;
   // Who is driving the conversation: Mate's agent ('agent') or the client ('human').
@@ -34,6 +34,9 @@ export type Lead = {
   // When `handler` last flipped (stamped by setHandler). Optional + nullable:
   // rows that were never handed over have none.
   handler_changed_at?: string | null;
+  /** True when the AI texting agent has sent at least one message. Used only
+   *  for the self_sourced partner-basis exception. */
+  agent_message_sent?: boolean;
   contacted: boolean; after_hours: boolean; first_reply_seconds: number | null;
   created_at: string;
   // When `status` last changed, stamped by trg_client_leads_status_ts. For a

@@ -8,7 +8,7 @@ describe('snapshotOpening', () => {
   it('says why we are texting before it asks anything', () => {
     const text = snapshotOpening(jc, { name: 'Rynell Davis', service: 'driveway' });
     expect(text).toBe(
-      'Hi Rynell, this is Jeffery with J&C Asphalt. You left your info with us about driveway, so I wanted to reach out. ' +
+      'Hi Rynell, this is Ashley with J&C Asphalt. You left your info with us about driveway, so I wanted to reach out. ' +
       'Can you tell me a bit about the job and the property address? Txt STOP to opt out anytime.',
     );
   });
@@ -16,7 +16,7 @@ describe('snapshotOpening', () => {
   it('falls back to the cold ask with no service', () => {
     const text = snapshotOpening(jc, { name: null, service: null });
     expect(text).toBe(
-      'Hi, this is Jeffery with J&C Asphalt. You left your info with us, so I wanted to reach out. ' +
+      'Hi, this is Ashley with J&C Asphalt. You left your info with us, so I wanted to reach out. ' +
       'What work do you need done, and what is the property address? Txt STOP to opt out anytime.',
     );
   });

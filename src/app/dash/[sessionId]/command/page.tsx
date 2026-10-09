@@ -12,6 +12,7 @@ import { buildCommandModel, outboundCandidates, type LeadSignal } from '@/lib/co
 import { leadLabel } from '@/components/dash/leads/leadName';
 import { CommandCenter } from '@/components/dash/command/CommandCenter';
 import { MobileNav } from '@/components/dash/MobileNav';
+import { canViewCommandCenter } from '@/lib/portal/dash-access';
 
 // The owner's Command Center (Auto Mate 5 #5): who to call, what is waiting,
 // what is on the books, what is stuck. Same gate as every /dash page (login +
@@ -30,6 +31,7 @@ export default async function CommandPage({ params }: { params: Promise<{ sessio
   const { sessionId: rawSessionId } = await params;
   const sessionId = resolveSessionId(rawSessionId);
   const access = await requireDashAccess(sessionId);
+  if (!canViewCommandCenter(access)) notFound();
   const supabase = createServiceClient();
   const db = supabase as unknown as CommandDb;
 

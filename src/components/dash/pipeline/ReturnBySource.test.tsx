@@ -10,7 +10,7 @@ const row = (source: string, over: Partial<SourceRevenueRow> = {}): SourceRevenu
 });
 
 describe('ReturnBySource', () => {
-  it('shows each source\'s return and the 15% basis from partner channels only', () => {
+  it('shows each source\'s return and the 15% basis from every source', () => {
     const summary = summarizeReturn([
       row('meta', { leads: 4, won: 1, job_value_cents: 640000, collected_cents: 320000, collected_in_window_cents: 320000, collected_30d_cents: 320000 }),
       row('call', { leads: 2, won: 1, job_value_cents: 900000, collected_cents: 900000, collected_in_window_cents: 900000 }),
@@ -20,15 +20,16 @@ describe('ReturnBySource', () => {
     expect(screen.getByTestId('return-meta').textContent).toContain('4 leads · 1 won (25%)');
     expect(screen.getByTestId('return-meta').textContent).toContain('$3,200');
     expect(screen.getByTestId('return-meta').textContent).toContain('PARTNER');
-    expect(screen.getByTestId('return-call').textContent).not.toContain('PARTNER');
+    expect(screen.getByTestId('return-call').textContent).toContain('PARTNER');
     expect(screen.getByTestId('return-meta-30d').textContent).toContain('$800 spent, $3,200 collected');
     expect(screen.getByTestId('return-meta-30d').textContent).toContain('(4.0x)');
 
     const basis = screen.getByTestId('return-partner-basis').textContent ?? '';
     expect(basis).toContain('ESTIMATE');
-    expect(basis).toContain('$480');
-    expect(basis).toContain('15% of $3,200 collected from partner channels');
-    expect(basis).toContain('Meta Ads, Web form');
+    expect(basis).toContain('$1,830');
+    expect(basis).toContain('15% of');
+    expect(basis).toContain('collected from partner channels');
+    expect(basis).toContain('Meta Ads, Call');
     expect(basis).toMatch(/does not yet exclude customers/i);
     // Most cash first.
     expect(screen.getAllByTestId(/^return-(meta|call)$/).map(e => e.dataset.testid)).toEqual(['return-call', 'return-meta']);

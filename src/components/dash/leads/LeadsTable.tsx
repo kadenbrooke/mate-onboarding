@@ -58,8 +58,9 @@ const SPOTLIGHT_BG = 'color-mix(in srgb, var(--brand-primary, #e14d1a) 12%, tran
 // ?spotlight= param -- the same navigation HotLeads uses -- so the full thread
 // and its Take-over control are reachable straight from the table.
 
-export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
+export function LeadsTable({ leads, sessionId, spotlightId, initialSort, agentName }: {
   leads: Lead[]; sessionId: string; spotlightId: string | null;
+  agentName?: string;
   /** Sort intent carried in from the URL (`?sort=captured`), e.g. the NEW LEADS
    *  glance tile deep-linking to newest-captured-first. When present it seeds
    *  the sort AND wins over the stored controls -- an explicit link must not be
@@ -263,6 +264,7 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
                   error={driverErr[l.id]}
                   onToggle={() => toggleDriver(l.id)}
                   testId={`driver-pill-${l.id}`}
+                  agentName={agentName}
                 />
               </td>
               <td style={{ color: TEXT_MUTED, whiteSpace: 'nowrap' }}>{captured(l.created_at)}</td>
@@ -359,6 +361,7 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort }: {
                   error={driverErr[l.id]}
                   onToggle={() => toggleDriver(l.id)}
                   testId={`driver-pill-card-${l.id}`}
+                  agentName={agentName}
                 />
                 <ContactDots lead={l} testId={`contact-dots-card-${l.id}`} />
                 <DeleteLeadButton

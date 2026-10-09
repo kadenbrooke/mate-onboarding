@@ -13,12 +13,14 @@ import { zoneLocks } from '@/lib/dash/locks';
 import { gateLockedZoneData } from '@/lib/dash/gate';
 import { fetchLiveScores, mergeLiveScores, type LiveScoreQuery } from '@/lib/leads/liveScores';
 import { fetchMetaSpend30dCents, fetchRevenueBySource, summarizeReturn, type AdSpendQuery, type RevenueQuery } from '@/lib/metrics/revenue';
+import { agentDisplayNameForSession } from '@/lib/agent/displayName';
+import { hidePartnerBasis } from '@/lib/metrics/revenueVisibility';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
   // "demo" alias -> real demo UUID for all DB reads below (uuid column).
   const sessionId = resolveSessionId(rawSessionId);
-  await requireDashAccess(sessionId);
+  const access = await requireDashAccess(sessionId);
   const supabase = createServiceClient();
 
   // Load session - also fetch contact_id so we can join client_capabilities
@@ -181,9 +183,10 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   }
   const latestAdRows = allAdRows.filter((r) => newestPerPlatform.get(r.platform) === r.date_pulled);
   const ads = latestAdRows.length ? adTotals(latestAdRows) : null;
-  const returns = revenueRows
+  const internalReturns = revenueRows
     ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend })
     : null;
+  const returns = internalReturns && access === 'internal' ? internalReturns : internalReturns ? hidePartnerBasis(internalReturns) : null;
 
   // Zone lock state, derived from signals already on the session row. `ads` is
   // null when the session has no ad_metrics rows, so it doubles as the ads gate
@@ -250,6 +253,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
       session={{
         id: session.id,
         mate_name: session.mate_name,
+        agent_name: agentDisplayNameForSession(sessionId),
         created_at: (session.created_at ?? null) as string | null,
         monthlyRetainerCents,
       }}

@@ -118,6 +118,11 @@ describe('planConfirm modes', () => {
     expect(verdictMessage(v)).toBe('Ready to save.');
   });
 
+  it('carries the selected self-sourced origin into the send plan', () => {
+    const [v] = planConfirm([row({ index: 0, source: 'self_sourced' })], empty(), NOW);
+    expect(v).toMatchObject({ kind: 'send', mode: 'text', source: 'self_sourced' });
+  });
+
   it('still refuses a duplicate in save mode: a second row is the harm', () => {
     const known = empty();
     known.leadKeys.add('8015775322');

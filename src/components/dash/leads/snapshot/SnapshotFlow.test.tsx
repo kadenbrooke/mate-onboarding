@@ -110,6 +110,20 @@ describe('SnapshotFlow', () => {
     expect(screen.getByRole('link', { name: /Open the conversation/ })).toHaveAttribute('href', '/dash/s1/pipeline?spotlight=lead-1');
   });
 
+  it('lets the person mark a photographed lead as self-sourced', async () => {
+    await readOnePhoto();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Source for lead 1' }), { target: { value: 'self_sourced' } });
+    fireEvent.click(screen.getByRole('checkbox', { name: /These people asked us to contact them/ }));
+    fetchMock.mockImplementationOnce(() => jsonResponse({
+      snapshot_id: 'snap-1', hold: false, send_after: null,
+      outcomes: [{ index: 0, outcome: 'sent', message: 'Text sent.', lead_id: 'lead-1' }],
+    }));
+    fireEvent.click(screen.getByRole('button', { name: /Send 1 text/ }));
+    await waitFor(() => expect(screen.getByText('1 text sent.')).toBeInTheDocument());
+    const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(JSON.parse(String(init.body)).rows[0].source).toBe('self_sourced');
+  });
+
   it('surfaces a reader failure and returns to capture', async () => {
     fetchMock.mockImplementationOnce(() => jsonResponse({ error: 'The reader is unavailable right now.' }, 502));
     render(<SnapshotFlow sessionId="s1" opener={opener} />);

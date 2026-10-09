@@ -31,6 +31,9 @@ import type { Lead } from './leads';
 const MIGRATION = readFileSync(
   path.join(process.cwd(), 'supabase/migrations/0021_lead_job_outcome.sql'), 'utf8',
 );
+const PARTNER_MIGRATION = readFileSync(
+  path.join(process.cwd(), 'supabase/migrations/0023_partner_channels_and_gates.sql'), 'utf8',
+);
 
 const BASE_SCHEMA = (withIsTest: boolean) => `
   set timezone = 'UTC';
@@ -49,6 +52,14 @@ const BASE_SCHEMA = (withIsTest: boolean) => `
     created_at timestamptz not null default now(),
     status_updated_at timestamptz,
     unique (session_id, phone)
+  );
+  create table lead_messages (
+    id uuid primary key default gen_random_uuid(),
+    lead_id uuid not null references client_leads(id) on delete cascade,
+    session_id uuid not null references onboarding_sessions(id) on delete cascade,
+    direction text not null,
+    author text not null,
+    body text not null default ''
   );
   -- The live status stamp (amos migration 020), so the test can prove an
   -- outcome or payment write never moves it.
@@ -76,6 +87,8 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   // Re-running must be harmless.
   await db.exec(MIGRATION);
+  await db.exec(PARTNER_MIGRATION);
+  await db.exec(PARTNER_MIGRATION);
   await db.query('insert into onboarding_sessions (id) values ($1), ($2)', [TENANT, OTHER]);
 }, 60000);
 
@@ -219,6 +232,28 @@ describe('cash is counted by payment date', () => {
     await addPayment(l, S, -50000, daysAgo(5));
     const [row] = await viewRows(S);
     expect(row).toMatchObject({ leads: 1, won: 1, collected_cents: 350000, collected_30d_cents: -50000 });
+  });
+});
+
+describe('self-sourced partner exception', () => {
+  it('includes self-sourced cash only after an outbound agent message', async () => {
+    const S = await newSession();
+    const agentLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
+    const ownerLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
+    await markWon(agentLead, S, 100000);
+    await markWon(ownerLead, S, 100000);
+    await addPayment(agentLead, S, 10000, daysAgo(1));
+    await addPayment(ownerLead, S, 20000, daysAgo(1));
+    await db.query(
+      `insert into lead_messages (lead_id, session_id, direction, author, body)
+       values ($1, $2, 'outbound', 'agent', 'practice message')`, [agentLead, S],
+    );
+
+    const { rows } = await db.query<Record<string, unknown>>(
+      `select collected_in_window_cents, partner_collected_in_window_cents
+         from client_lead_revenue_by_source where session_id = $1 and source = 'self_sourced'`, [S],
+    );
+    expect(rows[0]).toMatchObject({ collected_in_window_cents: 30000, partner_collected_in_window_cents: 10000 });
   });
 });
 

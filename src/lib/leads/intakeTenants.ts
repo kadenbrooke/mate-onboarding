@@ -43,7 +43,7 @@ const TENANTS: Record<string, IntakeTenant> = {
     contactId: '8e4283dc-e8a6-445f-874e-b36328f31f28',
     smsFrom: '+13854409882',
     messagingProfileId: '40019f67-6d6f-455f-8204-414959bd0f72',
-    agentName: 'Jeffery',
+    agentName: 'Ashley',
     businessName: 'J&C Asphalt',
     optOutLine: 'Txt STOP to opt out anytime.',
     conversationTable: 'jc_sms_conversations',

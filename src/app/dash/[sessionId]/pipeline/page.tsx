@@ -18,6 +18,7 @@ import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { BackLink } from '@/components/dash/chrome/BackLink';
 import { MobileNav } from '@/components/dash/MobileNav';
+import { agentDisplayNameForSession } from '@/lib/agent/displayName';
 
 export default async function PipelinePage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
@@ -27,6 +28,7 @@ export default async function PipelinePage({ params, searchParams }: {
   // "demo" alias -> real demo UUID for all DB reads below (uuid column).
   const sessionId = resolveSessionId(rawSessionId);
   const access = await requireDashAccess(sessionId);
+  const agentName = agentDisplayNameForSession(sessionId);
   const { spotlight, sort, dir } = await searchParams;
   // ?sort=captured (&dir=) deep-links a specific order; the NEW LEADS glance
   // tile on the dashboard lands here with newest-captured first.
@@ -125,6 +127,7 @@ export default async function PipelinePage({ params, searchParams }: {
             handler={thread.handler}
             messages={thread.messages}
             leadName={thread.leadName}
+            agentName={agentName}
           />
           {outcome && (
             <div style={{ marginTop: 8 }}>
@@ -139,6 +142,7 @@ export default async function PipelinePage({ params, searchParams }: {
           sessionId={sessionId}
           spotlightId={spotlight ?? null}
           initialSort={initialSort}
+          agentName={agentName}
         />
       </div>
       <MobileNav sessionId={sessionId} />

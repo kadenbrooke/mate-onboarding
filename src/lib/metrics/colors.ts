@@ -34,6 +34,7 @@ export const SOURCE_COLORS: Record<string, string> = {
   texted_in: '#3b76c4',
   web_form: '#7d5bbe',
   revived: '#1f9490',
+  self_sourced: '#9a5b2f',
   unknown: '#a89e91',
 };
 
@@ -47,6 +48,7 @@ export const SOURCE_LABELS: Record<string, string> = {
   texted_in: 'Texted in',
   web_form: 'Web form',
   revived: 'Revived',
+  self_sourced: 'We found it (door knock / cold call)',
   unknown: 'Other',
 };
 

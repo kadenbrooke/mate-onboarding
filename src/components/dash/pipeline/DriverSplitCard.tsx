@@ -15,13 +15,14 @@ import { AGENT_GREEN, HUMAN_AMBER, CARD_MUTED, FONT_BODY } from '@/lib/theme';
 // Colors are the Driver pill's, so the card and the pipeline table's DRIVER
 // column say the same thing in the same green and amber.
 
-export function DriverSplitCard({ leads, since, showLabel = true }: {
+export function DriverSplitCard({ leads, since, showLabel = true, agentName = 'Mate' }: {
   leads: Lead[];
   /** Agent-live instant (the session's created_at). Leads older than this are
    *  pre-agent history and are excluded: a backfilled book of human-handled
    *  rows is not the agent declining to handle them. */
   since?: string | null;
   showLabel?: boolean;
+  agentName?: string;
 }) {
   const s = driverSplit(leads, since);
 
@@ -46,7 +47,7 @@ export function DriverSplitCard({ leads, since, showLabel = true }: {
               value: s.agent,
               display: String(s.agent),
               color: AGENT_GREEN,
-              sub: `${s.agentPct}% handled by Mate`,
+              sub: `${s.agentPct}% handled by ${agentName}`,
             },
             {
               key: 'human',
