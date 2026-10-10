@@ -7,7 +7,8 @@
 //      and leaves status, its stamp and the CAPI marker alone,
 //   2. cash is time-correct: each payment counts in the window of its own
 //      date ($5,000 earlier + $1,000 this week is $1,000 in the last 30 days;
-//      a job paid across the 24-month line is split at the line),
+//      a job paid across the 24-month line is split at the line, and refunds
+//      follow the separate clawback setting),
 //   3. the view agrees with the TypeScript twin (revenueRowsFromLeads),
 //   4. the ledger guards: won jobs only, tenant from the lead, no negative
 //      total, no edits, no un-winning a paid job, cascade on lead delete,
@@ -26,6 +27,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { revenueRowsFromLeads, summarizeReturn, type LeadPayment, type RevenueLeadMessage, type SourceRevenueRow } from './revenue';
+import { PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_WINDOW_MONTHS } from './partnerChannels';
 import type { Lead } from './leads';
 
 const MIGRATION = readFileSync(
@@ -33,6 +35,9 @@ const MIGRATION = readFileSync(
 );
 const PARTNER_MIGRATION = readFileSync(
   path.join(process.cwd(), 'supabase/migrations/0023_partner_channels_and_gates.sql'), 'utf8',
+);
+const PARTNER_RULE_MIGRATION = readFileSync(
+  path.join(process.cwd(), 'supabase/migrations/0024_partner_attribution_rule.sql'), 'utf8',
 );
 
 const BASE_SCHEMA = (withIsTest: boolean) => `
@@ -59,6 +64,8 @@ const BASE_SCHEMA = (withIsTest: boolean) => `
     session_id uuid not null references onboarding_sessions(id) on delete cascade,
     direction text not null,
     author text not null,
+    source text,
+    created_at timestamptz not null default now(),
     body text not null default ''
   );
   -- The live status stamp (amos migration 020), so the test can prove an
@@ -89,6 +96,8 @@ beforeAll(async () => {
   await db.exec(MIGRATION);
   await db.exec(PARTNER_MIGRATION);
   await db.exec(PARTNER_MIGRATION);
+  await db.exec(PARTNER_RULE_MIGRATION);
+  await db.exec(PARTNER_RULE_MIGRATION);
   await db.query('insert into onboarding_sessions (id) values ($1), ($2)', [TENANT, OTHER]);
 }, 60000);
 
@@ -110,9 +119,7 @@ async function viewRows(sessionId: string): Promise<SourceRevenueRow[]> {
     source: String(r.source), leads: Number(r.leads), won: Number(r.won), lost: Number(r.lost),
     job_value_cents: Number(r.job_value_cents), collected_cents: Number(r.collected_cents),
     collected_in_window_cents: Number(r.collected_in_window_cents), collected_30d_cents: Number(r.collected_30d_cents),
-    ...(String(r.source) === 'self_sourced'
-      ? { partner_collected_in_window_cents: Number(r.partner_collected_in_window_cents) }
-      : {}),
+    partner_collected_in_window_cents: Number(r.partner_collected_in_window_cents),
   }));
 }
 
@@ -214,6 +221,23 @@ describe('cash is counted by payment date', () => {
     expect(summarizeReturn([row], { metaSpend30dCents: 50000 }).meta).toMatchObject({ collected30dCents: 100000, returnPerDollar: 2 });
   });
 
+  it('keeps backdated payment cash for an ordinary source in SQL and TypeScript', async () => {
+    const S = await newSession();
+    const createdAt = new Date().toISOString();
+    const paidAt = daysAgo(2).toISOString();
+    const id = await insertLead(S, { source: 'referral', created_at: createdAt });
+    await markWon(id, S, 100000);
+    await addPayment(id, S, 25000, paidAt);
+    const sql = await viewRows(S);
+    const ts = revenueRowsFromLeads([{
+      id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
+      status: 'open', quote_cents: null, contacted: false, after_hours: false, first_reply_seconds: null,
+      source: 'referral', created_at: createdAt, job_outcome: 'won', job_value_cents: 100000,
+    }], [{ lead_id: id, amount_cents: 25000, paid_at: paidAt }], new Date());
+    expect(sql).toEqual(ts);
+    expect(sql[0]).toMatchObject({ collected_cents: 25000, collected_in_window_cents: 25000, partner_collected_in_window_cents: 25000 });
+  });
+
   it('a job paid across the 24-month line counts only the payments inside it', async () => {
     const S = await newSession();
     const l = await insertLead(S, { source: 'web_form', created_at: '2024-03-31T09:00:00.000Z' });
@@ -227,6 +251,23 @@ describe('cash is counted by payment date', () => {
     expect(summarizeReturn([row]).partner).toMatchObject({ collectedCents: 500000, shareCents: 75000 });
   });
 
+  it('starts a self-sourced window at the first counting-agent message', async () => {
+    const S = await newSession();
+    const l = await insertLead(S, { source: 'self_sourced', created_at: '2024-01-01T00:00:00.000Z' });
+    await markWon(l, S, 700000);
+    await addPayment(l, S, 300000, '2024-03-01T12:00:00.000Z');
+    await addPayment(l, S, 200000, '2026-03-31T08:59:59.000Z');
+    await addPayment(l, S, 150000, '2026-03-31T09:00:00.000Z');
+    await addPayment(l, S, 50000, '2026-06-01T12:00:00.000Z');
+    await db.query(
+      `insert into lead_messages (lead_id, session_id, direction, author, source, created_at, body)
+       values ($1, $2, 'outbound', 'agent', 'fr', $3, 'first agent contact')`,
+      [l, S, '2024-03-31T09:00:00.000Z'],
+    );
+    const [row] = await viewRows(S);
+    expect(row).toMatchObject({ collected_cents: 700000, collected_in_window_cents: 200000, partner_collected_in_window_cents: 200000 });
+  });
+
   it('a refund lands in the window it happened in, and the lead still counts once', async () => {
     const S = await newSession();
     const l = await insertLead(S, { source: 'meta', created_at: daysAgo(120).toISOString() });
@@ -235,6 +276,7 @@ describe('cash is counted by payment date', () => {
     await addPayment(l, S, -50000, daysAgo(5));
     const [row] = await viewRows(S);
     expect(row).toMatchObject({ leads: 1, won: 1, collected_cents: 350000, collected_30d_cents: -50000 });
+    expect(summarizeReturn([row]).partner).toMatchObject({ collectedCents: 400000, shareCents: 60000 });
   });
 });
 
@@ -250,24 +292,96 @@ describe('self-sourced partner exception', () => {
       .rejects.toThrow(/source.*self_sourced|self_sourced.*source/i);
   });
 
-  it('includes self-sourced cash only after an outbound agent message', async () => {
+  it('includes self-sourced cash only after a tagged counting-agent message', async () => {
     const S = await newSession();
     const agentLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
     const ownerLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
+    const reviewLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
+    const humanLead = await insertLead(S, { source: 'self_sourced', created_at: daysAgo(3) });
     await markWon(agentLead, S, 100000);
     await markWon(ownerLead, S, 100000);
+    await markWon(reviewLead, S, 100000);
+    await markWon(humanLead, S, 100000);
     await addPayment(agentLead, S, 10000, daysAgo(1));
     await addPayment(ownerLead, S, 20000, daysAgo(1));
+    await addPayment(reviewLead, S, 30000, daysAgo(1));
+    await addPayment(humanLead, S, 40000, daysAgo(1));
     await db.query(
-      `insert into lead_messages (lead_id, session_id, direction, author, body)
-       values ($1, $2, 'outbound', 'agent', 'practice message')`, [agentLead, S],
+      `insert into lead_messages (lead_id, session_id, direction, author, source, created_at, body)
+       values ($1, $2, 'outbound', 'agent', 'fr', $5, 'practice message'),
+              ($3, $2, 'outbound', 'agent', 'reputation', $5, 'review request'),
+              ($4, $2, 'outbound', 'human', 'fr', $5, 'manual re-text')`,
+      [agentLead, S, reviewLead, humanLead, daysAgo(2).toISOString()],
     );
 
     const { rows } = await db.query<Record<string, unknown>>(
       `select collected_in_window_cents, partner_collected_in_window_cents
          from client_lead_revenue_by_source where session_id = $1 and source = 'self_sourced'`, [S],
     );
-    expect(rows[0]).toMatchObject({ collected_in_window_cents: 30000, partner_collected_in_window_cents: 10000 });
+    expect(rows[0]).toMatchObject({ collected_in_window_cents: 10000, partner_collected_in_window_cents: 10000 });
+  });
+
+  it('pins the single refund setting to off in the unapplied migration', () => {
+    expect(PARTNER_RULE_MIGRATION.match(/(\d+)::integer\s+as partner_attribution_window_months/)?.[1])
+      .toBe(String(PARTNER_WINDOW_MONTHS));
+    expect(PARTNER_RULE_MIGRATION.match(/(\d+)::integer\s+as partner_refund_clawback_window_months/)?.[1])
+      .toBe(String(PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS));
+    expect(PARTNER_RULE_MIGRATION).toContain('-- The live J&C instrumentation already has this column.');
+    expect(PARTNER_RULE_MIGRATION).toContain('n8n First Responder');
+    expect(PARTNER_RULE_MIGRATION).toContain('workflow writes lead_messages');
+  });
+});
+
+describe('three-month refund clawback fallback', () => {
+  it('caps matching refunds and floors the view at zero, in parity with TypeScript', async () => {
+    const S = await newSession();
+    const firstContact = '2025-01-01T00:00:00.000Z';
+    const specs: { source: Lead['source']; payments: [number, string][]; expected: number }[] = [
+      { source: 'referral' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [-25000, '2025-02-01T00:00:00.000Z']], expected: 75000 },
+      { source: 'google' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [-25000, '2025-05-01T00:00:00.000Z']], expected: 100000 },
+      { source: 'call' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [100000, '2025-06-01T00:00:00.000Z'], [-150000, '2025-06-02T00:00:00.000Z']], expected: 100000 },
+      { source: 'web_form' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [-150000, '2025-01-20T00:00:00.000Z']], expected: 0 },
+    ];
+    const leads: Lead[] = [];
+    const payments: LeadPayment[] = [];
+    const threeMonthMigration = PARTNER_RULE_MIGRATION.replace(
+      /0::integer\s+as partner_refund_clawback_window_months/,
+      '3::integer as partner_refund_clawback_window_months',
+    );
+    await db.exec(threeMonthMigration);
+    try {
+      for (const spec of specs) {
+        const id = await insertLead(S, { source: spec.source, created_at: firstContact });
+        await markWon(id, S, 300000);
+        for (const [amount, paidAt] of spec.payments) {
+          if (amount < 0 && spec.source === 'web_form') {
+            await db.exec('alter table client_lead_payments disable trigger trg_client_lead_payments_before_insert');
+            try { await addPayment(id, S, amount, paidAt); }
+            finally { await db.exec('alter table client_lead_payments enable trigger trg_client_lead_payments_before_insert'); }
+          } else {
+            await addPayment(id, S, amount, paidAt);
+          }
+          payments.push({ lead_id: id, amount_cents: amount, paid_at: paidAt });
+        }
+        leads.push({
+          id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
+          status: 'open', quote_cents: null, contacted: false, after_hours: false, first_reply_seconds: null,
+          source: spec.source, created_at: firstContact, job_outcome: 'won', job_value_cents: 300000,
+        });
+      }
+      const sql = await viewRows(S);
+      const ts = revenueRowsFromLeads(leads, payments, new Date(), [], 3)
+        .sort((a, b) => a.source.localeCompare(b.source));
+      expect(sql).toEqual(ts);
+      for (const spec of specs) {
+        expect(sql.find(row => row.source === spec.source)).toMatchObject({
+          collected_in_window_cents: spec.payments.reduce((sum, [amount]) => sum + amount, 0),
+          partner_collected_in_window_cents: spec.expected,
+        });
+      }
+    } finally {
+      await db.exec(PARTNER_RULE_MIGRATION);
+    }
   });
 });
 
@@ -318,10 +432,10 @@ describe('view parity with the TypeScript twin', () => {
       }
       if (f.agentMessage) {
         await db.query(
-          `insert into lead_messages (lead_id, session_id, direction, author, body)
-           values ($1, $2, 'outbound', 'agent', 'fake agent message')`, [id, S],
+          `insert into lead_messages (lead_id, session_id, direction, author, source, created_at, body)
+           values ($1, $2, 'outbound', 'agent', 'fr', $3, 'fake agent message')`, [id, S, at(6)],
         );
-        messages.push({ lead_id: id, direction: 'outbound', author: 'agent' });
+        messages.push({ lead_id: id, direction: 'outbound', author: 'agent', source: 'fr', created_at: at(6) });
       }
       leads.push({
         id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
@@ -342,10 +456,10 @@ describe('view parity with the TypeScript twin', () => {
       collected_cents: 133300, collected_in_window_cents: 52200,
     });
     expect(sql.find(r => r.source === 'self_sourced')).toMatchObject({
-      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
+      collected_in_window_cents: 70000, partner_collected_in_window_cents: 70000,
     });
     expect(ts.find(r => r.source === 'self_sourced')).toMatchObject({
-      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
+      collected_in_window_cents: 70000, partner_collected_in_window_cents: 70000,
     });
   });
 });

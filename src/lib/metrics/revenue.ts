@@ -4,9 +4,9 @@
 //
 // Inputs are the job outcomes the client enters per lead (migration 0021:
 // job_outcome, job_value_cents on client_leads) and the cash ledger
-// (client_lead_payments: one row per payment, negative for a refund). Every
-// cash window sums only the payments dated inside it; a lead has no stored
-// running total to go stale. Two ways in:
+// (client_lead_payments: one row per payment, negative for a refund). Partner
+// cash counts for 24 months after first contact; the separate refund clawback
+// setting decides whether an eligible refund is a credit. Two ways in:
 //   * the client_lead_revenue_by_source view (0021), which sums the WHOLE book
 //     of business per source in a few PII-free rows. /dash and the assistant
 //     read this.
@@ -16,16 +16,19 @@
 // Both produce SourceRevenueRow[]; summarizeReturn() turns either into the card.
 //
 // The 15% figure is an ESTIMATE. Every source counts toward the partner basis;
-// the sole exception is self_sourced work that never received an AI-agent
-// message. The prior-12-month customer exclusion is not computed because Mate
-// has no record of the client's prior customers. Which source is eligible is
-// decided in partnerChannels.ts and the message condition is supplied by the
-// SQL view (0023).
+// the sole exception is self_sourced work that never received an identified
+// counting-agent message. The review/referral agent is intentionally not in that
+// message allowlist; a referral it brings in must be recorded with source
+// `referral`. The prior-12-month customer exclusion is not computed because Mate
+// has no record of the client's prior customers. The SQL view (0024) and this
+// module use the same attribution and refund rules.
 
 import type { Lead } from './leads';
 import type { AdMetricRow } from './ads';
 import {
-  channelOwner, partnerShareCents, PARTNER_SHARE_BPS, PARTNER_WINDOW_MONTHS, type ChannelOwner,
+  channelOwner, partnerShareCents, PARTNER_COUNTING_AGENT_MESSAGE_SOURCES,
+  PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_SHARE_BPS, PARTNER_WINDOW_MONTHS,
+  type ChannelOwner,
 } from './partnerChannels';
 
 /** One row of client_lead_revenue_by_source, minus the tenant id. */
@@ -36,11 +39,11 @@ export type SourceRevenueRow = {
   lost: number;
   job_value_cents: number;
   collected_cents: number;
-  /** Cash collected within PARTNER_WINDOW_MONTHS of the lead's first contact. */
+  /** Net cash collected within PARTNER_WINDOW_MONTHS of first contact. */
   collected_in_window_cents: number;
   /** Payments dated in the last 30 days. */
   collected_30d_cents: number;
-  /** For self_sourced rows, only cash from leads the AI agent messaged. */
+  /** Cash eligible for the partner basis after attribution and refund rules. */
   partner_collected_in_window_cents?: number;
 };
 
@@ -74,7 +77,66 @@ export type RevenueLeadMessage = {
   lead_id: string;
   direction: 'inbound' | 'outbound';
   author: 'lead' | 'agent' | 'human' | 'system';
+  /** Live instrumentation tag: fr, cultivator, reactivator, operator, or null. */
+  source?: string | null;
+  created_at?: string | null;
 };
+
+/** Whether a message proves that one of the three counting agents worked a lead. */
+export function isCountingAgentMessage(message: RevenueLeadMessage): boolean {
+  return message.direction === 'outbound'
+    && message.author === 'agent'
+    && (PARTNER_COUNTING_AGENT_MESSAGE_SOURCES as readonly string[]).includes(message.source ?? '');
+}
+
+/**
+ * Partner cash for one lead. Positive payments count only from first contact
+ * (inclusive) until the strict 24-month line. A negative payment is a statement
+ * credit only when the setting is positive and it matches eligible positive
+ * payments within that many calendar months; its credit is capped at the sum
+ * of those matching payments. At zero (the opening position), refunds never
+ * reduce the share. The floor prevents a refund from ever producing a
+ * cash-back/negative payout.
+ */
+export function partnerBasisCents(
+  payments: LeadPayment[], firstContactAt: string | Date | null,
+  clawbackWindowMonths = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS,
+  startAtFirstContact = true,
+): number {
+  if (firstContactAt == null) return 0;
+  const firstContact = new Date(firstContactAt);
+  const firstContactMs = firstContact.getTime();
+  if (!Number.isFinite(firstContactMs)) return 0;
+  const attributionEndMs = addMonthsUtc(firstContact, PARTNER_WINDOW_MONTHS).getTime();
+
+  const total = payments.reduce((sum, payment) => {
+    const amount = cents(payment.amount_cents);
+    const paymentAt = new Date(payment.paid_at).getTime();
+    const inAttributionWindow = Number.isFinite(paymentAt)
+      && (!startAtFirstContact || paymentAt >= firstContactMs)
+      && paymentAt < attributionEndMs;
+    if (amount >= 0) return inAttributionWindow ? sum + amount : sum;
+    if (clawbackWindowMonths <= 0) return sum;
+    const refundAt = paymentAt;
+    const matchingEligibleAmount = Number.isFinite(refundAt)
+      ? payments.reduce((matched, original) => {
+        const originalAmount = cents(original.amount_cents);
+        const originalAt = new Date(original.paid_at).getTime();
+        if (originalAmount <= 0 || !Number.isFinite(originalAt)
+          || (startAtFirstContact && originalAt < firstContactMs)
+          || originalAt >= attributionEndMs || originalAt > refundAt
+          || refundAt >= addMonthsUtc(new Date(original.paid_at), clawbackWindowMonths).getTime()) {
+          return matched;
+        }
+        return matched + originalAmount;
+      }, 0)
+      : 0;
+    return matchingEligibleAmount > 0
+      ? sum - Math.min(Math.abs(amount), matchingEligibleAmount)
+      : sum;
+  }, 0);
+  return Math.max(0, total);
+}
 
 /**
  * The TypeScript twin of client_lead_revenue_by_source for one tenant's leads
@@ -85,14 +147,18 @@ export type RevenueLeadMessage = {
  */
 export function revenueRowsFromLeads(
   leads: Lead[], payments: LeadPayment[] = [], now = new Date(), messages: RevenueLeadMessage[] = [],
+  clawbackWindowMonths = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS,
 ): SourceRevenueRow[] {
   const bySource = new Map<string, SourceRevenueRow>();
   const since30d = now.getTime() - 30 * DAY_MS;
-  const agentMessagedLeadIds = new Set(
-    messages
-      .filter(m => m.direction === 'outbound' && m.author === 'agent')
-      .map(m => m.lead_id),
-  );
+  const firstCountingAgentContactAtByLead = new Map<string, string>();
+  for (const message of messages.filter(isCountingAgentMessage)) {
+    if (!message.created_at || !Number.isFinite(new Date(message.created_at).getTime())) continue;
+    const prior = firstCountingAgentContactAtByLead.get(message.lead_id);
+    if (!prior || new Date(message.created_at).getTime() < new Date(prior).getTime()) {
+      firstCountingAgentContactAtByLead.set(message.lead_id, message.created_at);
+    }
+  }
   const paymentsByLead = new Map<string, LeadPayment[]>();
   for (const p of payments) {
     const list = paymentsByLead.get(p.lead_id);
@@ -105,7 +171,7 @@ export function revenueRowsFromLeads(
         source: l.source, leads: 0, won: 0, lost: 0, job_value_cents: 0,
         collected_cents: 0, collected_in_window_cents: 0, collected_30d_cents: 0,
       };
-      if (l.source === 'self_sourced') row.partner_collected_in_window_cents = 0;
+      row.partner_collected_in_window_cents = 0;
       bySource.set(l.source, row);
     }
     row.leads += 1;
@@ -114,18 +180,32 @@ export function revenueRowsFromLeads(
       row.won += 1;
       row.job_value_cents += cents(l.job_value_cents);
     }
-    // Each payment lands in a window by its OWN date. The DB only lets
-    // payments onto a won lead, so no outcome check here.
-    const windowEnd = addMonthsUtc(new Date(l.created_at), PARTNER_WINDOW_MONTHS).getTime();
-    for (const p of paymentsByLead.get(l.id) ?? []) {
+    // The DB only lets payments onto a won lead, so no outcome check here.
+    const leadPayments = paymentsByLead.get(l.id) ?? [];
+    // For self_sourced work, first contact is the first counting-agent message:
+    // that is the date our agent first worked the lead, not lead creation.
+    const firstContactAt = l.source === 'self_sourced'
+      ? firstCountingAgentContactAtByLead.get(l.id) ?? null
+      : l.created_at;
+    const firstContactMs = firstContactAt == null ? Number.NaN : new Date(firstContactAt).getTime();
+    const attributionEndMs = Number.isFinite(firstContactMs)
+      ? addMonthsUtc(new Date(firstContactAt!), PARTNER_WINDOW_MONTHS).getTime()
+      : Number.NaN;
+    for (const p of leadPayments) {
       const amount = cents(p.amount_cents);
       const at = new Date(p.paid_at).getTime();
       row.collected_cents += amount;
-      if (at < windowEnd) row.collected_in_window_cents += amount;
-      if (at < windowEnd && (l.source !== 'self_sourced' || agentMessagedLeadIds.has(l.id))) {
-        if (row.partner_collected_in_window_cents !== undefined) row.partner_collected_in_window_cents += amount;
+      if (Number.isFinite(at)
+        && (l.source !== 'self_sourced' || at >= firstContactMs)
+        && at < attributionEndMs) {
+        row.collected_in_window_cents += amount;
       }
       if (at >= since30d) row.collected_30d_cents += amount;
+    }
+    if (l.source !== 'self_sourced' || firstCountingAgentContactAtByLead.has(l.id)) {
+      row.partner_collected_in_window_cents! += partnerBasisCents(
+        leadPayments, firstContactAt, clawbackWindowMonths, l.source === 'self_sourced',
+      );
     }
   }
   return [...bySource.values()];
@@ -169,7 +249,7 @@ export type ReturnSummary = {
   /** True once any lead has a won or lost entered. */
   hasOutcomes: boolean;
   partner: {
-    /** Cash from partner-channel sources inside the 24-month window. */
+    /** Cash from partner-channel sources after attribution and refund rules. */
     collectedCents: number;
     shareBps: number;
     shareCents: number;
@@ -205,9 +285,8 @@ export function summarizeReturn(
 
   const sum = (f: (r: SourceReturn) => number, rs = rows) => rs.reduce((t, r) => t + f(r), 0);
   const partnerRows = rows.filter(r => r.owner === 'partner');
-  const partnerCollected = sum(r => r.source === 'self_sourced'
-    ? (r.partner_collected_in_window_cents ?? 0)
-    : r.collected_in_window_cents, partnerRows);
+  const partnerCollected = sum(r => r.partner_collected_in_window_cents
+    ?? (r.source === 'self_sourced' ? 0 : r.collected_in_window_cents), partnerRows);
   const metaRows = rows.filter(r => r.source === 'meta');
   const spend = opts.metaSpend30dCents ?? null;
   const metaCollected30d = sum(r => r.collected_30d_cents, metaRows);

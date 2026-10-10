@@ -1,0 +1,123 @@
+-- 0024_partner_attribution_rule.sql
+--
+-- Partner attribution and refund rule, extending 0023 without changing any
+-- applied migration. Every lead source is partner-owned; a self_sourced lead
+-- is partner-eligible only when an identified counting agent worked it. The
+-- durable message signal is lead_messages.source, not author='agent' alone:
+-- fr, cultivator, and reactivator count; operator/reputation/null do not.
+--
+-- partner_attribution_window_months = 24 is the positive-cash window from
+-- first contact, with a strict end boundary and Postgres month clamping.
+-- partner_refund_clawback_window_months = 0 is the founder's opening position:
+-- refunds never lower the partner share. A negotiated positive value would
+-- credit a refund only when it follows a payment within that many calendar
+-- months. The TypeScript setting has the same value and is parity-tested.
+--
+-- This migration is intentionally UNAPPLIED in the founder-gated workflow.
+
+-- The live J&C instrumentation already has this column. The n8n First Responder
+-- workflow writes lead_messages; adding the tag here keeps a database built
+-- from Mate's own history able to run the same view. This does not touch
+-- jc_sms_conversations or any lead-handling table, and adds no constraint,
+-- default, or index to the tag.
+alter table public.lead_messages add column if not exists source text;
+
+create or replace view public.client_lead_revenue_by_source
+with (security_invoker = true)
+as
+with agreement as (
+  select
+    24::integer as partner_attribution_window_months, -- partner_attribution_window_months = 24
+    0::integer as partner_refund_clawback_window_months -- partner_refund_clawback_window_months = 0
+)
+select
+  l.session_id,
+  l.source,
+  count(*)::int                                                       as leads,
+  count(*) filter (where l.job_outcome = 'won')::int                  as won,
+  count(*) filter (where l.job_outcome = 'lost')::int                 as lost,
+  coalesce(sum(l.job_value_cents) filter (where l.job_outcome = 'won'), 0)::bigint
+                                                                      as job_value_cents,
+  coalesce(sum(p.collected), 0)::bigint                               as collected_cents,
+  coalesce(sum(p.in_window), 0)::bigint                               as collected_in_window_cents,
+  coalesce(sum(p.last_30d), 0)::bigint                                as collected_30d_cents,
+  coalesce(sum(p.partner_basis) filter (
+    where l.source <> 'self_sourced'
+       or exists (
+         select 1
+         from public.lead_messages lm
+         where lm.lead_id = l.id
+           and lm.session_id = l.session_id
+           and lm.direction = 'outbound'
+           and lm.author = 'agent'
+           and lm.source in ('fr', 'cultivator', 'reactivator')
+       )
+  ), 0)::bigint                                                       as partner_collected_in_window_cents
+from public.client_leads l
+cross join agreement
+left join lateral (
+  select case
+    -- For self_sourced work, the attribution clock starts when a counting
+    -- agent first worked the lead, not when J&C entered the lead.
+    when l.source = 'self_sourced' then (
+      select min(lm.created_at)
+      from public.lead_messages lm
+      where lm.lead_id = l.id
+        and lm.session_id = l.session_id
+        and lm.direction = 'outbound'
+        and lm.author = 'agent'
+        and lm.source in ('fr', 'cultivator', 'reactivator')
+    )
+    else l.created_at
+  end as first_contact_at
+) first_contact on true
+left join lateral (
+  select
+    sum(pay.amount_cents) as collected,
+    sum(pay.amount_cents) filter (
+      where first_contact.first_contact_at is not null
+        and (l.source <> 'self_sourced' or pay.paid_at >= first_contact.first_contact_at)
+        and pay.paid_at < first_contact.first_contact_at
+          + agreement.partner_attribution_window_months * interval '1 month'
+    ) as in_window,
+    sum(pay.amount_cents) filter (where pay.paid_at >= now() - interval '30 days')
+                                                                      as last_30d,
+    greatest(coalesce(sum(case
+      when pay.amount_cents > 0
+       and first_contact.first_contact_at is not null
+       and (l.source <> 'self_sourced' or pay.paid_at >= first_contact.first_contact_at)
+       and pay.paid_at < first_contact.first_contact_at
+         + agreement.partner_attribution_window_months * interval '1 month'
+        then pay.amount_cents
+      when pay.amount_cents < 0
+       and agreement.partner_refund_clawback_window_months > 0
+       and first_contact.first_contact_at is not null
+        then -least(
+          abs(pay.amount_cents),
+          coalesce((
+            select sum(original.amount_cents)
+            from public.client_lead_payments original
+            where original.lead_id = pay.lead_id
+              and original.session_id = pay.session_id
+              and original.amount_cents > 0
+              and (l.source <> 'self_sourced' or original.paid_at >= first_contact.first_contact_at)
+              and original.paid_at < first_contact.first_contact_at
+                + agreement.partner_attribution_window_months * interval '1 month'
+              and original.paid_at <= pay.paid_at
+              and pay.paid_at < original.paid_at
+                + agreement.partner_refund_clawback_window_months * interval '1 month'
+          ), 0)
+        )
+      else 0
+    end), 0), 0) as partner_basis
+  from public.client_lead_payments pay
+  where pay.lead_id = l.id and pay.session_id = l.session_id
+) p on true
+where not coalesce(l.is_test, false)
+group by l.session_id, l.source;
+
+comment on view public.client_lead_revenue_by_source is
+  'Per tenant and lead source: every source counts toward the partner basis except self_sourced leads without a tagged counting-agent message (fr, cultivator, or reactivator). Positive cash counts within 24 months of first contact; refund clawback is controlled by the single partner_refund_clawback_window_months setting, currently 0/off. No PII. Migration 0024.';
+
+revoke all on public.client_lead_revenue_by_source from anon, authenticated;
+grant select on public.client_lead_revenue_by_source to service_role;

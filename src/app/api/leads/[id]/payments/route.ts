@@ -6,8 +6,8 @@ import { parsePaymentBody } from '@/lib/leads/outcome';
 
 // Record one payment (or, with a negative amount, a refund or chargeback) on a
 // won job: a row in the client_lead_payments ledger (migration 0021). Each
-// payment keeps its own date, so the dashboard's 30-day and 24-month windows
-// count only the cash that actually came in during them.
+// payment keeps its own date, so the dashboard's 30-day ledger and partner
+// refund-clawback math stay correct when a balance is paid in installments.
 //
 // Same bar as the outcome route: access to the lead's tenant (derived from the
 // lead row, never the body), and never on a demo dashboard. The ledger's

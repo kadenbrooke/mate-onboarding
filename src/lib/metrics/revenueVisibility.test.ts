@@ -12,6 +12,7 @@ describe('hidePartnerBasis', () => {
     const client = hidePartnerBasis(summary);
     expect(client.partner).toBeNull();
     expect(client.rows[0]).not.toHaveProperty('owner');
+    expect(client.rows[0]).not.toHaveProperty('collected_in_window_cents');
     expect(client.rows[0]).not.toHaveProperty('partner_collected_in_window_cents');
     expect(JSON.stringify(client)).not.toMatch(/shareCents|shareBps|partnerCollected|partner_collected|owner|partner basis/i);
   });

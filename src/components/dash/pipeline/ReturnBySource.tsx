@@ -3,7 +3,7 @@ import type { ReturnSummary, SourceReturn } from '@/lib/metrics/revenue';
 import type { ClientReturnSummary, ClientSourceReturn } from '@/lib/metrics/revenueVisibility';
 import { SOURCE_LABELS } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
-import { PARTNER_CHANNEL_SOURCES } from '@/lib/metrics/partnerChannels';
+import { PARTNER_CHANNEL_SOURCES, PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_WINDOW_MONTHS } from '@/lib/metrics/partnerChannels';
 import { Card } from '../Card';
 import {
   CARD_CHIP, CARD_FAINT, CARD_FG, CARD_HAIRLINE, CARD_INSET, CARD_MUTED, FONT_BODY, FREE_GREEN, NUM_DISPLAY, brandVar,
@@ -21,6 +21,9 @@ const pct = (bps: number) => `${bps / 100}%`;
 // leads yet, so the footnote states the rule rather than today's data.
 const PARTNER_NAMES = Object.entries(PARTNER_CHANNEL_SOURCES)
   .filter(([, owner]) => owner === 'partner').map(([source]) => label(source)).join(', ');
+const REFUND_CLAWBACK_LABEL = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS === 0
+  ? 'off (opening position)'
+  : `${PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS} months`;
 
 function SourceRow({ r }: { r: SourceReturn | ClientSourceReturn }) {
   return (
@@ -89,7 +92,7 @@ export function ReturnBySource({ summary, sessionId, showLabel = true }: {
             </span>
           </div>
           <div style={{ fontSize: 11, color: CARD_FAINT, marginTop: 6 }}>
-            Pending the signed agreement. Partner channels counted: {PARTNER_NAMES}. Cash within 24 months of first contact.
+            Pending the signed agreement. Partner channels counted: {PARTNER_NAMES}. Cash within {PARTNER_WINDOW_MONTHS} months of first contact. Refund clawback: {REFUND_CLAWBACK_LABEL}.
             Does not yet exclude customers who had a quote, job or invoice in the prior 12 months.
           </div>
         </div>}
