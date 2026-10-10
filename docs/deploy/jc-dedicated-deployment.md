@@ -1,8 +1,8 @@
 # J&C dashboard on its own data project: deploy plan
 
 Status: **plan only, nothing below has been run.** Every step that creates a Vercel
-project, sets an env var, deploys, or changes DNS, auth or n8n is founder-gated. It
-pairs with the amos runbook
+project, sets an env var, deploys, applies a migration, or changes DNS, auth, n8n or
+cal.com is founder-gated. It pairs with the amos runbook
 `departments/customer-success/clients/jc-asphalt-paving/own-db/RUNBOOK.md`
 (blocker 2, consumer row 10). That runbook owns the data copy and the evening switch;
 this file owns the Mate side of it.
@@ -13,9 +13,12 @@ this file owns the Mate side of it.
 |---|---|
 | Which project holds data, which tenants a deployment serves | `src/lib/supabase/tenancy.ts` |
 | Data client vs control (logins + CRM) client | `src/lib/supabase/service.ts` (`createServiceClient` = data, `createControlServiceClient` = logins/CRM) |
-| Proxy: dedicated deployments deny by default, moved sessions forward | `src/lib/supabase/tenant-proxy.ts`, wired in `src/proxy.ts` |
-| API routes: forward or refuse a session this deployment does not serve | `src/lib/supabase/tenant-response.ts` |
-| Isolation tests | `src/lib/supabase/*.test.ts`, `src/test/tenantIsolation.test.ts` |
+| Proxy: dedicated deployments deny by default; moved sessions forward (pages) or 410 (APIs) | `src/lib/supabase/tenant-proxy.ts`, wired in `src/proxy.ts` |
+| API routes: forward (307) or refuse a session this deployment does not serve | `src/lib/supabase/tenant-response.ts` |
+| cal.com bookings: attribute, forward, or hold + founder signal | `src/lib/calcom/attribution.ts`, `src/lib/calcom/held.ts`, `src/app/api/webhooks/calcom/route.ts` |
+| Held-bookings table (control project) | `supabase/migrations/0025_calcom_held_bookings.sql` |
+| Reconcile held bookings | `scripts/replay-held-calcom.mjs` |
+| Tests | `src/lib/supabase/*.test.ts` (incl. the route manifest), `src/lib/calcom/*.test.ts`, `src/app/api/webhooks/calcom/tenancy.test.ts`, `src/test/tenantIsolation.test.ts` |
 
 Three modes, all from env:
 
@@ -26,10 +29,22 @@ Three modes, all from env:
    on the main project. Only J&C's session is served. The demo, onboarding, signup,
    waitlist, code claim, `/handoff` and the internal app shell answer 404. The public
    demo session can never be listed (config refuses it). A half-set config answers 503.
-3. **Shared with J&C moved out**: `MATE_MOVED_SESSIONS` on `mate-onboarding`. J&C's
-   dashboard URLs 307 to the new host; dashboard API calls for J&C answer 410 ("reload");
-   ingest / postcall / quote-scan / Google connect for J&C 307 to the new host (method and
-   body kept); the ads and calendar crons skip J&C.
+   The calendar cron's session scan is filtered to J&C's session in the query itself.
+3. **Shared with J&C moved out**: `MATE_MOVED_SESSIONS` on `mate-onboarding`.
+   - J&C dashboard **pages** 307 to the new host (the user signs in there once).
+   - J&C dashboard **APIs** answer **410** "This dashboard has moved. Reload the page."
+     They are never redirected: a stale browser tab would replay the request at the new
+     domain without that domain's login cookie. The reload lands on the page redirect.
+   - **Machine callers** carrying J&C's session (ingest, postcall, quote-scan, signal,
+     Google connect) get a 307 to the same path and query on the new host. A 307 keeps
+     the method and body; the caller re-sends its own headers (ingest token, `k=` query).
+   - **cal.com** (no session in the payload): a booking attributed to J&C by its signed
+     event type or organizer (`CALCOM_BOOKING_OWNERS`) is forwarded server-side with the
+     exact signed body and only `content-type` + `x-cal-signature-256`. If the forward
+     fails, or the booking can't be attributed, it is **held** in
+     `calcom_held_bookings` and the founder is told through `outbound_texts` (the
+     router). Nothing is written to the old project and nothing is dropped.
+   - The ads and calendar crons skip J&C (the calendar scan excludes it in the query).
 
 ## Names
 
@@ -44,7 +59,9 @@ Three modes, all from env:
 | Data project | `kbzsggzhcnfsgbqmybsf` (J&C's own) |
 | Deploy checkout | a clean detached worktree of `origin/main` at `~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc`, linked to `mate-jc`. **Never run `vercel link` in the main checkout**: its `.vercel/project.json` points at `mate-onboarding`, and relinking it would send the next shared deploy to the wrong project |
 
-## Env vars on `mate-jc` (Production)
+## Env vars
+
+### `mate-jc` (Production)
 
 New:
 
@@ -53,40 +70,42 @@ New:
 | `SUPABASE_DATA_URL` | Keychain `JC_SUPABASE_URL` |
 | `SUPABASE_DATA_SECRET_KEY` | Keychain `JC_SUPABASE_SECRET_KEY` |
 | `MATE_DATA_SESSION_IDS` | `61400e73-0570-4167-88d9-d3a69650b15b` |
+| `CALCOM_BOOKING_OWNERS` | same value as on `mate-onboarding` (below); here it only refuses bookings for other tenants |
 
 Same as `mate-onboarding` (login project and shared services):
 
 | Name | Value source |
 |---|---|
 | `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`, `SUPABASE_SECRET_KEY` | Keychain, same names (amos-ui scope; same project `jeqnvdl…`) |
-| `LEADS_INGEST_TOKEN` | Keychain, same name (n8n keeps its header; only the host changes) |
-| `META_JC_SESSION_ID`, `JC_ONBOARDING_SESSION_ID` | `61400e73-0570-4167-88d9-d3a69650b15b` (**set at the switch**, see below) |
+| `LEADS_INGEST_TOKEN` | Keychain, same name. Must equal the shared project's value so a missed n8n node still lands through the 307 (checked in prep step 6) |
 | `META_JC_AD_ACCOUNT`, `META_JC_PAGE_TOKEN` | Keychain, same names |
-| `CAL_JC_API_KEY`, `CALCOM_WEBHOOK_SECRET` | Keychain, same names |
+| `CAL_JC_API_KEY`, `CALCOM_WEBHOOK_SECRET` | Keychain, same names. `CALCOM_WEBHOOK_SECRET` must equal the shared value: forwarded and replayed bookings are verified with it |
 | `TELNYX_API_KEY` | Keychain, same name |
 | `GEMINI_API_KEY`, `OPENAI_API_KEY` | Keychain, same names |
 | `LEAD_INTAKE_WEBHOOK_URL`, `LEAD_INTAKE_SECRET` | Keychain, same names |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Keychain, same names |
 | `PORTKEY_BASE_URL`, `MATE_TELNYX_NUMBER` | Not in the Keychain. Copy from `mate-onboarding` in the Vercel dashboard (founder) |
-| `QBO_*` (7 vars) | Only if J&C uses the Money zone. Not in the Keychain; copy in the dashboard, and set `QBO_REDIRECT_URI` to the new host plus add it in the Intuit app. Without them the Money zone shows locked |
+| `AGENT_WEBHOOK_TOKEN` | Not in the Keychain. **Preferred:** copy the shared value (dashboard) so a postcall that n8n still sends to the old host lands through the 307. If it can't be read (Sensitive), use a fresh value (Keychain `MATE_JC_AGENT_WEBHOOK_TOKEN`) and accept that a missed n8n node fails loudly (401 at the new host, n8n error workflow alerts) instead of landing |
+| `QBO_*` (7 vars) | Only if J&C uses the Money zone. Copy in the dashboard; `QBO_REDIRECT_URI` becomes the new host (add it in the Intuit app). Without them the Money zone shows locked |
 
 Changed or fresh values:
 
 | Name | Value |
 |---|---|
-| `GOOGLE_OAUTH_REDIRECT_URI` | `https://jc.mate.auto-mate.business/api/connect/google/callback` (also add it to the Google OAuth client's authorized redirect URIs). J&C's existing calendar token is copied with the data, so the cron works without reconnecting |
-| `CRON_SECRET` | fresh random (**set at the switch**; until then both crons answer 401 and write nothing) |
-| `AGENT_WEBHOOK_TOKEN` | fresh random, stored in Keychain as `MATE_JC_AGENT_WEBHOOK_TOKEN`; n8n's postcall / quote-scan URLs get it at the switch along with the new host |
-| `SIGNAL_TOKEN` | fresh random, Keychain `MATE_JC_SIGNAL_TOKEN` (only the e2e page uses it) |
+| `GOOGLE_OAUTH_REDIRECT_URI` | `https://jc.mate.auto-mate.business/api/connect/google/callback` (also add it to the Google OAuth client's authorized redirect URIs). J&C's calendar token is copied with the data, so the cron works without reconnecting |
+| `SIGNAL_TOKEN` | fresh, Keychain `MATE_JC_SIGNAL_TOKEN` (only the e2e page uses it) |
+| `CRON_SECRET` | fresh, Keychain `MATE_JC_CRON_SECRET`. **Set only at switch step 4**; until then both crons answer 401 and write nothing |
+| `META_JC_SESSION_ID`, `JC_ONBOARDING_SESSION_ID` | `61400e73-0570-4167-88d9-d3a69650b15b`, **set only at switch step 4** |
 
 Not needed on `mate-jc` (onboarding/demo only): `MATE_SESSION_SECRET`,
 `DEMO_TELNYX_NUMBER`, `DEMO_MAX_*`.
 
-On `mate-onboarding`, at the switch only:
+### `mate-onboarding` (Production)
 
-| Name | Value |
-|---|---|
-| `MATE_MOVED_SESSIONS` | `61400e73-0570-4167-88d9-d3a69650b15b=https://jc.mate.auto-mate.business` |
+| Name | When | Value |
+|---|---|---|
+| `CALCOM_BOOKING_OWNERS` | prep (inert until a session is moved) | `61400e73-0570-4167-88d9-d3a69650b15b=event:<J&C event type id>` for each J&C event type, plus `…=organizer:<J&C organizer email>` as a second key. Find the ids with prep step 2 |
+| `MATE_MOVED_SESSIONS` | switch step 1 | `61400e73-0570-4167-88d9-d3a69650b15b=https://jc.mate.auto-mate.business` |
 
 ## Commands
 
@@ -97,28 +116,42 @@ so every env change is followed by a deploy.
 ```bash
 S=~/kaden/amos/scripts/secrets/secret.mjs
 JC=61400e73-0570-4167-88d9-d3a69650b15b
+MAIN=~/kaden/projects/mate-onboarding                    # linked to mate-onboarding
+JCDIR=~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc   # linked to mate-jc
 ```
 
 ### Prep (any day before the switch; nothing live changes)
 
-1. Merge `polly/jc-dashboard-copy` to `main` after review, then deploy the shared
-   project from clean `main` as usual (no new env set = no behavior change):
+1. Merge `polly/jc-dashboard-copy` to `main` after review. Apply
+   `supabase/migrations/0025_calcom_held_bookings.sql` to the **control** project
+   (`jeqnvdlfybpmbovywknz`) only. Deploy the shared project from clean `main` (no new
+   env = no behavior change):
    ```bash
-   cd ~/kaden/projects/mate-onboarding && git pull origin main && vercel deploy --prod --yes
+   cd $MAIN && git status --short && git pull origin main && vercel deploy --prod --yes
    ```
-2. Create the project and a clean deploy checkout:
+2. Find J&C's cal.com event type ids (ids and slugs only, nothing about bookings), then
+   set the owner map on the shared project. It does nothing until a session is moved:
    ```bash
-   cd ~/kaden/projects/mate-onboarding && git fetch origin
+   node $S run -e CAL_JC_API_KEY -- sh -c 'curl -s -H "Authorization: Bearer $CAL_JC_API_KEY" -H "cal-api-version: 2024-06-14" https://api.cal.com/v2/event-types | jq "[.. | objects | select(has(\"slug\") and has(\"id\")) | {id, slug}]"'
+   cd $MAIN
+   printf %s "$JC=event:<id>,$JC=organizer:<organizer email>" | vercel env add CALCOM_BOOKING_OWNERS production
+   ```
+3. Create the project and a clean deploy checkout:
+   ```bash
+   cd $MAIN && git fetch origin
    git worktree add --detach .worktrees/deploy-mate-jc origin/main
-   cd .worktrees/deploy-mate-jc
+   cd $JCDIR
    vercel project add mate-jc --scope kaden-2445s-projects
    vercel link --yes --project mate-jc --scope kaden-2445s-projects
    ```
-3. Env vars (run in `.worktrees/deploy-mate-jc`):
+4. Env vars on `mate-jc` (run in `$JCDIR`; **not** `CRON_SECRET`, `META_JC_SESSION_ID`,
+   `JC_ONBOARDING_SESSION_ID` yet):
    ```bash
+   cd $JCDIR
    node $S run -e JC_SUPABASE_URL -- sh -c 'printf %s "$JC_SUPABASE_URL" | vercel env add SUPABASE_DATA_URL production --sensitive'
    node $S run -e JC_SUPABASE_SECRET_KEY -- sh -c 'printf %s "$JC_SUPABASE_SECRET_KEY" | vercel env add SUPABASE_DATA_SECRET_KEY production --sensitive'
    printf %s "$JC" | vercel env add MATE_DATA_SESSION_IDS production
+   printf %s "$JC=event:<id>,$JC=organizer:<organizer email>" | vercel env add CALCOM_BOOKING_OWNERS production
    for N in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY \
             LEADS_INGEST_TOKEN META_JC_AD_ACCOUNT META_JC_PAGE_TOKEN CAL_JC_API_KEY \
             CALCOM_WEBHOOK_SECRET TELNYX_API_KEY GEMINI_API_KEY OPENAI_API_KEY \
@@ -126,94 +159,143 @@ JC=61400e73-0570-4167-88d9-d3a69650b15b
      node $S run -e "$N" -- sh -c "printf %s \"\$$N\" | vercel env add $N production --sensitive"
    done
    printf %s https://jc.mate.auto-mate.business/api/connect/google/callback | vercel env add GOOGLE_OAUTH_REDIRECT_URI production
-   sh -c 'V=$(openssl rand -hex 32); printf %s "$V" | node '"$S"' set MATE_JC_AGENT_WEBHOOK_TOKEN && printf %s "$V" | vercel env add AGENT_WEBHOOK_TOKEN production --sensitive'
    sh -c 'V=$(openssl rand -hex 32); printf %s "$V" | node '"$S"' set MATE_JC_SIGNAL_TOKEN && printf %s "$V" | vercel env add SIGNAL_TOKEN production --sensitive'
-   # PORTKEY_BASE_URL, MATE_TELNYX_NUMBER (and QBO_* if used): founder copies in the dashboard.
-   vercel env ls production   # names only; check the list against the tables above
+   # AGENT_WEBHOOK_TOKEN, PORTKEY_BASE_URL, MATE_TELNYX_NUMBER (and QBO_* if used): founder, dashboard (see table).
+   vercel env ls production   # names only; check against the tables above
    ```
-   `NEXT_PUBLIC_*` must not be Sensitive if the dashboard needs to show them; they are
-   public values, so `--sensitive` on them is optional.
-4. Deploy and attach the domain:
+5. Deploy and attach the domain:
    ```bash
-   vercel deploy --prod --yes
+   cd $JCDIR && vercel deploy --prod --yes
    vercel domains add jc.mate.auto-mate.business mate-jc --scope kaden-2445s-projects
    ```
    DNS (Porkbun, founder): A record `jc.mate` to `76.76.21.21`.
-5. Login allowlists (founder, dashboards; GET on `/config/auth` is blocked by the secret
-   guard):
-   - Supabase `jeqnvdlfybpmbovywknz` → Authentication → URL Configuration → add
-     `https://jc.mate.auto-mate.business/**` to Redirect URLs (Google sign-in and the
-     `/auth/callback` exchange).
-   - Google OAuth client used by `GOOGLE_OAUTH_CLIENT_ID` → add the new callback URI.
-6. Smoke test before the switch (reads the rehearsal copy in J&C's project, writes
-   nothing):
+   Login allowlists (founder, dashboards; GET on `/config/auth` is blocked by the
+   secret guard): Supabase `jeqnvdlfybpmbovywknz` → Authentication → URL Configuration →
+   add `https://jc.mate.auto-mate.business/**`; Google OAuth client → add the new
+   callback URI.
+6. Smoke test (reads the rehearsal copy in J&C's project, writes nothing):
    ```bash
-   curl -s -o /dev/null -w '%{http_code}\n' https://jc.mate.auto-mate.business/dash/demo          # 404
-   curl -s -o /dev/null -w '%{http_code}\n' https://jc.mate.auto-mate.business/demo               # 404
-   curl -s -o /dev/null -w '%{http_code}\n' https://jc.mate.auto-mate.business/api/ads/refresh    # 401 (no CRON_SECRET yet)
-   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" -H "content-type: application/json" -d "{}" https://jc.mate.auto-mate.business/api/leads/ingest'   # 400 = token accepted, nothing written
+   H=https://jc.mate.auto-mate.business
+   for p in /dash/demo /demo /signup; do curl -s -o /dev/null -w "$p %{http_code}\n" $H$p; done          # 404 each
+   curl -s -o /dev/null -w '%{http_code}\n' $H/api/ads/refresh                                           # 401 (no CRON_SECRET yet)
+   # Same ingest token on both hosts: 400 = token accepted, body rejected, nothing written.
+   for host in https://mate.auto-mate.business $H; do
+     node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" -H "content-type: application/json" -d "{}" '"$host"'/api/leads/ingest'
+   done
    ```
-   Then sign in at `https://jc.mate.auto-mate.business/login` with an internal account:
-   it lands on J&C's dashboard showing the rehearsal copy.
+   Then sign in at `$H/login` with an internal account: it lands on J&C's dashboard
+   showing the rehearsal copy.
 
 ### At the switch (runbook "Switch consumers", row 10), after the data copy
 
-1. `mate-jc`: turn the crons and the J&C agent config on, redeploy:
+The order matters: the old deployment stops writing J&C data **before** the new one
+starts, so no window has both crons writing J&C to two projects, and every caller is
+repointed in one step.
+
+1. **Shared app stops serving J&C.** Set the moved list and deploy from clean `main`:
    ```bash
-   cd ~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc
-   printf %s "$JC" | vercel env add META_JC_SESSION_ID production
-   printf %s "$JC" | vercel env add JC_ONBOARDING_SESSION_ID production
-   sh -c 'openssl rand -hex 32 | vercel env add CRON_SECRET production --sensitive'
-   vercel deploy --prod --yes
-   ```
-2. `mate-onboarding`: forward J&C, redeploy from clean `main` (the main checkout):
-   ```bash
-   cd ~/kaden/projects/mate-onboarding && git status --short   # must be clean
+   cd $MAIN && git status --short          # must be clean
    printf %s "$JC=https://jc.mate.auto-mate.business" | vercel env add MATE_MOVED_SESSIONS production
    vercel deploy --prod --yes
    ```
-3. Point the J&C callers at the new host (n8n, founder-gated, snapshot first per the
-   runbook). Every HTTP node whose URL starts with `https://mate.auto-mate.business/api/`
-   in: First Responder `MyTAmqQsLDUtAyep` (`/api/agent/postcall`, `/api/agent/signal`;
-   swap `k=` to `MATE_JC_AGENT_WEBHOOK_TOKEN` / `MATE_JC_SIGNAL_TOKEN`), Meta Lead Ads
-   ingest `xXfLDJ2J9t5w3xF7` (`/api/leads/ingest`), the quote-scan schedule
-   (`/api/agent/quote-scan`, new `k=`), and the inactive website form
-   `wmFg5Mdrt60fSNTY` (rebuild from `web-intake/build-workflow.mjs` with the new host).
-   The shared host's 307 is a safety net for anything missed, not the plan.
-4. cal.com: change J&C's booking webhook URL to
-   `https://jc.mate.auto-mate.business/api/webhooks/calcom`. **This one cannot be
-   forwarded** (the payload carries no session), so a booking sent to the old host is
-   written to the old project.
-5. Verify:
+2. **Verify the old crons skip J&C** (manual runs with the ingest token; neither writes):
    ```bash
-   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://mate.auto-mate.business/dash/$JC"   # 307 → jc.mate…
+   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" https://mate.auto-mate.business/api/ads/refresh'
+   #   -> {"ok":true,...,"skipped":"session served by another deployment"}
+   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" "https://mate.auto-mate.business/api/calendar/sync?sessionId='"$JC"'"'
+   #   -> sessions[0].status "skipped", detail "served by another deployment"
+   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://mate.auto-mate.business/dash/$JC"   # 307 -> jc.mate…
    curl -s -o /dev/null -w '%{http_code}\n' https://mate.auto-mate.business/dash/demo                   # 200, demo unchanged
-   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" -H "content-type: application/json" -d "{\"session_id\":\"'"$JC"'\",\"leads\":[]}" https://mate.auto-mate.business/api/leads/ingest'   # 307 → jc.mate…/api/leads/ingest
-   vercel logs https://jc.mate.auto-mate.business   # next real lead lands here
    ```
-   J&C users sign in once on the new domain (cookies are per domain).
+   If either cron answer is not "skipped", stop and roll back step 1.
+3. **Repoint every J&C caller in this one step** (n8n snapshots first, per the runbook):
+   - n8n: every HTTP node whose URL starts with `https://mate.auto-mate.business/api/`
+     in First Responder `MyTAmqQsLDUtAyep` (`/api/agent/postcall`, `/api/agent/signal`),
+     Meta Lead Ads ingest `xXfLDJ2J9t5w3xF7` (`/api/leads/ingest`), the quote-scan
+     schedule (`/api/agent/quote-scan`) and the inactive website form `wmFg5Mdrt60fSNTY`
+     (rebuild from `web-intake/build-workflow.mjs`) → `https://jc.mate.auto-mate.business`.
+     If `AGENT_WEBHOOK_TOKEN` / `SIGNAL_TOKEN` on `mate-jc` are fresh values, change the
+     `k=` query in the same edit.
+   - cal.com: J&C's booking webhook URL → `https://jc.mate.auto-mate.business/api/webhooks/calcom`.
+     Anything cal.com still sends to the old URL is forwarded or held (never lost), but
+     the webhook should not depend on that.
+4. **Turn the dedicated crons on**, deploy:
+   ```bash
+   cd $JCDIR
+   printf %s "$JC" | vercel env add META_JC_SESSION_ID production
+   printf %s "$JC" | vercel env add JC_ONBOARDING_SESSION_ID production
+   sh -c 'V=$(openssl rand -hex 32); printf %s "$V" | node '"$S"' set MATE_JC_CRON_SECRET && printf %s "$V" | vercel env add CRON_SECRET production --sensitive'
+   vercel deploy --prod --yes
+   ```
+5. **Verify the new host**:
+   ```bash
+   node $S run -e MATE_JC_CRON_SECRET -- sh -c 'curl -s -H "authorization: Bearer $MATE_JC_CRON_SECRET" https://jc.mate.auto-mate.business/api/ads/refresh'   # ok, writes J&C ad_metrics to J&C's project
+   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" -H "content-type: application/json" -d "{\"session_id\":\"'"$JC"'\",\"leads\":[]}" https://mate.auto-mate.business/api/leads/ingest'   # 307 -> jc.mate…/api/leads/ingest
+   cd $MAIN && node $S run -e NEXT_PUBLIC_SUPABASE_URL -e SUPABASE_SECRET_KEY -- node scripts/replay-held-calcom.mjs   # "0 open held booking(s)"
+   ```
+   Watch the next real lead arrive in `vercel logs` for `mate-jc`. J&C users sign in
+   once on the new domain (cookies are per domain).
+
+## Held cal.com bookings
+
+A held booking means the shared deployment received a cal.com booking for a moved
+client and could not forward or attribute it. The founder gets a text through the
+router (`outbound_texts`, source `mate:calcom-held:<ref>`); it names no lead.
+
+```bash
+cd $MAIN
+# List open held rows (id prefix, time, reason, target session prefix; no booking content).
+node $S run -e NEXT_PUBLIC_SUPABASE_URL -e SUPABASE_SECRET_KEY -- node scripts/replay-held-calcom.mjs
+# J&C's (or its target is J&C): replay to J&C's deployment. Dry run first, then --apply.
+node $S run -e NEXT_PUBLIC_SUPABASE_URL -e SUPABASE_SECRET_KEY -e CALCOM_WEBHOOK_SECRET -- \
+  node scripts/replay-held-calcom.mjs --replay <id prefix> --target https://jc.mate.auto-mate.business --apply
+# Belongs to a tenant still on the shared app: replay to https://mate.auto-mate.business instead.
+# Not a booking anyone needs (test, spam): close it with a reason.
+node $S run -e NEXT_PUBLIC_SUPABASE_URL -e SUPABASE_SECRET_KEY -- \
+  node scripts/replay-held-calcom.mjs --resolve <id prefix> --note "<why>" --apply
+```
+
+The replay re-signs the stored body and posts it exactly as cal.com would; the
+receiving route is idempotent per booking uid. An unattributed hold usually means a new
+J&C event type: add its id to `CALCOM_BOOKING_OWNERS` on both projects.
 
 ## Rollback
 
-Fastest first; each is independent.
+Order: stop the dedicated writers first, then restore shared routing and the callers,
+then reconcile data. Each env change only takes effect after a deploy (or an instant
+rollback to a deployment built without it).
 
-1. **Shared forwarding off:** `vercel rollback` on `mate-onboarding` to the deployment
-   before step 2 (instant), or
-   `vercel env rm MATE_MOVED_SESSIONS production --yes && vercel deploy --prod --yes`
-   from the clean main checkout. The old link serves J&C from the old project again.
-2. **n8n / cal.com:** re-upload the pre-switch workflow snapshots (runbook), set the
-   cal.com webhook back to `https://mate.auto-mate.business/api/webhooks/calcom`.
-3. **`mate-jc`:** leave it up (only J&C members can see it) or, to take it down,
-   `vercel domains rm jc.mate.auto-mate.business --yes` and remove `CRON_SECRET` so its
-   crons stop writing to J&C's project.
-4. Data written to J&C's project after the switch goes back through the runbook's
-   reverse copy. That is the runbook's step, not this one.
+1. **Stop the dedicated cron and agent config.** Instant: `vercel rollback` `mate-jc`
+   to the prep deployment (built before `CRON_SECRET` existed). Or:
+   ```bash
+   cd $JCDIR
+   for N in CRON_SECRET META_JC_SESSION_ID JC_ONBOARDING_SESSION_ID; do vercel env rm $N production --yes; done
+   vercel deploy --prod --yes
+   node $S run -e MATE_JC_CRON_SECRET -- sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -H "authorization: Bearer $MATE_JC_CRON_SECRET" https://jc.mate.auto-mate.business/api/ads/refresh'   # 401 = cron stopped
+   ```
+2. **Restore shared routing and the callers**, back to back:
+   ```bash
+   cd $MAIN && git status --short          # must be clean
+   vercel env rm MATE_MOVED_SESSIONS production --yes && vercel deploy --prod --yes
+   ```
+   (or `vercel rollback` `mate-onboarding` to the deployment before switch step 1).
+   Then re-upload the pre-switch n8n snapshots and set the cal.com webhook back to
+   `https://mate.auto-mate.business/api/webhooks/calcom`. Until the callers are back,
+   anything they send still lands in J&C's project through `mate-jc`; step 3 picks it up.
+3. **Reconcile data:** the runbook's reverse copy brings what was written to J&C's
+   project back to the old one. Replay any open held cal.com bookings to
+   `https://mate.auto-mate.business` (section above). Optionally take `mate-jc` off the
+   domain: `vercel domains rm jc.mate.auto-mate.business --yes`.
 
 ## Open items for the founder
 
 - Domain name: `jc.mate.auto-mate.business` is a proposal. Any host works; it only
   appears in the env values above.
-- Vercel plan: each project runs the two `vercel.json` crons; confirm the team plan
-  allows two more.
-- `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL` and (if used) `QBO_*` need copying by hand;
-  they are not in the Keychain.
+- Vercel plan: `mate-jc` runs the two `vercel.json` crons too; confirm the team plan
+  allows them.
+- Founder signal priority: `mate:calcom-held:*` has no row in the amos router's
+  `ROUTES` yet, so it lands as `founder_brief` (next morning brief). To text at once,
+  add a `founder_now` route for `^mate:calcom-held:` in amos
+  `scripts/lib/amos-events/routes.mjs` (plus its `SENDER_INVENTORY` entry).
+- `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL`, `AGENT_WEBHOOK_TOKEN` and (if used) `QBO_*`
+  need copying by hand; they are not in the Keychain.
