@@ -186,6 +186,22 @@ JCDIR=~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc   # linked to m
    Then sign in at `$H/login` with an internal account: it lands on J&C's dashboard
    showing the rehearsal copy.
 
+   Find which Keychain entry holds the **shared** project's `CRON_SECRET` (needed for
+   switch step 2). This calls the calendar cron the way Vercel does (GET + Bearer) for
+   the public demo session, which has no Google connection, so it writes nothing:
+   ```bash
+   DEMO=b7573135-d4ec-43bb-bf33-a1d365739784
+   for N in CRON_SECRET MATE_ADS_CRON_SECRET; do
+     printf '%s: ' $N
+     node $S run -e $N -- sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -H "authorization: Bearer $'"$N"'" "https://mate.auto-mate.business/api/calendar/sync?sessionId='"$DEMO"'"'
+   done
+   # 200 = that entry is the shared CRON_SECRET (use it as $SHARED_CRON below); 401 = not it.
+   ```
+   If neither answers 200, the shared value is not in the Keychain: generate a new one,
+   store it (`MATE_SHARED_CRON_SECRET`), replace `CRON_SECRET` on `mate-onboarding`
+   (`vercel env rm` + `vercel env add` from the same shell) and redeploy from clean
+   `main`. Vercel's own cron reads the project env, so nothing else changes.
+
 ### At the switch (runbook "Switch consumers", row 10), after the data copy
 
 The order matters: the old deployment stops writing J&C data **before** the new one
@@ -198,16 +214,22 @@ repointed in one step.
    printf %s "$JC=https://jc.mate.auto-mate.business" | vercel env add MATE_MOVED_SESSIONS production
    vercel deploy --prod --yes
    ```
-2. **Verify the old crons skip J&C** (manual runs with the ingest token; neither writes):
+2. **Verify the old crons skip J&C.** Call them exactly as Vercel Cron does (GET with
+   the shared `CRON_SECRET`, the Keychain entry found in prep step 6) and assert the
+   skip; neither call writes anything:
    ```bash
-   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" https://mate.auto-mate.business/api/ads/refresh'
-   #   -> {"ok":true,...,"skipped":"session served by another deployment"}
-   node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" "https://mate.auto-mate.business/api/calendar/sync?sessionId='"$JC"'"'
-   #   -> sessions[0].status "skipped", detail "served by another deployment"
+   SHARED_CRON=CRON_SECRET   # or whichever entry answered 200 in prep step 6
+   node $S run -e $SHARED_CRON -- sh -c 'curl -sf -H "authorization: Bearer $'"$SHARED_CRON"'" https://mate.auto-mate.business/api/ads/refresh' \
+     | jq -e '.ok == true and .skipped == "session served by another deployment" and (.platforms | length) == 0' \
+     && echo "ads cron skips J&C"
+   node $S run -e $SHARED_CRON -- sh -c 'curl -sf -H "authorization: Bearer $'"$SHARED_CRON"'" "https://mate.auto-mate.business/api/calendar/sync?sessionId='"$JC"'"' \
+     | jq -e '.sessions == [{"session_id":"'"$JC"'","status":"skipped","upserted":0,"removed":0,"detail":"served by another deployment"}]' \
+     && echo "calendar cron skips J&C"
    curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://mate.auto-mate.business/dash/$JC"   # 307 -> jc.mate…
    curl -s -o /dev/null -w '%{http_code}\n' https://mate.auto-mate.business/dash/demo                   # 200, demo unchanged
    ```
-   If either cron answer is not "skipped", stop and roll back step 1.
+   Both lines must print. A 401 means the wrong Keychain entry; anything else that
+   does not print means the shared app is still serving J&C: stop and roll back step 1.
 3. **Repoint every J&C caller in this one step** (n8n snapshots first, per the runbook):
    - n8n: every HTTP node whose URL starts with `https://mate.auto-mate.business/api/`
      in First Responder `MyTAmqQsLDUtAyep` (`/api/agent/postcall`, `/api/agent/signal`),
@@ -238,9 +260,18 @@ repointed in one step.
 
 ## Held cal.com bookings
 
-A held booking means the shared deployment received a cal.com booking for a moved
-client and could not forward or attribute it. The founder gets a text through the
-router (`outbound_texts`, source `mate:calcom-held:<ref>`); it names no lead.
+A held booking is one a deployment would not write: on the shared deployment, a moved
+client's booking it could not forward or attribute; on `mate-jc`, any booking not
+attributed (by `CALCOM_BOOKING_OWNERS`) to J&C's session, including when that config is
+missing or malformed. Nothing is written to either project. The founder gets a text
+through the router (`outbound_texts`, source `mate:calcom-held:<ref>`); it names no
+lead.
+
+The webhook answers cal.com `202` only once both the held row and that alert have
+landed. If the alert insert fails it answers `503` (the row stays with
+`alerted_at` empty), so cal.com retries; the hold is idempotent (one row per booking
+uid + trigger, or per signed-body hash when there is no uid) and the retry sends the
+alert once. The list below shows `alerted=NO` for any row whose alert never landed.
 
 ```bash
 cd $MAIN
@@ -256,8 +287,12 @@ node $S run -e NEXT_PUBLIC_SUPABASE_URL -e SUPABASE_SECRET_KEY -- \
 ```
 
 The replay re-signs the stored body and posts it exactly as cal.com would; the
-receiving route is idempotent per booking uid. An unattributed hold usually means a new
-J&C event type: add its id to `CALCOM_BOOKING_OWNERS` on both projects.
+receiving route is idempotent per booking uid. A row is resolved **only** when the
+target answers that it applied the booking (its handler ran) or forwarded it. A `202`
+that says it was held again (typically: the target's `CALCOM_BOOKING_OWNERS` still
+doesn't match) leaves the row open and exits 1. An unattributed hold usually means a
+new J&C event type: add its id to `CALCOM_BOOKING_OWNERS` on both projects, redeploy,
+then replay.
 
 ## Rollback
 
@@ -299,3 +334,7 @@ rollback to a deployment built without it).
   `scripts/lib/amos-events/routes.mjs` (plus its `SENDER_INVENTORY` entry).
 - `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL`, `AGENT_WEBHOOK_TOKEN` and (if used) `QBO_*`
   need copying by hand; they are not in the Keychain.
+- The alert retry relies on cal.com retrying a non-2xx webhook. If it does not, the
+  booking is still held (never lost) but its alert may be missing; `alerted=NO` in the
+  held list shows it. A backstop that texts about held rows with no alert after a few
+  minutes (amos health check or a Mate cron) is not built.
