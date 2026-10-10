@@ -19,6 +19,8 @@ import { resolveSessionId } from '@/lib/portal/demo';
 import { BackLink } from '@/components/dash/chrome/BackLink';
 import { MobileNav } from '@/components/dash/MobileNav';
 import { agentDisplayNameForSession } from '@/lib/agent/displayName';
+import { intakeTenantFor } from '@/lib/leads/intakeTenants';
+import { practiceStatus } from '@/lib/portal/practice';
 
 export default async function PipelinePage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
@@ -34,6 +36,8 @@ export default async function PipelinePage({ params, searchParams }: {
   // tile on the dashboard lands here with newest-captured first.
   const initialSort = parseSortParam(sort, dir);
   const supabase = createServiceClient();
+  const practice = await practiceStatus(supabase, sessionId);
+  const doNotContactEnabled = access !== 'demo' && (intakeTenantFor(sessionId) !== null || (practice.ok && practice.isPractice));
   const { data: session } = await supabase.from('onboarding_sessions').select('id, contact_id').eq('id', sessionId).single();
   if (!session) notFound();
   // Lead Snapshot (DEL-38) is capability gated per client; the "Add lead"
@@ -128,6 +132,7 @@ export default async function PipelinePage({ params, searchParams }: {
             messages={thread.messages}
             leadName={thread.leadName}
             agentName={agentName}
+            doNotContactEnabled={doNotContactEnabled}
           />
           {outcome && (
             <div style={{ marginTop: 8 }}>

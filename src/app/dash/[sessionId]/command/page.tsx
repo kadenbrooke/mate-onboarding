@@ -13,6 +13,7 @@ import { leadLabel } from '@/components/dash/leads/leadName';
 import { CommandCenter } from '@/components/dash/command/CommandCenter';
 import { MobileNav } from '@/components/dash/MobileNav';
 import { canViewCommandCenter } from '@/lib/portal/dash-access';
+import { loadOptedOutPhones } from '@/lib/leads/doNotContact';
 
 // The owner's Command Center (Auto Mate 5 #5): who to call, what is waiting,
 // what is on the books, what is stuck. Same gate as every /dash page (login +
@@ -47,6 +48,7 @@ export default async function CommandPage({ params }: { params: Promise<{ sessio
   ]);
   const openLeads = open?.leads ?? [];
   const signals = open?.signals ?? new Map<string, LeadSignal>();
+  const optedOutRead = await loadOptedOutPhones(supabase, sessionId, openLeads);
 
   // Outbound times only for open, human-handled leads that have texted in,
   // and only after the earliest such text; payments only for won leads.
@@ -69,6 +71,8 @@ export default async function CommandPage({ params }: { params: Promise<{ sessio
     summary: revenueRows ? summarizeReturn(revenueRows, { metaSpend30dCents: metaSpend }) : null,
     now,
     label: leadLabel,
+    optedOutPhones: optedOutRead.phones,
+    optedOutReadAvailable: optedOutRead.available,
   });
   // The owner's day, in the owner's time zone (every Mate client today is in Utah).
   const today = now.toLocaleDateString('en-US', {

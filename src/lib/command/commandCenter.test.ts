@@ -80,6 +80,15 @@ describe('callList', () => {
   it('leaves unscored leads off', () => {
     expect(callList([lead({ score: null })])).toEqual([]);
   });
+
+  it('leaves opted-out leads off Call now and admits them when the latch clears', () => {
+    const blocked = lead({ id: 'blocked', phone: '+18015550100', score: 99 });
+    const live = lead({ id: 'live', phone: '+18015550101', score: 80 });
+    const optedOut = new Set(['+18015550100']);
+    expect(callList([blocked, live], optedOut).map(l => l.id)).toEqual(['live']);
+    optedOut.delete('+18015550100');
+    expect(callList([blocked, live], optedOut).map(l => l.id)).toEqual(['blocked', 'live']);
+  });
 });
 
 describe('waitingOnMe', () => {

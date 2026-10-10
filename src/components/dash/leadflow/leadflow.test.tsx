@@ -131,6 +131,16 @@ describe('HotLeads (with merged quality gauge)', () => {
     expect(screen.getByText(/lead scoring is not running yet/i)).toBeInTheDocument();
     expect(screen.getByText(/once leads come in/i)).toBeInTheDocument();
   });
+
+  it('leaves an opted-out lead out of Hot Leads and brings it back when the live latch clears', () => {
+    const blocked = lead({ id: 'blocked', name: 'Blocked', phone: '+18015550100', score: 99 });
+    const live = lead({ id: 'live', name: 'Live', phone: '+18015550101', score: 80 });
+    const { rerender } = render(<HotLeads leads={[blocked, live]} sessionId="s1" optedOutPhones={['+18015550100']} />);
+    expect(screen.queryByText('Blocked')).toBeNull();
+    expect(screen.getByText('Live')).toBeInTheDocument();
+    rerender(<HotLeads leads={[blocked, live]} sessionId="s1" optedOutPhones={[]} />);
+    expect(screen.getByText('Blocked')).toBeInTheDocument();
+  });
 });
 
 describe('SourceDonut', () => {

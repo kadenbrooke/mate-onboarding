@@ -5,6 +5,7 @@ import { X } from '@phosphor-icons/react';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, BORDER_SOFT, FONT_BODY, TEXT_DARK, TEXT_MUTED } from '@/lib/theme';
 import { DEFAULT_AGENT_DISPLAY_NAME } from '@/lib/agent/displayName';
+import { DoNotContactButton } from './DoNotContactButton';
 
 // The lead's conversation, opened by clicking a row in the pipeline table
 // (which sets ?spotlight=<leadId>).
@@ -23,9 +24,9 @@ function authorLabel(author: LeadMessage['author'], agentName: string): string {
   return 'System';
 }
 
-export function LeadThread({ leadId, sessionId, handler, messages, leadName, agentName }: {
+export function LeadThread({ leadId, sessionId, handler, messages, leadName, agentName, doNotContactEnabled = false }: {
   leadId: string; sessionId: string; handler: 'agent' | 'human'; messages: LeadMessage[];
-  leadName?: string | null; agentName?: string;
+  leadName?: string | null; agentName?: string; doNotContactEnabled?: boolean;
 }) {
   const router = useRouter();
   const [text, setText] = useState('');
@@ -102,6 +103,7 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName, age
           ? <button onClick={() => toggle('human')} disabled={busy}>Take over</button>
           : <button onClick={() => toggle('agent')} disabled={busy}>Hand back to {displayAgentName}</button>}
       </div>
+      {doNotContactEnabled && <div style={{ marginBottom: 8 }}><DoNotContactButton leadId={leadId} sessionId={sessionId} /></div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
         {messages.length === 0 && (
           <div style={{ color: TEXT_MUTED, fontSize: 13, fontFamily: FONT_BODY, padding: '8px 0' }}>
