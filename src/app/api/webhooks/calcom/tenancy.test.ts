@@ -6,40 +6,42 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'crypto';
 import { createFakeDb, type FakeDb } from '@/test/fakeSupabase';
 import { verifyCalcomSignature } from '@/lib/calcom/verify';
-import { ALERT_CLAIM_TTL_MS, alertKey, alertMessage, holdKey } from '@/lib/calcom/held';
+import fs from 'node:fs';
+import path from 'node:path';
+import { ALERT_SOURCE_PREFIX, alertKey, alertMessage, holdKey } from '@/lib/calcom/held';
 
 type Row = Record<string, unknown>;
 type Err = { code: string; message: string };
 const h = vi.hoisted(() => ({
   data: null as unknown as FakeDb,
   held: [] as Record<string, unknown>[],
-  alerts: [] as Record<string, unknown>[],
   texts: [] as Record<string, unknown>[],
   holdError: null as null | { code: string; message: string },
-  claimError: null as null | { code: string; message: string },
   alertError: null as null | { code: string; message: string },
-  confirmError: null as null | { code: string; message: string },
+  /** When set, the first outbox insert waits for it: a delivery paused mid-flight. */
+  outboxGate: null as null | Promise<void>,
 }));
 
-// Control-project fake: the held-bookings table (unique dedupe_key), the alert
-// claim ledger (primary key alert_key) and the founder outbox. Every operation
+// Control-project fake: the held-bookings table (unique dedupe_key) and the
+// founder outbox, with migration 0025's partial unique index on
+// outbound_texts(source) for 'mate:calcom-held:%' sources. Every operation
 // yields to the event loop before it runs, so concurrent deliveries really
 // interleave; each insert's uniqueness check and write happen in one step, like
 // a database constraint.
-const UNIQUE: Record<string, string> = { calcom_held_bookings: 'dedupe_key', calcom_held_alerts: 'alert_key' };
+const UNIQUE: Record<string, { col: string; when?: (r: Row) => boolean }> = {
+  calcom_held_bookings: { col: 'dedupe_key' },
+  outbound_texts: { col: 'source', when: (r) => String(r.source ?? '').startsWith('mate:calcom-held:') },
+};
 
 function tableRows(table: string): Row[] {
   if (table === 'calcom_held_bookings') return h.held;
-  if (table === 'calcom_held_alerts') return h.alerts;
   if (table === 'outbound_texts') return h.texts;
   throw new Error(`control project has no ${table} in this test`);
 }
 
-function injected(table: string, op: string, payload?: Row): Err | null {
+function injected(table: string, op: string): Err | null {
   if (table === 'calcom_held_bookings' && op === 'insert') return h.holdError;
-  if (table === 'calcom_held_alerts' && op === 'insert') return h.claimError;
   if (table === 'outbound_texts' && op === 'insert') return h.alertError;
-  if (table === 'calcom_held_alerts' && op === 'update' && payload && 'enqueued_at' in payload) return h.confirmError;
   return null;
 }
 
@@ -51,12 +53,17 @@ function controlBuilder(table: string) {
   const run = async (): Promise<{ data: unknown; error: Err | null }> => {
     await Promise.resolve();
     await Promise.resolve();
+    if (table === 'outbound_texts' && op === 'insert' && h.outboxGate) {
+      const gate = h.outboxGate;
+      h.outboxGate = null;
+      await gate;
+    }
     const rows = tableRows(table);
-    const err = injected(table, op, payload);
+    const err = injected(table, op);
     if (err) return { data: null, error: err };
     if (op === 'insert') {
-      const key = UNIQUE[table];
-      if (key && rows.some((r) => r[key] === payload![key])) {
+      const u = UNIQUE[table];
+      if (u && (!u.when || u.when(payload!)) && rows.some((r) => r[u.col] === payload![u.col])) {
         return { data: null, error: { code: '23505', message: 'duplicate key' } };
       }
       rows.push({ ...payload });
@@ -128,11 +135,9 @@ beforeEach(() => {
   });
   h.held = [];
   h.texts = [];
-  h.alerts = [];
   h.holdError = null;
-  h.claimError = null;
   h.alertError = null;
-  h.confirmError = null;
+  h.outboxGate = null;
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -250,10 +255,10 @@ describe('shared deployment after the client moved', () => {
       raw_body: raw, trigger_event: 'BOOKING_CREATED', booking_uid: 'bk_test_1', reason, target_session_id: OWN,
       dedupe_key: 'uid:BOOKING_CREATED:bk_test_1',
     })]);
-    expect(h.alerts).toEqual([expect.objectContaining({ alert_key: h.held[0].alert_key, enqueued_at: expect.any(String) })]);
+    expect(h.texts).toEqual([expect.objectContaining({ source: h.held[0].alert_key })]);
     expect(h.texts).toHaveLength(1);
     expect(h.texts[0].source).toBe(alertKey(holdKey({ rawBody: raw, triggerEvent: 'BOOKING_CREATED', bookingUid: 'bk_test_1' })));
-    expect(h.texts[0].source).toMatch(/^mate:calcom-held:[0-9a-f]{16}$/);
+    expect(h.texts[0].source).toMatch(/^mate:calcom-held:[0-9a-f]{64}$/);
     dataUntouched();
   });
 
@@ -311,7 +316,6 @@ describe('shared deployment after the client moved', () => {
     const first = await POST(req(body).request);
     expect(first.status).toBe(503);
     expect(h.held).toHaveLength(1);
-    expect(h.alerts).toEqual([]); // the failed enqueue released its claim
     expect(h.texts).toEqual([]);
 
     h.alertError = null;
@@ -320,7 +324,6 @@ describe('shared deployment after the client moved', () => {
     expect(await retry.json()).toEqual({ ok: true, held: true, duplicate: true });
     expect(h.held).toHaveLength(1);
     expect(h.texts).toHaveLength(1);
-    expect(h.alerts[0].enqueued_at).toEqual(expect.any(String));
 
     // Later retries do not alert again.
     expect((await POST(req(body).request)).status).toBe(202);
@@ -353,52 +356,40 @@ describe('shared deployment after the client moved', () => {
     expect(h.texts).toEqual([first]);
   });
 
-  it('two concurrent deliveries of the same booking enqueue one alert', async () => {
+  it('two concurrent deliveries of the same booking enqueue one alert, and both succeed', async () => {
+    // No claim, no lock: only the unique outbox source decides.
     const body = booking({ eventTypeId: 7 });
     const [a, b] = await Promise.all([POST(req(body).request), POST(req(body).request)]);
+    expect([a.status, b.status]).toEqual([202, 202]);
     expect(h.held).toHaveLength(1);
     expect(h.texts).toHaveLength(1);
-    // The delivery that lost the claim answered 503 (cal.com retries) unless it
-    // already saw the alert confirmed.
-    expect([a.status, b.status]).toContain(202);
-    for (const s of [a.status, b.status]) expect([202, 503]).toContain(s);
-    const later = await POST(req(body).request);
-    expect(later.status).toBe(202);
-    expect(h.texts).toHaveLength(1);
   });
 
-  it('if confirming the alert fails it answers non-2xx, and the retry confirms without re-sending', async () => {
-    vi.useFakeTimers({ toFake: ['Date'] });
-    try {
-      vi.setSystemTime(new Date('2026-10-10T08:00:00.000Z'));
-      const body = booking({ eventTypeId: 7 });
-      h.confirmError = { code: '08006', message: 'connection failure' };
-      expect((await POST(req(body).request)).status).toBe(503);
-      expect(h.texts).toHaveLength(1);
-      expect(h.alerts[0].enqueued_at ?? null).toBeNull();
-
-      // A retry inside the claim window leaves the claim alone.
-      h.confirmError = null;
-      expect((await POST(req(body).request)).status).toBe(503);
-      expect(h.texts).toHaveLength(1);
-
-      // After the window the retry re-claims, finds the alert already queued,
-      // confirms it, and succeeds. Still one alert.
-      vi.setSystemTime(new Date(Date.now() + ALERT_CLAIM_TTL_MS + 1));
-      expect((await POST(req(body).request)).status).toBe(202);
-      expect(h.texts).toHaveLength(1);
-      expect(h.alerts[0].enqueued_at).toEqual(expect.any(String));
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('with the claim ledger unavailable it still alerts, once per delivery key', async () => {
-    h.claimError = { code: '42P01', message: 'relation does not exist' };
+  it('a slow delivery that resumes after a later delivery alerted does not alert again', async () => {
     const body = booking({ eventTypeId: 7 });
-    expect((await POST(req(body).request)).status).toBe(202);
-    expect((await POST(req(body).request)).status).toBe(202);
+    let release!: () => void;
+    h.outboxGate = new Promise<void>((resolve) => { release = resolve; });
+
+    // The original pauses right before its outbox insert...
+    const original = POST(req(body).request);
+    await new Promise((r) => setTimeout(r, 5));
+    // ...a retry runs start to finish and queues the alert...
+    const takeover = await POST(req(body).request);
+    expect(takeover.status).toBe(202);
     expect(h.texts).toHaveLength(1);
+    // ...then the original resumes: its insert hits the unique source and is
+    // counted as already queued.
+    release();
+    expect((await original).status).toBe(202);
+    expect(h.texts).toHaveLength(1);
+    expect(h.held).toHaveLength(1);
+  });
+
+  it('migration 0025 makes the alert source unique, scoped to the Mate prefix only', () => {
+    const sql = fs.readFileSync(path.resolve(__dirname, '../../../../../supabase/migrations/0025_calcom_held_bookings.sql'), 'utf8');
+    expect(sql).toMatch(/create unique index if not exists \w+\s+on public\.outbound_texts \(source\)\s+where source like 'mate:calcom-held:%';/);
+    expect(ALERT_SOURCE_PREFIX).toBe('mate:calcom-held:');
+    expect(sql).not.toMatch(/calcom_held_alerts/);
   });
 
   it('bookings of tenants still served here run exactly as before', async () => {

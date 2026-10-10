@@ -66,9 +66,6 @@ export type HoldResult =
 
 const UNIQUE_VIOLATION = '23505';
 
-/** How long a claimed-but-unconfirmed alert blocks other deliveries before one may re-claim it. */
-export const ALERT_CLAIM_TTL_MS = 60_000;
-
 /**
  * Deterministic identity of a delivery, so cal.com retries of the same booking
  * land on one held row: the booking uid + trigger when there is a uid, else a
@@ -81,108 +78,57 @@ export function holdKey(input: Pick<HoldInput, 'rawBody' | 'triggerEvent' | 'boo
 
 /**
  * The one alert key for a delivery, derived from holdKey BEFORE anything is
- * stored. It is the outbound_texts source (one source per booking delivery),
- * the claim ledger's primary key, and the ref in the text, so the saved and
- * unsaved paths enqueue the identical alert.
+ * stored: `mate:calcom-held:<sha256(dedupe_key) hex>`. It is the
+ * outbound_texts source (one per booking delivery) and is stored on the held
+ * row, so the saved and unsaved paths enqueue the identical alert.
  */
+export const ALERT_SOURCE_PREFIX = 'mate:calcom-held:';
+
 export function alertKey(dedupeKey: string): string {
-  return `mate:calcom-held:${createHash('sha256').update(dedupeKey, 'utf8').digest('hex').slice(0, 16)}`;
+  return `${ALERT_SOURCE_PREFIX}${createHash('sha256').update(dedupeKey, 'utf8').digest('hex')}`;
+}
+
+/** Short ref for humans: the first 12 hex of the key's digest. */
+export function alertRef(key: string): string {
+  return key.slice(ALERT_SOURCE_PREFIX.length, ALERT_SOURCE_PREFIX.length + 12);
 }
 
 /** Same text whether or not the held row could be stored. Names no lead. */
 export function alertMessage(key: string): string {
-  const ref = key.slice(key.lastIndexOf(':') + 1);
   return (
-    `Mate could not route a cal.com booking to a client's own dashboard (ref ${ref}). ` +
+    `Mate could not route a cal.com booking to a client's own dashboard (ref ${alertRef(key)}). ` +
     `Nothing was written to either client's data. It is in the held-bookings list; if that ref ` +
     `is not there yet it could not be stored and cal.com is retrying. Reconcile with the ` +
     `held-bookings replay (Mate deploy doc, "Held cal.com bookings").`
   );
 }
 
-type AlertState = 'sent' | 'already' | 'pending' | 'failed';
-
 /**
  * Put the alert for `key` in the outbox exactly once.
  *
- *   1. Claim it in calcom_held_alerts (primary key = alert key). Only the
- *      delivery that inserts the claim, or re-claims one left unconfirmed past
- *      ALERT_CLAIM_TTL_MS by a conditional update, may enqueue. Concurrent
- *      deliveries see the claim and answer "pending" (caller: non-2xx, retry).
- *   2. Before enqueueing, look for an outbox row with this source: a delivery
- *      that enqueued and then failed to confirm is not enqueued again.
- *   3. Enqueue (source = key), then confirm (enqueued_at). A failed enqueue
- *      releases the claim; a failed confirm is reported as failure so cal.com
- *      retries, and step 2 makes that retry confirm instead of re-sending.
+ * The database decides, not the caller: migration 0025 adds a unique index on
+ * outbound_texts(source) for sources starting with ALERT_SOURCE_PREFIX. The
+ * first insert for a key wins; every other insert for it (a retry, a
+ * concurrent delivery, a slow delivery that resumes late, the unsaved path
+ * followed by the saved one) fails with a unique violation, which means "the
+ * alert is already queued" and counts as alerted. There is no
+ * check-then-insert window to race.
  *
- * If the claim ledger itself is unavailable (e.g. migration not applied) the
- * alert is still sent, guarded by step 2 only; a concurrent duplicate there
- * carries the identical source and text, which the amos router folds by
- * fingerprint. A booking is never left without an attempted alert.
+ * Any other error means the alert is not known to be queued: the caller
+ * answers non-2xx so cal.com retries.
  */
-async function ensureAlert(control: SupabaseClient, key: string): Promise<AlertState> {
-  const now = Date.now();
-  const claim = await control
-    .from('calcom_held_alerts')
-    .insert({ alert_key: key, claimed_at: new Date(now).toISOString() });
-
-  let ledger = true;
-  if (claim.error?.code === UNIQUE_VIOLATION) {
-    const { data: prior, error } = await control
-      .from('calcom_held_alerts')
-      .select('enqueued_at, claimed_at')
-      .eq('alert_key', key)
-      .maybeSingle();
-    if (error || !prior) return 'pending';
-    if (prior.enqueued_at) return 'already';
-    const cutoff = new Date(now - ALERT_CLAIM_TTL_MS).toISOString();
-    if (Date.parse(String(prior.claimed_at)) > now - ALERT_CLAIM_TTL_MS) return 'pending';
-    const { data: reclaimed, error: reclaimError } = await control
-      .from('calcom_held_alerts')
-      .update({ claimed_at: new Date(now).toISOString() })
-      .eq('alert_key', key)
-      .is('enqueued_at', null)
-      .lt('claimed_at', cutoff)
-      .select('alert_key');
-    if (reclaimError || !reclaimed || reclaimed.length === 0) return 'pending';
-  } else if (claim.error) {
-    ledger = false;
-  }
-
-  const { data: existing, error: lookupError } = await control
+async function ensureAlert(control: SupabaseClient, key: string): Promise<boolean> {
+  const { error } = await control
     .from('outbound_texts')
-    .select('id')
-    .eq('source', key)
-    .limit(1)
-    .maybeSingle();
-  if (lookupError) return 'failed';
-
-  if (!existing) {
-    const { error: enqueueError } = await control
-      .from('outbound_texts')
-      .insert({ message: alertMessage(key), source: key });
-    if (enqueueError) {
-      if (ledger) {
-        await control.from('calcom_held_alerts').delete().eq('alert_key', key).is('enqueued_at', null);
-      }
-      return 'failed';
-    }
-  }
-
-  if (ledger) {
-    const { error: confirmError } = await control
-      .from('calcom_held_alerts')
-      .update({ enqueued_at: new Date().toISOString() })
-      .eq('alert_key', key);
-    if (confirmError) return 'failed';
-  }
-  return existing ? 'already' : 'sent';
+    .insert({ message: alertMessage(key), source: key });
+  return !error || error.code === UNIQUE_VIOLATION;
 }
 
 /**
  * Store the booking, then make sure its founder alert is in the outbox once.
  * The caller answers 2xx only when `held && alerted`, so cal.com retries until
- * both are true; every retry is idempotent (holdKey, alertKey).
+ * both are true; every retry is idempotent (holdKey for the row, the unique
+ * alert source for the alert).
  */
 export async function holdBooking(control: SupabaseClient, input: HoldInput): Promise<HoldResult> {
   const dedupeKey = holdKey(input);
@@ -202,8 +148,7 @@ export async function holdBooking(control: SupabaseClient, input: HoldInput): Pr
   const duplicate = holdError?.code === UNIQUE_VIOLATION;
   const stored = !holdError || duplicate;
 
-  const state = await ensureAlert(control, key);
-  const alerted = state === 'sent' || state === 'already';
+  const alerted = await ensureAlert(control, key);
   if (!stored) return { held: false, alerted, detail: holdError?.message ?? 'not stored' };
   return { held: true, alerted, duplicate, alertKey: key };
 }

@@ -47,10 +47,9 @@ describe('replay-held-calcom', () => {
       .toMatchObject({ ok: false, status: 0 });
   });
 
-  it('reports each held row\'s alert from the claim ledger', () => {
+  it('reports each held row\'s alert from the outbox', () => {
     expect(alertState(undefined)).toBe('NONE');
-    expect(alertState({ alert_key: 'k', enqueued_at: null })).toBe('claimed-unconfirmed');
-    expect(alertState({ alert_key: 'k', enqueued_at: '2026-10-10T08:00:00Z' })).toBe('sent');
+    expect(alertState({ source: 'mate:calcom-held:abc' })).toBe('queued');
   });
 
   it('validates arguments', () => {

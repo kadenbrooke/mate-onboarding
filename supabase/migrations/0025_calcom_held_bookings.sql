@@ -22,7 +22,7 @@ create table if not exists public.calcom_held_bookings (
   reason text not null,
   target_session_id uuid,
   raw_body text not null,
-  -- The delivery's founder alert (calcom_held_alerts / outbound_texts.source).
+  -- The delivery's founder alert: its outbound_texts.source.
   alert_key text not null,
   resolved_at timestamptz,
   resolution text
@@ -36,25 +36,25 @@ create index if not exists calcom_held_bookings_open_idx
   on public.calcom_held_bookings (received_at)
   where resolved_at is null;
 
--- Exactly-once founder alert per held delivery. alert_key is derived from the
--- delivery's dedupe_key before anything is stored, and is also the alert's
--- outbound_texts.source. A delivery may enqueue only after inserting this row
--- (or re-claiming one left unconfirmed past a short TTL); enqueued_at records
--- that the alert is in the outbox. Keyed separately from the held row so a
--- booking that could not be stored still alerts once.
-create table if not exists public.calcom_held_alerts (
-  alert_key text primary key,
-  claimed_at timestamptz not null default now(),
-  enqueued_at timestamptz
-);
+-- Exactly-once founder alert per held delivery. The alert is an
+-- outbound_texts row (amos table in this same project, delivered by the amos
+-- router) whose source is the delivery's alert_key:
+-- 'mate:calcom-held:<sha256 hex of dedupe_key>'. This index makes that source
+-- unique, so the insert itself is the exactly-once gate: a second insert for the
+-- same key (retry, concurrent or late delivery) fails with 23505, which the app
+-- treats as "already queued". Scoped strictly to the Mate prefix: no other
+-- outbound_texts source is affected. Checked before writing this (2026-10-10):
+-- 0 existing rows match 'mate:%', so the index builds without conflicts.
+create unique index if not exists outbound_texts_mate_calcom_held_source_uq
+  on public.outbound_texts (source)
+  where source like 'mate:calcom-held:%';
 
 -- Server-side only: service role, no API access for anon or signed-in users.
 -- Tables created through the Management API do not inherit PostgREST grants,
 -- so grant explicitly.
 alter table public.calcom_held_bookings enable row level security;
-alter table public.calcom_held_alerts enable row level security;
-revoke all on table public.calcom_held_bookings, public.calcom_held_alerts from anon, authenticated;
-grant all privileges on table public.calcom_held_bookings, public.calcom_held_alerts to service_role;
+revoke all on table public.calcom_held_bookings from anon, authenticated;
+grant all privileges on table public.calcom_held_bookings to service_role;
 
 comment on table public.calcom_held_bookings is
   'cal.com bookings for a moved client that the shared Mate deployment could not forward or attribute. Contains booking PII; service role only.';

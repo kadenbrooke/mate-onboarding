@@ -270,25 +270,23 @@ lead.
 Exactly one alert per delivery:
 
 - **Keys.** `dedupe_key` = trigger + booking uid (or a SHA-256 of the signed body when
-  there is no uid). `alert_key` = `mate:calcom-held:<first 16 hex of sha256(dedupe_key)>`,
-  computed before anything is stored. The alert key is the `outbound_texts.source`,
-  the primary key of the claim ledger `calcom_held_alerts`, and the `ref` in the
-  text, so a booking that could not be stored and the same booking stored on a retry
-  enqueue the identical alert.
-- **Claim.** A delivery may enqueue only after inserting the ledger row (or
-  re-claiming one left unconfirmed for over 60 s, by a conditional update). A
-  concurrent delivery sees the claim and answers `503`.
-- **Check, enqueue, confirm.** Before enqueueing it looks for an outbox row with that
-  source, so an alert that was queued but never confirmed is not queued twice. After
-  enqueueing it sets `enqueued_at`; if that write fails the webhook answers `503`.
-- **Answers.** `202` only when the held row is stored and the alert is confirmed.
-  Held but alert not confirmed: `503`. Not stored: `500` (the alert is still sent).
-  cal.com retries non-2xx; every retry is idempotent.
-- If the ledger table itself is unavailable, the alert is still sent, guarded only by
-  the source lookup; a concurrent duplicate there carries the same source and text,
-  which the amos router folds by fingerprint.
+  there is no uid). `alert_key` = `mate:calcom-held:<full SHA-256 hex of dedupe_key>`,
+  computed before anything is stored. It is the alert's `outbound_texts.source` and is
+  stored on the held row; the text (with a 12-hex `ref`) depends only on it, so a
+  booking that could not be stored and the same booking stored on a retry enqueue the
+  identical alert.
+- **The database is the gate.** Migration 0025 adds a unique index on
+  `outbound_texts(source)` limited to `source like 'mate:calcom-held:%'` (no other
+  source is affected; 0 existing rows matched `mate:%` when this was written). The
+  first insert for a key wins. Any other insert for it (retry, concurrent delivery, a
+  slow delivery that resumes late) fails with a unique violation, which counts as
+  "already queued". There is no check-then-insert window and no claim to expire.
+- **Answers.** `202` only when the held row is stored and the alert is queued (by this
+  delivery or an earlier one). Held but the alert insert failed for any other reason:
+  `503`. Not stored: `500` (the alert is still attempted). cal.com retries non-2xx;
+  every retry is idempotent.
 
-The list below shows each row's `ref` and `alert=sent | claimed-unconfirmed | NONE`.
+The list below shows each row's `ref` and `alert=queued | NONE` (looked up by source).
 
 ```bash
 cd $MAIN
@@ -352,6 +350,6 @@ rollback to a deployment built without it).
 - `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL`, `AGENT_WEBHOOK_TOKEN` and (if used) `QBO_*`
   need copying by hand; they are not in the Keychain.
 - The alert retry relies on cal.com retrying a non-2xx webhook. If it does not, the
-  booking is still held (never lost) but its alert may be missing or unconfirmed;
-  `alert=NONE` or `alert=claimed-unconfirmed` in the held list shows it. A backstop that texts about held rows with no alert after a few
+  booking is still held (never lost) but its alert may be missing; `alert=NONE` in
+  the held list shows it. A backstop that texts about held rows with no alert after a few
   minutes (amos health check or a Mate cron) is not built.
