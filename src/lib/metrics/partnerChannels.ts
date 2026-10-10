@@ -4,9 +4,9 @@
 //
 // The draft growth-partner agreement pays the partner a share of cash ACTUALLY
 // COLLECTED from every current and legacy lead source. The sole exception is a
-// self_sourced deal (door knock / cold call) that was serviced without the AI
-// texting agent. The source is selected at intake; revenue.ts and the SQL view
-// apply the message-sent condition for that exception.
+// self_sourced deal (door knock / cold call) that was serviced without an
+// identified counting agent. The source is selected at intake; revenue.ts and
+// the SQL view apply the message-sent condition for that exception.
 //
 // The prior-12-month customer caveat remains outside this app: Mate has no
 // record of the client's prior customers, so the estimate does not compute it.
@@ -18,9 +18,11 @@ export type ChannelOwner = 'partner' | 'company';
 /** The share rate, in basis points (1500 = 15%). Draft agreement figure. */
 export const PARTNER_SHARE_BPS = 1500;
 
-/** Months after first contact during which collected cash counts (draft
- *  agreement). Mirrors the interval in migration 0021's view. */
-export const PARTNER_WINDOW_MONTHS = 24;
+/** Refund clawback months; zero means refunds never lower the partner share. */
+export const PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS = 0;
+
+/** Durable message-source tags for the three counting agents. */
+export const PARTNER_COUNTING_AGENT_MESSAGE_SOURCES = ['fr', 'cultivator', 'reactivator'] as const;
 
 /**
  * Lead source -> channel owner. Typed over every source the app knows, so a
@@ -50,5 +52,5 @@ export function channelOwner(source: string): ChannelOwner {
 
 /** The partner share of a cash amount, whole cents, rounded half up. */
 export function partnerShareCents(collectedCents: number, bps = PARTNER_SHARE_BPS): number {
-  return Math.round((collectedCents * bps) / 10000);
+  return Math.max(0, Math.round((collectedCents * bps) / 10000));
 }

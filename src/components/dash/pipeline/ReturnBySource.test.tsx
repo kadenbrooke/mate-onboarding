@@ -30,6 +30,7 @@ describe('ReturnBySource', () => {
     expect(basis).toContain('15% of');
     expect(basis).toContain('collected from partner channels');
     expect(basis).toContain('Meta Ads, Call');
+    expect(basis).toContain('Refund clawback: off');
     expect(basis).toMatch(/does not yet exclude customers/i);
     // Most cash first.
     expect(screen.getAllByTestId(/^return-(meta|call)$/).map(e => e.dataset.testid)).toEqual(['return-call', 'return-meta']);
