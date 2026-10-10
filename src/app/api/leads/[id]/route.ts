@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 
 // Hard-delete a lead from the pipeline. Destructive and irreversible, so the
@@ -8,6 +9,8 @@ import { checkDashApiAccess } from '@/lib/portal/api-gate';
 // ON DELETE CASCADE on lead_id, so the thread and any open operator menu go
 // with the row and nothing is left orphaned.
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id } = await params;
   const sessionId = new URL(request.url).searchParams.get('session_id');
   if (!sessionId) return NextResponse.json({ error: 'session_id required' }, { status: 400 });

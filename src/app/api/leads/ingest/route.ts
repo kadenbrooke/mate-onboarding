@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 
 const LEAD_FIELDS = [
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
   if (!tokenValid(request.headers.get('x-ingest-token'))) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
 
   let body: { session_id?: string; leads?: Record<string, unknown>[]; allow_demo?: boolean };
   try {

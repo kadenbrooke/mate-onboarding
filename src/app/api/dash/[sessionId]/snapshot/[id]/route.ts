@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 
@@ -50,6 +51,8 @@ export async function GET(_req: NextRequest, { params }: Ctx) {
 }
 
 export async function DELETE(_req: NextRequest, { params }: Ctx) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { sessionId: raw, id } = await params;
   const { sessionId, verdict } = await gate(raw);
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: verdict.status });

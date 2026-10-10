@@ -7,6 +7,7 @@
 //   node scripts/replay-held-calcom.mjs                      list open held rows
 //   node scripts/replay-held-calcom.mjs --replay <id-prefix> --target https://<host> [--apply]
 //   node scripts/replay-held-calcom.mjs --resolve <id-prefix> --note "<why>" [--apply]
+//   node scripts/replay-held-calcom.mjs --purge-resolved [--apply]
 //
 // --replay re-signs the stored body with CALCOM_WEBHOOK_SECRET and POSTs it to
 // <target>/api/webhooks/calcom, exactly as cal.com would. The row is marked
@@ -17,6 +18,11 @@
 // booking uid, so a replay of something already applied is a no-op there. Without --apply it
 // only says what it would do. Output names rows by id prefix and reason, never
 // by anything inside the booking.
+//
+// --purge-resolved is the retention step: it deletes rows RESOLVED more than
+// PURGE_AFTER_DAYS ago (their booking was replayed into the project that owns
+// it, or closed by hand with a note). Open rows are never touched: an open row
+// may be the only copy of a booking.
 
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
@@ -25,15 +31,25 @@ export function signBody(rawBody, secret) {
   return crypto.createHmac('sha256', secret).update(rawBody, 'utf8').digest('hex');
 }
 
+export const PURGE_AFTER_DAYS = 30;
+
+/** Rows resolved before this instant may be purged. */
+export function purgeCutoff(now = new Date(), days = PURGE_AFTER_DAYS) {
+  return new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+}
+
 export function parseArgs(argv) {
   const out = { apply: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--apply') out.apply = true;
+    else if (a === '--purge-resolved') out.purgeResolved = true;
     else if (a === '--replay' || a === '--resolve' || a === '--target' || a === '--note') out[a.slice(2)] = argv[++i];
     else throw new Error(`unknown argument ${a}`);
   }
-  if (out.replay && out.resolve) throw new Error('--replay and --resolve are separate runs');
+  if ([out.replay, out.resolve, out.purgeResolved].filter(Boolean).length > 1) {
+    throw new Error('--replay, --resolve and --purge-resolved are separate runs');
+  }
   if (out.replay && !out.target) throw new Error('--replay needs --target https://<host>');
   if (out.target) {
     const u = new URL(out.target);
@@ -103,6 +119,25 @@ async function main() {
   const key = process.env.SUPABASE_SECRET_KEY;
   if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SECRET_KEY (control project) are required');
   const db = createClient(url, key, { auth: { persistSession: false } });
+
+  if (args.purgeResolved) {
+    const cutoff = purgeCutoff().toISOString();
+    const { data, error } = await db.from('calcom_held_bookings')
+      .select('id')
+      .not('resolved_at', 'is', null)
+      .lt('resolved_at', cutoff);
+    if (error) throw new Error(error.message);
+    const ids = (data ?? []).map((r) => r.id);
+    console.log(`${args.apply ? 'purging' : 'would purge'} ${ids.length} held booking(s) resolved before ${cutoff}`);
+    if (!args.apply || ids.length === 0) return;
+    const { error: delError } = await db.from('calcom_held_bookings')
+      .delete()
+      .in('id', ids)
+      .not('resolved_at', 'is', null)
+      .lt('resolved_at', cutoff);
+    if (delError) throw new Error(delError.message);
+    return;
+  }
 
   if (!args.replay && !args.resolve) {
     const { data, error } = await db.from('calcom_held_bookings')

@@ -119,7 +119,7 @@ const LEAD_EMAIL = 'lead@example.net';
 
 const VARS = [
   'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_DATA_URL', 'SUPABASE_DATA_SECRET_KEY', 'MATE_DATA_SESSION_IDS',
-  'MATE_MOVED_SESSIONS', 'CALCOM_WEBHOOK_SECRET', 'CALCOM_BOOKING_OWNERS',
+  'MATE_MOVED_SESSIONS', 'CALCOM_WEBHOOK_SECRET', 'CALCOM_BOOKING_OWNERS', 'JC_DASHBOARD_WRITES_ENABLED',
 ];
 let saved: Record<string, string | undefined>;
 const fetchMock = vi.fn();
@@ -155,6 +155,7 @@ const dedicated = () => {
   process.env.SUPABASE_DATA_URL = 'https://client-data-project.supabase.co';
   process.env.SUPABASE_DATA_SECRET_KEY = 'data-secret-placeholder';
   process.env.MATE_DATA_SESSION_IDS = OWN;
+  process.env.JC_DASHBOARD_WRITES_ENABLED = '1';
 };
 
 function booking(over: Row = {}) {

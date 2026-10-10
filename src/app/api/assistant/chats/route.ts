@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { assertAssistantAccess } from '@/lib/assistant/access';
 
 // GET /api/assistant/chats?session_id=...  -> list chats for the session
@@ -22,6 +23,8 @@ export async function GET(request: NextRequest) {
 
 // POST /api/assistant/chats  { session_id }  -> create an empty chat
 export async function POST(request: NextRequest) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   let body: { session_id?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
   if (!body.session_id) return NextResponse.json({ error: 'session_id required' }, { status: 400 });

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { readTenancy, routeSession } from "@/lib/supabase/tenancy"
+import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
 import { practiceStatus } from "@/lib/portal/practice"
 
@@ -65,6 +66,9 @@ export async function GET(req: NextRequest) {
   if (!code) {
     return backToOnboard(req, "missing_code")
   }
+  // Read-only deployment (lib/supabase/write-gate): nothing may be stored yet,
+  // so the code is never exchanged.
+  if (!dataWritesEnabled()) return backToOnboard(req, "writes_disabled")
 
   if (sessionId) {
     // Never store a token for a session whose data this deployment does not own.

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 import { sendSms } from '@/lib/agent/telnyx';
 import { buildMenuText, classifyReply } from '@/lib/agent/postcall';
@@ -23,6 +24,8 @@ function authed(params: URLSearchParams): boolean {
 export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
   if (!authed(params)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const action = params.get('action');
   let body: { session_id?: string; caller?: string; from?: string; text?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }

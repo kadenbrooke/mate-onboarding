@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { canUseLeadSnapshot } from '@/lib/leads/capability';
@@ -39,6 +40,8 @@ export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { sessionId: rawSessionId } = await params;
   const sessionId = resolveSessionId(rawSessionId);
 

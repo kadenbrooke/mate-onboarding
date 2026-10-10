@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 import { sendSms } from '@/lib/agent/telnyx';
 import { runQuoteMenuScan } from '@/lib/agent/quoteOutcome';
@@ -25,6 +26,8 @@ const JC_QUIET_HOURS: QuietHours = { tz: 'America/Denver', start: '08:00', end: 
 export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
   if (!authed(params)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
 
   const sessionId = process.env.JC_ONBOARDING_SESSION_ID;
   if (!sessionId) {

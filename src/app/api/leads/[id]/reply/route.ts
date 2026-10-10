@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { sendSms } from '@/lib/agent/telnyx';
 import { setHandler } from '@/lib/agent/handler';
 import { logMessage } from '@/lib/agent/messages';
@@ -12,6 +13,8 @@ import { isOptedOut, normalizeJcConsentPhone } from '@/lib/leads/doNotContact';
 // (typing = takeover). Practice tenants never reach a provider. They log a
 // marked fake receipt so Aranza can rehearse the workflow safely.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id } = await params;
   let body: { session_id?: string; text?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { createClient } from '@/lib/supabase/server';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 import { practiceStatus } from '@/lib/portal/practice';
@@ -10,6 +11,8 @@ import { normalizeJcConsentPhone } from '@/lib/leads/doNotContact';
 // Record a spoken phone-call opt-out. The database RPC owns the J&C consent
 // latch and audit event; Mate only records a human call note on the lead.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id } = await params;
   let body: { session_id?: unknown };
   try { body = await request.json(); } catch { body = {}; }

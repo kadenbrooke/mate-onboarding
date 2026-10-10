@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { canUseLeadSnapshot } from '@/lib/leads/capability';
@@ -69,6 +70,8 @@ function isRow(v: unknown): v is ConfirmRow {
 }
 
 export async function POST(req: NextRequest, { params }: Ctx) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { sessionId: raw, id: snapshotId } = await params;
   const sessionId = resolveSessionId(raw);
 

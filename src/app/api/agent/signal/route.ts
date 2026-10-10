@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 import { readTenancy } from '@/lib/supabase/tenancy';
+import { WRITES_DISABLED_ERROR, dataWritesEnabled } from '@/lib/supabase/write-gate';
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { handoffSignalEvent } from '@/lib/metrics/eventSources';
 import { practiceStatus } from '@/lib/portal/practice';
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
   const tok = process.env.SIGNAL_TOKEN;
   if (!tok || url.searchParams.get('k') !== tok) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401, headers: CORS });
+  }
+  if (!dataWritesEnabled()) {
+    return NextResponse.json({ error: WRITES_DISABLED_ERROR, writes: 'disabled' }, { status: 503, headers: CORS });
   }
   const kind = url.searchParams.get('kind');
   if (!kind) return NextResponse.json({ error: 'kind required' }, { status: 400, headers: CORS });

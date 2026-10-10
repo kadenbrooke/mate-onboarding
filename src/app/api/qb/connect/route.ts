@@ -16,6 +16,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { dataWritesEnabled } from '@/lib/supabase/write-gate';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { practiceStatus } from '@/lib/portal/practice';
@@ -30,6 +31,10 @@ export const dynamic = 'force-dynamic';
 export async function GET(req: NextRequest) {
   const rawSessionId = req.nextUrl.searchParams.get('sessionId') ?? '';
   const sessionId = resolveSessionId(rawSessionId);
+  // Read-only deployment (lib/supabase/write-gate): the connection could not be stored.
+  if (!dataWritesEnabled()) {
+    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=writes_disabled`, req.url));
+  }
 
   // Redirects (login) or 404s on deny; returns the access mode on allow.
   const access = await requireDashAccess(sessionId);

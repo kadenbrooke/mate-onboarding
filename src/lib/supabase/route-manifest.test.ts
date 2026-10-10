@@ -127,4 +127,43 @@ describe('dedicated deployment route manifest', () => {
     expect(reachable('api/leads/[id]/new-thing/route.ts')).toBe(true);
     expect(reachable('api/assistant/chats/[chatId]/export/route.ts')).toBe(true);
   });
+
+  // Write gate (./write-gate). A reachable route either never writes, or calls
+  // the gate and is exercised by src/test/writeGate.test.ts.
+  const READ_ONLY = new Set([
+    'dash/[sessionId]/layout.tsx',
+    'dash/[sessionId]/page.tsx',
+    'dash/[sessionId]/assistant/page.tsx',
+    'dash/[sessionId]/pipeline/page.tsx',
+    'dash/[sessionId]/command/page.tsx',
+    'dash/[sessionId]/leads/new/page.tsx',
+    'login/page.tsx',
+    'postlogin/page.tsx',
+    'auth/callback/route.ts',
+    'auth/signout/route.ts',
+    'api/dash/[sessionId]/events/route.ts',
+    'api/manifest/route.ts',
+  ]);
+  const WRITE_OP = /\.(insert|update|upsert|delete|rpc|upload|remove)\(/;
+  const WRITE_HELPERS = /\b(emitClientEvent|logMessage|setHandler|applyNoteToLead|applyQuoteOutcome|applyPostcallChoice|runQuoteMenuScan|syncSessionCalendar|syncAllCalendars|holdBooking|requestTokenExchange|recordSpokenOptOut)\b/;
+
+  it('read-only routes never write, directly or through a write helper', () => {
+    for (const file of READ_ONLY) {
+      const text = fs.readFileSync(path.join(APP, file), 'utf8');
+      expect(text, file).not.toMatch(WRITE_OP);
+      expect(text, file).not.toMatch(WRITE_HELPERS);
+    }
+  });
+
+  it('every other reachable route calls the write gate and is covered by the write-gate test', () => {
+    const gateTest = fs.readFileSync(path.join(SRC, 'test/writeGate.test.ts'), 'utf8');
+    const gated = Object.keys(MANIFEST).filter((f) => !READ_ONLY.has(f));
+    expect(gated.length).toBeGreaterThan(20);
+    for (const file of gated) {
+      const text = fs.readFileSync(path.join(APP, file), 'utf8');
+      expect(text, `${file} calls the gate`).toMatch(/\b(refuseIfWritesDisabled|dataWritesEnabled)\(/);
+      expect(gateTest, `${file} is in writeGate.test.ts`).toContain(`route: '${file}'`);
+    }
+    for (const file of READ_ONLY) expect(MANIFEST[file], `${file} is in the manifest`).toBeDefined();
+  });
 });

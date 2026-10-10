@@ -1,11 +1,14 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { setHandler, type Handler } from '@/lib/agent/handler';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 
 // Flipping the handler changes whether the First Responder answers this lead,
 // so it is gated on access to the lead's tenant (derived from the lead row).
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id } = await params;
   let body: { session_id?: string; handler?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }

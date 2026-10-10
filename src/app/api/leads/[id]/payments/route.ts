@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { createClient } from '@/lib/supabase/server';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 import { parsePaymentBody } from '@/lib/leads/outcome';
@@ -15,6 +16,8 @@ import { parsePaymentBody } from '@/lib/leads/outcome';
 // payment on a job that is not won or one that would take the total below
 // zero; the checks here only turn those into plain answers.
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id } = await params;
   let body: unknown;
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }

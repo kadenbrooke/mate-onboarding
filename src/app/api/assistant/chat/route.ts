@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { assertAssistantAccess } from '@/lib/assistant/access';
 import { buildAssistantContext } from '@/lib/assistant/context';
 import { fetchRevenueBySource, type RevenueQuery } from '@/lib/metrics/revenue';
@@ -13,6 +14,8 @@ export const maxDuration = 60;
 // Streams the assistant reply as SSE `data: <text delta>` lines, then persists
 // the user message and the full assistant reply.
 export async function POST(request: NextRequest) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   let body: { session_id?: string; chat_id?: string; content?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
   const { session_id, chat_id, content } = body;

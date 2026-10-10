@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createControlServiceClient, createServiceClient } from '@/lib/supabase/service';
 import { readTenancy, routeSession } from '@/lib/supabase/tenancy';
+import { dataWritesEnabled } from '@/lib/supabase/write-gate';
 import { verifyCalcomSignature } from '@/lib/calcom/verify';
 import { extractContact, buildBookingPatch, type CalcomWebhook } from '@/lib/calcom/booking';
 import { attributeBooking, readCalcomOwners } from '@/lib/calcom/attribution';
@@ -25,6 +26,8 @@ export const runtime = 'nodejs';
 //                              session this deployment serves is written. Missing
 //                              or bad owner config, no match, or another tenant's
 //                              booking is held + founder signal, never written.
+//                              While JC_DASHBOARD_WRITES_ENABLED is not "1" even
+//                              its own bookings are held (lib/supabase/write-gate).
 // A held booking answers 2xx only once both the hold and the founder alert have
 // landed; otherwise non-2xx, so cal.com retries and the idempotent hold retries
 // the alert.
@@ -56,6 +59,12 @@ export async function POST(request: Request) {
     const { owner, reason } = attribute(hook);
     if (!owner || !routeSession(owner, tenancy).served) {
       return holdAndRespond(raw, hook, owner ? 'booking belongs to a tenant this deployment does not serve' : reason, owner);
+    }
+    // Read-only deployment (lib/supabase/write-gate): the booking is held in the
+    // control project, not written to the client's, and replayed once writes
+    // are on. A forward from the shared deployment lands here too.
+    if (!dataWritesEnabled()) {
+      return holdAndRespond(raw, hook, 'dashboard writes are not enabled on this deployment yet', owner);
     }
   }
 

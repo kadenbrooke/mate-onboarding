@@ -1,7 +1,7 @@
 // scripts/replay-held-calcom.mjs: the reconcile path for held bookings.
 import { describe, expect, it, vi } from 'vitest';
 import { verifyCalcomSignature } from './verify';
-import { alertState, parseArgs, replayOutcome, replayRow, signBody } from '../../../scripts/replay-held-calcom.mjs';
+import { PURGE_AFTER_DAYS, alertState, parseArgs, purgeCutoff, replayOutcome, replayRow, signBody } from '../../../scripts/replay-held-calcom.mjs';
 
 describe('replay-held-calcom', () => {
   it('re-signs the stored body exactly as cal.com does', () => {
@@ -50,6 +50,14 @@ describe('replay-held-calcom', () => {
   it('reports each held row\'s alert from the outbox', () => {
     expect(alertState(undefined)).toBe('NONE');
     expect(alertState({ source: 'mate:calcom-held:abc' })).toBe('queued');
+  });
+
+  it('purges only rows resolved more than 30 days ago', () => {
+    expect(PURGE_AFTER_DAYS).toBe(30);
+    expect(purgeCutoff(new Date('2026-10-31T00:00:00Z')).toISOString()).toBe('2026-10-01T00:00:00.000Z');
+    expect(parseArgs(['--purge-resolved'])).toEqual({ apply: false, purgeResolved: true });
+    expect(parseArgs(['--purge-resolved', '--apply'])).toEqual({ apply: true, purgeResolved: true });
+    expect(() => parseArgs(['--purge-resolved', '--resolve', 'abcd', '--note', 'x'])).toThrow(/separate/);
   });
 
   it('validates arguments', () => {

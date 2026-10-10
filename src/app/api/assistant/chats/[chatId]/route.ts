@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { assertAssistantAccess } from '@/lib/assistant/access';
 
 async function sessionForChat(chatId: string): Promise<string | null> {
@@ -28,6 +29,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cha
 
 // DELETE /api/assistant/chats/[chatId]
 export async function DELETE(_req: NextRequest, { params }: { params: Promise<{ chatId: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { chatId } = await params;
   const sessionId = await sessionForChat(chatId);
   if (!sessionId) return NextResponse.json({ ok: true });

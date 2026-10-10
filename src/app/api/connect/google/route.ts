@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { unservedSessionResponse } from "@/lib/supabase/tenant-response"
+import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { practiceStatus } from "@/lib/portal/practice"
 
 /**
@@ -48,6 +49,10 @@ export async function GET(req: NextRequest) {
     // Connect from the deployment that owns this session's data (tenancy).
     const unserved = unservedSessionResponse(req, sessionId)
     if (unserved) return unserved
+    // Read-only deployment (lib/supabase/write-gate): the token could not be stored.
+    if (!dataWritesEnabled()) {
+      return NextResponse.redirect(new URL(`/dash/${sessionId}?google=writes_disabled`, req.url))
+    }
     const practice = await practiceStatus(createServiceClient(), sessionId)
     if (!practice.ok) {
       return NextResponse.redirect(new URL(`/dash/${sessionId}?google=unavailable`, req.url))

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 
 // Remove one mistyped payment from a lead's ledger (payments are never
@@ -7,6 +8,8 @@ import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 // Same bar as recording one. Scoped by payment id AND lead id AND the lead
 // row's tenant, so a payment id from another lead or tenant matches nothing.
 export async function DELETE(request: NextRequest, { params }: { params: Promise<{ id: string; paymentId: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id, paymentId } = await params;
   const claimed = new URL(request.url).searchParams.get('session_id');
 

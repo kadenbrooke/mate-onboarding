@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { readTenancy } from "./tenancy";
+import { dataWritesEnabled, readOnlyDataClient } from "./write-gate";
 
 /**
  * Service-role Supabase client for TRUSTED server-side API routes only.
@@ -18,13 +19,18 @@ import { readTenancy } from "./tenancy";
  * that client's own project. With those unset it is the shared project, exactly
  * as before. Logins, portal membership and our CRM always go through
  * createControlServiceClient instead.
+ *
+ * A dedicated deployment's client is read-only until JC_DASHBOARD_WRITES_ENABLED
+ * is "1" (./write-gate): any write through it throws instead of reaching the
+ * client's project.
  */
 export function createServiceClient() {
   const tenancy = readTenancy();
   if (tenancy.mode === "dedicated") {
-    return createClient(tenancy.dataUrl, tenancy.dataKey, {
+    const client = createClient(tenancy.dataUrl, tenancy.dataKey, {
       auth: { persistSession: false, autoRefreshToken: false },
     });
+    return dataWritesEnabled() ? client : readOnlyDataClient(client);
   }
   return createControlServiceClient();
 }

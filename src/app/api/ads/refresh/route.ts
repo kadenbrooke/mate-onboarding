@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { routeSession } from '@/lib/supabase/tenancy';
 import { mapInsightsToRows, mapGoogleRowsToRows, type AdMetricRow } from '@/lib/metrics/ads';
 import { metaConfig, fetchInsights } from '@/lib/metrics/adsFetch';
@@ -140,6 +141,8 @@ async function handle(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   try {
     const result = await runRefresh();
     // Only a TOTAL failure is a 500. If Meta wrote and Google errored, the

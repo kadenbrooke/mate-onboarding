@@ -102,7 +102,7 @@ function sharedSeed() {
 
 const VARS = [
   'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_DATA_URL', 'SUPABASE_DATA_SECRET_KEY', 'MATE_DATA_SESSION_IDS',
-  'MATE_MOVED_SESSIONS', 'LEADS_INGEST_TOKEN', 'CRON_SECRET', 'META_JC_SESSION_ID',
+  'MATE_MOVED_SESSIONS', 'LEADS_INGEST_TOKEN', 'CRON_SECRET', 'META_JC_SESSION_ID', 'JC_DASHBOARD_WRITES_ENABLED',
   'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET', 'GOOGLE_OAUTH_REDIRECT_URI', 'AGENT_WEBHOOK_TOKEN',
 ];
 let saved: Record<string, string | undefined>;
@@ -127,6 +127,7 @@ function useDedicated() {
   process.env.SUPABASE_DATA_URL = 'https://client-data-project.supabase.co';
   process.env.SUPABASE_DATA_SECRET_KEY = 'data-secret-placeholder';
   process.env.MATE_DATA_SESSION_IDS = OWN;
+  process.env.JC_DASHBOARD_WRITES_ENABLED = '1'; // the write gate has its own tests (writeGate.test.ts)
   h.control = createFakeDb(controlSeed());
   h.data = createFakeDb(dataSeed());
 }

@@ -17,6 +17,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { dataWritesEnabled } from '@/lib/supabase/write-gate';
 import { requireDashAccess } from '@/lib/portal/dash-gate';
 import { practiceStatus } from '@/lib/portal/practice';
 import { qboEnvironment } from '@/lib/qbo/config';
@@ -55,6 +56,10 @@ export async function GET(req: NextRequest) {
   if (!cookieNonce || cookieNonce !== state.nonce) {
     return backToDash(req, state.sessionId, 'csrf');
   }
+
+  // Read-only deployment (lib/supabase/write-gate): a connection would be
+  // stored, so it is refused before the code reaches the rail.
+  if (!dataWritesEnabled()) return backToDash(req, state.sessionId, 'writes_disabled');
 
   // User declined consent on Intuit's screen, or Intuit reported an error.
   if (oauthError) return backToDash(req, state.sessionId, 'declined');

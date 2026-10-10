@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { syncAllCalendars, syncSessionCalendar, type CalendarSyncResult } from '@/lib/metrics/calendarSyncRun';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 
 // Daily refresh of client_appointments from each connected client's Google
 // Calendar. Triggered by Vercel Cron (see vercel.json) which sends
@@ -41,6 +42,8 @@ async function handle(req: NextRequest) {
   if (!authorized(req)) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   }
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
 
   const sessionId = req.nextUrl.searchParams.get('sessionId');
 

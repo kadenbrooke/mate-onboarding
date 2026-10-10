@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { canUseLeadSnapshot } from '@/lib/leads/capability';
@@ -20,6 +21,8 @@ export const dynamic = 'force-dynamic';
 const MAX_SNAPSHOTS_PER_HOUR = 20;
 
 export async function POST(_req: NextRequest, { params }: { params: Promise<{ sessionId: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { sessionId: raw } = await params;
   const sessionId = resolveSessionId(raw);
 

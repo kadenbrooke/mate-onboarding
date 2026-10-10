@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { PIPELINE_STATUSES } from '@/lib/metrics/leads';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 
@@ -8,6 +9,8 @@ import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 // lead row's session, never the body's session_id.
 // status_updated_at is stamped by DB trigger trg_client_leads_status_ts.
 export async function PATCH(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const writesOff = refuseIfWritesDisabled();
+  if (writesOff) return writesOff;
   const { id } = await params;
   let body: { status?: string; session_id?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
