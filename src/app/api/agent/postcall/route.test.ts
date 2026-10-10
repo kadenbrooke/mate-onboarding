@@ -12,8 +12,20 @@ let deleteError: { message: string } | null = null;
 const emitted: Record<string, unknown>[] = [];
 
 function tableStub(table: string) {
+  type MessageQuery = {
+    eq: () => MessageQuery;
+    order: () => MessageQuery;
+    limit: () => MessageQuery;
+    then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
+  };
+  const messageQuery: MessageQuery = {
+    eq: () => messageQuery,
+    order: () => messageQuery,
+    limit: () => messageQuery,
+    then: resolve => Promise.resolve({ data: [], error: null }).then(resolve),
+  };
   return {
-    select: () => table === 'jc_sms_conversations'
+    select: () => table === 'lead_messages' ? messageQuery : table === 'jc_sms_conversations'
       // The quote path looks the lead's name up by from_number. Its own stub so
       // it cannot consume a maybeSingle a test queued for the postcall lookup.
       ? { eq: () => ({ maybeSingle: () => Promise.resolve({ data: { lead_name: 'Wes Bayles' }, error: null }) }) }

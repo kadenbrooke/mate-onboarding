@@ -98,4 +98,16 @@ describe('POST /api/leads/[id]/do-not-contact', () => {
       values: expect.objectContaining({ author: 'human', channel: 'call_note', direction: 'inbound' }),
     }));
   });
+
+  it('returns success with a warning when the RPC committed but Mate note logging failed', async () => {
+    const originalFrom = h.db.client.from;
+    h.db.client = {
+      from: (table: string) => table === 'lead_messages'
+        ? { insert: () => Promise.resolve({ error: { message: 'activity table unavailable' } }) }
+        : originalFrom(table),
+    };
+    const res = await call('lead-a', { session_id: TENANT_A });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, warning: expect.stringMatching(/activity table unavailable/) });
+  });
 });

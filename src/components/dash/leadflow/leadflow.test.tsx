@@ -141,6 +141,13 @@ describe('HotLeads (with merged quality gauge)', () => {
     rerender(<HotLeads leads={[blocked, live]} sessionId="s1" optedOutPhones={[]} />);
     expect(screen.getByText('Blocked')).toBeInTheDocument();
   });
+
+  it('says the call list is hidden when opt-out status cannot be checked', () => {
+    render(<HotLeads leads={[lead({ score: 92 })]} sessionId="s1" optedOutReadAvailable={false} />);
+    expect(screen.getByText("Opt-out status couldn't be checked, so the call list is hidden. Refresh to retry.")).toBeInTheDocument();
+    expect(screen.queryByText('Mike R.')).toBeNull();
+    expect(screen.queryByText(/every lead is serviced/i)).toBeNull();
+  });
 });
 
 describe('SourceDonut', () => {

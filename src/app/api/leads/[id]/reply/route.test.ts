@@ -86,6 +86,28 @@ describe('POST /api/leads/[id]/reply', () => {
     expect(h.db.writes[1].filters).toEqual([['id', 'lead-a'], ['session_id', TENANT_A]]);
   });
 
+  it('refuses a live opted-out lead with 409 and does not send or take over', async () => {
+    h.db.tables.jc_sms_conversations = [{ from_number: '+18015550001', opted_out: true }];
+    const res = await call('lead-a', { session_id: TENANT_A, text: 'hello there' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/asked not to be contacted/i);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+    expect(h.db.writes).toEqual([]);
+  });
+
+  it('fails closed when the live opt-out read errors', async () => {
+    const originalFrom = h.db.client.from;
+    h.db.client = {
+      from: (table: string) => table === 'jc_sms_conversations'
+        ? { select: () => ({ eq: () => ({ range: async () => ({ data: null, error: { message: 'read failed' } }) }) }) }
+        : originalFrom(table),
+    };
+    const res = await call('lead-a', { session_id: TENANT_A, text: 'hello there' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/couldn't be checked/i);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+  });
+
   it('records a marked fake send for a practice tenant without calling Telnyx', async () => {
     h.user = USERS.practice;
     const res = await call('lead-practice', { session_id: PRACTICE, text: 'Hello from the office' });
@@ -96,6 +118,19 @@ describe('POST /api/leads/[id]/reply', () => {
       direction: 'outbound',
       author: 'human',
     });
+  });
+
+  it('refuses a practice fake-opted-out lead without calling Telnyx', async () => {
+    h.user = USERS.practice;
+    h.db.tables.lead_messages = [{
+      lead_id: 'lead-practice', session_id: PRACTICE, channel: 'call_note', author: 'human',
+      body: '[Practice fake] Do not contact phone=+18015550004', created_at: '2026-10-09T12:00:00.000Z',
+    }];
+    const res = await call('lead-practice', { session_id: PRACTICE, text: 'Hello from the office' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/asked not to be contacted/i);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+    expect(h.db.writes).toEqual([]);
   });
 
   it('allows an internal (portal_access mate) user', async () => {

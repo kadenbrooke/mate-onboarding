@@ -156,7 +156,8 @@ export async function POST(request: Request) {
       const sendForSession = async (to: string, text: string) => (
         config?.is_practice === true ? { ok: true, practice: true } : sendSms(to, text)
       );
-      await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
+      const actionResult = await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
+      if (!actionResult.ok) return NextResponse.json({ error: actionResult.error }, { status: actionResult.status });
       const resolvedAt = new Date().toISOString();
       await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
       await emitClientEvent(supabase, postcallResolvedEvent({

@@ -5,7 +5,7 @@ import {
   scoreColor, CARD_TRACK, CARD_MUTED, NUM_DISPLAY, FONT_BODY, FONT_NUM,
 } from '@/lib/theme';
 import type { Lead } from '@/lib/metrics/leads';
-import { filterOptedOutLeads } from '@/lib/leads/doNotContact';
+import { filterOptedOutLeads, OPT_OUT_UNAVAILABLE_NOTICE } from '@/lib/leads/doNotContact';
 
 // Hot leads + average lead quality on one card (2026-07 merge). The list is
 // the top 5 by LIVE score (migration 0020) among leads not yet serviced.
@@ -54,10 +54,20 @@ function QualityArc({ avg }: { avg: number }) {
 export function HotLeads({ leads, sessionId, optedOutPhones = [], optedOutReadAvailable = true }: {
   leads: Lead[]; sessionId: string; optedOutPhones?: string[]; optedOutReadAvailable?: boolean;
 }) {
-  const stats = scoreStats(leads);
   const contactable = filterOptedOutLeads(leads, new Set(optedOutPhones));
-  const hot = optedOutReadAvailable ? scoreStats(contactable).hot : [];
+  const stats = scoreStats(contactable);
+  const hot = optedOutReadAvailable ? stats.hot : [];
   const { avg, scoredCount } = stats;
+
+  if (!optedOutReadAvailable) {
+    return (
+      <Card label="HOT RIGHT NOW">
+        <div role="alert" style={{ color: CARD_MUTED, fontSize: 12, marginTop: 12, fontFamily: FONT_BODY, lineHeight: 1.5 }}>
+          {OPT_OUT_UNAVAILABLE_NOTICE}
+        </div>
+      </Card>
+    );
+  }
 
   // Nothing scored: the gauge would sweep a red 0 and the list would read
   // "no open leads", both of which assert lead quality we have never

@@ -21,6 +21,7 @@ import { MobileNav } from '@/components/dash/MobileNav';
 import { agentDisplayNameForSession } from '@/lib/agent/displayName';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
 import { practiceStatus } from '@/lib/portal/practice';
+import { readLeadOptOutState, type DoNotContactState } from '@/lib/leads/doNotContact';
 
 export default async function PipelinePage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
@@ -63,7 +64,7 @@ export default async function PipelinePage({ params, searchParams }: {
   );
 
   let thread: {
-    messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null;
+    messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null; doNotContact: DoNotContactState | null;
   } | null = null;
   if (spotlight) {
     // phone + source come along so a nameless lead's thread header can fall back
@@ -73,11 +74,15 @@ export default async function PipelinePage({ params, searchParams }: {
     if (lead) {
       const { data: messages } = await supabase.from('lead_messages')
         .select('*').eq('lead_id', spotlight).eq('session_id', sessionId).order('created_at', { ascending: true }).limit(200);
+      const doNotContact = doNotContactEnabled
+        ? await readLeadOptOutState(supabase, sessionId, lead.phone, { leadId: lead.id, isPractice: practice.ok && practice.isPractice })
+        : null;
       thread = {
         messages: (messages ?? []) as LeadMessage[],
         handler: (lead.handler ?? 'agent') as 'agent' | 'human',
         leadId: lead.id,
         leadName: leadLabel(lead),
+        doNotContact,
       };
     }
   }
@@ -133,6 +138,7 @@ export default async function PipelinePage({ params, searchParams }: {
             leadName={thread.leadName}
             agentName={agentName}
             doNotContactEnabled={doNotContactEnabled}
+            doNotContact={thread.doNotContact}
           />
           {outcome && (
             <div style={{ marginTop: 8 }}>

@@ -39,6 +39,7 @@ export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
       eq: (k: string, v: unknown) => { filters.push([k, v]); return b; },
       order: () => b,
       limit: () => b,
+      range: () => b,
       update: (v: unknown) => { op = 'update'; values = v; return b; },
       insert: (v: unknown) => { op = 'insert'; values = v; return b; },
       delete: () => { op = 'delete'; return b; },

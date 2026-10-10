@@ -32,12 +32,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   // Practice tenants are provider-free by definition. Keep the rehearsal
   // receipt in the normal lead thread, clearly marked as fake.
   if (practice.isPractice) {
+    const { data: contact } = await supabase.from('client_leads')
+      .select('phone').eq('id', id).eq('session_id', gate.lead.session_id).maybeSingle();
+    const phone = normalizeJcConsentPhone(typeof contact?.phone === 'string' ? contact.phone : null);
+    if (!phone) return NextResponse.json({ error: 'lead has no valid phone number' }, { status: 422 });
     const note = await logMessage(supabase, {
       leadId: id, sessionId: gate.lead.session_id, direction: 'inbound', author: 'human', channel: 'call_note',
-      body: `[Practice fake] Do not contact recorded from a phone call by ${recordedBy}.`,
+      body: `[Practice fake] Do not contact phone=${phone} recorded_by=${recordedBy}.`,
     });
     if (note.error) return NextResponse.json({ error: note.error }, { status: 500 });
-    return NextResponse.json({ ok: true, practice: true, fake: true, recorded_by: recordedBy, recorded_at: new Date().toISOString() });
+    return NextResponse.json({ ok: true, practice: true, fake: true, source: 'practice', recorded_by: recordedBy, recorded_at: new Date().toISOString() });
   }
 
   // Refuse tenants that are not wired to this lane before reading their phone.
@@ -69,10 +73,14 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     body: `Do not contact recorded from a phone call by ${recordedBy}.`,
   });
   if (note.error) {
-    return NextResponse.json({ error: `Opt-out was recorded, but Mate could not save the activity note: ${note.error}` }, { status: 500 });
+    return NextResponse.json({
+      ok: true, event_id: event.event_id, normalized_phone: event.normalized_phone,
+      recorded_by: recordedBy, recorded_at: new Date().toISOString(), source: 'phone_call',
+      warning: `Opt-out is active, but Mate could not save the activity note: ${note.error}`,
+    });
   }
   return NextResponse.json({
     ok: true, event_id: event.event_id, normalized_phone: event.normalized_phone,
-    recorded_by: recordedBy, recorded_at: new Date().toISOString(),
+    recorded_by: recordedBy, recorded_at: new Date().toISOString(), source: 'phone_call',
   });
 }

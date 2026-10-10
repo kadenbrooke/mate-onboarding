@@ -52,12 +52,21 @@ describe('CommandCenter', () => {
       call: [], scored: true, waiting: { rows: [], counts: { handed: 0, replied: 0, new: 0 }, more: 0 },
       stuck: { rows: [], more: 0 }, books: null, pipelineHref: '/dash/s-1/pipeline',
       incomplete: { call: false, waiting: false, stuck: false, books: false },
+      optOutUnavailable: false,
     };
     render(<CommandCenter model={empty} today={today} demo={false} />);
     expect(screen.getByText('Nobody to call')).toBeInTheDocument();
     expect(screen.getByText('All caught up')).toBeInTheDocument();
     expect(screen.getByText('Nothing stuck')).toBeInTheDocument();
     expect(screen.getByText('Not set up yet')).toBeInTheDocument();
+  });
+
+  it('says the contact lists are hidden when opt-out status cannot be checked', () => {
+    const base = practiceModel();
+    render(<CommandCenter model={{ ...base, call: [], optOutUnavailable: true }} today={today} demo={false} />);
+    expect(screen.getAllByText("Opt-out status couldn't be checked, so the call list is hidden. Refresh to retry.")).toHaveLength(2);
+    expect(screen.queryByText('Nobody to call')).toBeNull();
+    expect(screen.queryByText('All caught up')).toBeNull();
   });
 
   it('says when a card could not show everything, and only on that card', () => {

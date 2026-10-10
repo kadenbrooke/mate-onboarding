@@ -26,6 +26,9 @@ function tableStub(table: string) {
     eq: () => chain,
     in: () => chain,
     not: () => chain,
+    order: () => chain,
+    limit: () => chain,
+    range: () => chain,
     update: (values: unknown) => {
       state.inserts.push({ table, values });
       return chain;

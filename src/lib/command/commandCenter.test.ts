@@ -253,6 +253,25 @@ describe('buildCommandModel', () => {
     expect(m.scored).toBe(true);
     expect(m.incomplete).toEqual({ call: false, waiting: false, stuck: false, books: false });
   });
+  it('removes opted-out leads from both Call now and Waiting on you', () => {
+    const blocked = lead({ id: 'blocked', name: 'Blocked', phone: '+18015550100', score: 99, created_at: hoursAgo(1) });
+    const live = lead({ id: 'live', name: 'Live', phone: '+18015550101', score: 80, created_at: hoursAgo(1) });
+    const m = model({
+      openLeads: [blocked, live],
+      optedOutPhones: new Set(['+18015550100']),
+      optedOutReadAvailable: true,
+      signals: signalsOf(sig(blocked), sig(live)),
+    });
+    expect(m.call.map(row => row.id)).toEqual(['live']);
+    expect(m.waiting.rows.map(row => row.id)).toEqual(['live']);
+  });
+  it('hides contact lists and marks opt-out status unavailable on a read failure', () => {
+    const live = lead({ id: 'live', name: 'Live', phone: '+18015550101', score: 80, created_at: hoursAgo(1) });
+    const m = model({ openLeads: [live], signals: signalsOf(sig(live)), optedOutReadAvailable: false });
+    expect(m.call).toEqual([]);
+    expect(m.waiting.rows).toEqual([]);
+    expect(m.optOutUnavailable).toBe(true);
+  });
   it('caps the waiting list and reports the rest', () => {
     const leads = Array.from({ length: WAIT_ROWS + 3 }, () => lead({ created_at: hoursAgo(1), score: null }));
     const m = model({ openLeads: leads });

@@ -304,6 +304,8 @@ export type CommandModel = {
   books: Books | null;
   /** A card whose source scan hit its page ceiling shows "More not shown". */
   incomplete: { call: boolean; waiting: boolean; stuck: boolean; books: boolean };
+  /** True when the live opt-out read failed; contact-prompting lists are hidden. */
+  optOutUnavailable: boolean;
   pipelineHref: string;
 };
 
@@ -335,10 +337,13 @@ export function buildCommandModel(input: {
     id: l.id, name: label(l), tel: telHref(l.phone), href: `${pipelineHref}?spotlight=${l.id}`,
   });
 
-  const contactableOpenLeads = input.optedOutReadAvailable === false
+  const optOutUnavailable = input.optedOutReadAvailable === false;
+  const contactableOpenLeads = optOutUnavailable
     ? []
     : filterOptedOutLeads(input.openLeads, input.optedOutPhones ?? new Set());
-  const call = callList(contactableOpenLeads).map(l => ({
+  // Pass the latch set at the boundary where Call now is built. This keeps
+  // the real wiring covered even if the upstream contactable slice changes.
+  const call = callList(input.openLeads, input.optedOutPhones ?? new Set()).map(l => ({
     ...base(l),
     score: l.score!,
     reasons: hotReasons(l, signals.get(l.id), now),
@@ -352,7 +357,7 @@ export function buildCommandModel(input: {
   const stuck = stuckList([...input.wonLeads, ...contactableOpenLeads], owedKnown ? input.paidByLead : null, now);
 
   return {
-    call,
+    call: optOutUnavailable ? [] : call,
     // No open leads is "nobody to call", not "scoring is off".
     scored: contactableOpenLeads.length === 0 || contactableOpenLeads.some(l => l.score != null),
     waiting: {
@@ -375,6 +380,7 @@ export function buildCommandModel(input: {
       stuck: !input.complete.open || !owedKnown,
       books: input.summary != null && !owedKnown,
     },
+    optOutUnavailable,
     pipelineHref,
   };
 }

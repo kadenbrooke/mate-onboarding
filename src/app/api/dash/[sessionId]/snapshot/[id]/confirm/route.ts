@@ -14,6 +14,7 @@ import { nextSendWindowStart, DEFAULT_OUTREACH_HOURS } from '@/lib/agent/quietHo
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { describeLead } from '@/lib/metrics/eventSources';
 import { fakePracticeMessage } from '@/lib/portal/practice';
+import { isOptedOut } from '@/lib/leads/doNotContact';
 
 // POST /api/dash/<sessionId>/snapshot/<id>/confirm
 //
@@ -203,6 +204,10 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
     if (v.mode === 'save') {
       outcomes.push(await saveOne(service, v, sessionId, now));
+      continue;
+    }
+    if (await isOptedOut(service, sessionId, v.e164, { isPractice })) {
+      outcomes.push({ index: v.index, outcome: 'failed', message: "This lead asked not to be contacted, or opt-out status couldn't be checked; sending is blocked. Refresh to retry." });
       continue;
     }
     const outcome = isPractice
