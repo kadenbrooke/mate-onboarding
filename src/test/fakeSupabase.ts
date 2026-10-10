@@ -30,15 +30,21 @@ export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
     const likes: [string, string][] = [];
     const ins: [string, unknown[]][] = [];
     const notNull: string[] = [];
+    const notIn: [string, string[]][] = [];
     const rows = () => (db.tables[table] ?? []).filter(r => filters.every(([k, v]) => r[k] === v)
       && ins.every(([k, vs]) => vs.includes(r[k]))
       && notNull.every(k => r[k] !== null && r[k] !== undefined)
+      && notIn.every(([k, vs]) => !vs.includes(r[k] as string))
       && likes.every(([k, pattern]) => {
       const prefix = pattern.endsWith('%') ? pattern.slice(0, -1) : pattern;
       const value = r[k];
       return typeof value === 'string' && (pattern.endsWith('%') ? value.startsWith(prefix) : value === pattern);
     }));
-    const logRead = () => { db.reads.push({ table, columns, filters: [...filters, ...ins.map(([k, vs]): [string, unknown] => [`in:${k}`, vs])] }); };
+    const logRead = () => { db.reads.push({ table, columns, filters: [
+      ...filters,
+      ...ins.map(([k, vs]): [string, unknown] => [`in:${k}`, vs]),
+      ...notIn.map(([k, vs]): [string, unknown] => [`not-in:${k}`, vs]),
+    ] }); };
     const settle = () => {
       if (op === 'select') { logRead(); return { data: rows(), error: null }; }
       db.writes.push({ table, op, values, filters: [...filters] });
@@ -50,8 +56,9 @@ export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
       like: (k: string, pattern: string) => { likes.push([k, pattern]); return b; },
       in: (k: string, vs: unknown[]) => { ins.push([k, vs]); return b; },
       not: (k: string, op: string, v: unknown) => {
-        if (op !== 'is' || v !== null) throw new Error(`fake not(${op}) unsupported`);
-        notNull.push(k);
+        if (op === 'is' && v === null) notNull.push(k);
+        else if (op === 'in' && typeof v === 'string') notIn.push([k, v.replace(/^\(|\)$/g, '').split(',')]);
+        else throw new Error(`fake not(${op}) unsupported`);
         return b;
       },
       order: () => b,

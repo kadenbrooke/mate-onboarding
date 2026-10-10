@@ -12,6 +12,9 @@ export type CalcomBookingPayload = {
   responses?: Record<string, { value?: unknown } | unknown>;
   userFieldsResponses?: Record<string, { value?: unknown } | unknown>;
   smsReminderNumber?: string | null;
+  // Signed fields used to attribute a booking to a tenant (calcom/attribution).
+  eventTypeId?: number | string | null;
+  organizer?: { email?: string | null } | null;
 };
 
 export type CalcomWebhook = {

@@ -40,6 +40,7 @@ import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { checkDashAccess } from '@/lib/portal/dash-gate';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 import { POST as ingest } from '@/app/api/leads/ingest/route';
+import { POST as postcall } from '@/app/api/agent/postcall/route';
 import { GET as adsRefresh } from '@/app/api/ads/refresh/route';
 import { syncAllCalendars, syncSessionCalendar } from '@/lib/metrics/calendarSyncRun';
 import PostLogin from '@/app/postlogin/page';
@@ -102,7 +103,7 @@ function sharedSeed() {
 const VARS = [
   'NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_DATA_URL', 'SUPABASE_DATA_SECRET_KEY', 'MATE_DATA_SESSION_IDS',
   'MATE_MOVED_SESSIONS', 'LEADS_INGEST_TOKEN', 'CRON_SECRET', 'META_JC_SESSION_ID',
-  'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET', 'GOOGLE_OAUTH_REDIRECT_URI',
+  'GOOGLE_OAUTH_CLIENT_ID', 'GOOGLE_OAUTH_CLIENT_SECRET', 'GOOGLE_OAUTH_REDIRECT_URI', 'AGENT_WEBHOOK_TOKEN',
 ];
 let saved: Record<string, string | undefined>;
 
@@ -251,10 +252,14 @@ describe('dedicated deployment (client data project)', () => {
     expect(h.control.writes).toEqual([]);
   });
 
-  it('the calendar cron syncs only served sessions found in the data project', async () => {
+  it('the calendar cron syncs only served sessions, constrained in the query itself', async () => {
     const results = await syncAllCalendars();
     expect(results.map((r) => r.session_id)).toEqual([OWN]);
     expect(tables(h.control)).toEqual([]);
+    // The scan never fetched the stray tenant's row or token: the tenant lock
+    // is a filter on the database query, not a filter applied afterwards.
+    const scan = h.data.reads.find((r) => r.table === 'onboarding_sessions');
+    expect(scan?.filters).toContainEqual(['in:id', [OWN]]);
 
     expect(await syncSessionCalendar(STRAY)).toMatchObject({ status: 'error', detail: 'session not served by this deployment' });
   });
@@ -282,6 +287,45 @@ describe('shared deployment with the client moved out', () => {
     expect((await ingest(ingestReq({ session_id: TENANT_B, leads: [] }))).status).toBe(200);
   });
 
+  it('a caller following the ingest 307 replays the same POST body and token on the new deployment', async () => {
+    const body = { session_id: OWN, leads: [{ service: 'sealcoat' }] };
+    const original = ingestReq(body);
+    const res = await ingest(original.clone() as NextRequest);
+    expect(res.status).toBe(307);
+    // A 307 response carries no cookie of ours for the caller to replay.
+    expect(res.headers.get('set-cookie')).toBeNull();
+    const location = res.headers.get('location') as string;
+
+    // What a fetch/axios client does on 307: same method, same body, its own
+    // request headers (the ingest token), no cookies for a foreign domain.
+    const followed = new NextRequest(location, {
+      method: original.method,
+      headers: { 'x-ingest-token': original.headers.get('x-ingest-token') as string, 'content-type': 'application/json' },
+      body: await original.text(),
+    });
+    expect(await followed.clone().json()).toEqual(body);
+
+    delete process.env.MATE_MOVED_SESSIONS; // now "on" the dedicated deployment
+    useDedicated();
+    const landed = await ingest(followed);
+    expect(landed.status).toBe(200);
+    expect(h.data.writes).toEqual([
+      expect.objectContaining({ table: 'client_leads', op: 'insert', values: [{ session_id: OWN, service: 'sealcoat' }] }),
+    ]);
+    expect(h.control.writes).toEqual([]);
+  });
+
+  it('a moved session\'s postcall 307 keeps its action and token query so the replay authenticates', async () => {
+    process.env.AGENT_WEBHOOK_TOKEN = 'agent-token-placeholder';
+    const res = await postcall(new Request(
+      'https://deploy.example.com/api/agent/postcall?k=agent-token-placeholder&action=fire',
+      { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ session_id: OWN, caller: '+18015550199' }) },
+    ));
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe(`${NEW_ORIGIN}/api/agent/postcall?k=agent-token-placeholder&action=fire`);
+    untouched();
+  });
+
   it('crons stand down for the moved session and keep running for the rest', async () => {
     process.env.META_JC_SESSION_ID = OWN;
     const res = await adsRefresh(cronReq());
@@ -291,6 +335,7 @@ describe('shared deployment with the client moved out', () => {
 
     const results = await syncAllCalendars();
     expect(results.map((r) => r.session_id)).toEqual([TENANT_B]);
+    expect(h.data.reads.find((r) => r.table === 'onboarding_sessions')?.filters).toContainEqual(['not-in:id', [OWN]]);
     expect(await syncSessionCalendar(OWN)).toMatchObject({ status: 'skipped', detail: 'served by another deployment' });
   });
 

@@ -21,7 +21,13 @@ const rel = (p: string) => path.relative(SRC, p).split(path.sep).join('/');
 const files = sourceFiles().map((p) => ({ file: rel(p), text: fs.readFileSync(p, 'utf8') }));
 
 // Tables that live with the logins / our CRM in the control project.
-const CONTROL_TABLES = /\.from\(\s*['"](portal_members|portal_access|portal_codes|portal_waitlist|contacts|contact_materials|nudges|interactions|build_requests|demo_sessions)['"]/;
+const CONTROL_TABLES = /\.from\(\s*['"](portal_members|portal_access|portal_codes|portal_waitlist|contacts|contact_materials|nudges|interactions|build_requests|demo_sessions|calcom_held_bookings|outbound_texts)['"]/;
+
+// Helpers that take the client as an argument: every caller must hand them the
+// control client, checked below.
+const INJECTED: Record<string, { caller: string; call: RegExp }> = {
+  'lib/calcom/held.ts': { caller: 'app/api/webhooks/calcom/route.ts', call: /holdBooking\(createControlServiceClient\(\)/ },
+};
 
 // Onboarding / demo / internal surfaces that still use one client for both
 // kinds of table. Safe only because a dedicated deployment never routes to
@@ -41,6 +47,7 @@ describe('control/data split, statically', () => {
       .filter(({ text }) => CONTROL_TABLES.test(text))
       .filter(({ file, text }) => {
         if (SHARED_ONLY[file]) return false;
+        if (INJECTED[file]) return false;
         if (text.includes('createControlServiceClient')) return false;
         // Session-scoped user client only (RLS as the signed-in user, control project).
         if (!text.includes('createServiceClient') && text.includes('@/lib/supabase/server')) return false;
@@ -48,6 +55,14 @@ describe('control/data split, statically', () => {
       })
       .map(({ file }) => file);
     expect(offenders).toEqual([]);
+  });
+
+  it.each(Object.entries(INJECTED))('%s is only ever handed the control client', (file, { caller, call }) => {
+    const callerText = files.find((f) => f.file === caller)?.text ?? '';
+    expect(callerText).toMatch(call);
+    const fn = call.source.split('\\(')[0];
+    const callers = files.filter(({ text, file: f }) => f !== file && new RegExp(`\\b${fn}\\(`).test(text)).map((f) => f.file);
+    expect(callers).toEqual([caller]);
   });
 
   it('only lib/supabase opens a Supabase client', () => {

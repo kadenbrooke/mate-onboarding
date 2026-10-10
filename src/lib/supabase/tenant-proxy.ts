@@ -1,10 +1,16 @@
 // Proxy-level tenancy routing (lib/supabase/tenancy), run before the auth
 // session refresh. Null means "carry on as usual".
 //
-// shared deployment: a dashboard URL for a session listed in MATE_MOVED_SESSIONS
-//   (/dash/<id>/... and /api/dash/<id>/...) is forwarded with a 307 to the same
-//   path on its new deployment. Everything else is untouched; with
-//   MATE_MOVED_SESSIONS unset this returns null for every request.
+// shared deployment, session listed in MATE_MOVED_SESSIONS:
+//   /dash/<id>/...      page: 307 to the same path on its new deployment, where
+//                       the user signs in on that domain.
+//   /api/dash/<id>/...  dashboard API: 410, never a redirect. A stale tab would
+//                       otherwise replay its request at the new domain without
+//                       that domain's cookie; 410 tells it to reload instead,
+//                       which lands on the page redirect above. (The api-gate
+//                       answers the same 410 for the other session-scoped APIs.)
+//   Everything else is untouched; with MATE_MOVED_SESSIONS unset this returns
+//   null for every request.
 // dedicated deployment: deny by default. Only the served sessions' dashboards,
 //   the login flow, and the API routes that a served session's dashboard, crons
 //   and webhooks use are reachable. The public demo, onboarding, signup,
@@ -74,6 +80,9 @@ export function tenantRoute(request: NextRequest): NextResponse | null {
     if (!sessionId) return null;
     const route = routeSession(sessionId, tenancy);
     if (route.served || !route.movedTo) return null;
+    if (path.startsWith('/api/')) {
+      return NextResponse.json({ error: 'This dashboard has moved. Reload the page.' }, { status: 410 });
+    }
     return NextResponse.redirect(new URL(`${path}${request.nextUrl.search}`, route.movedTo), 307);
   }
 

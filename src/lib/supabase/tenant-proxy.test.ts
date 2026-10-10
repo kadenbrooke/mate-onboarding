@@ -59,15 +59,21 @@ describe('shared deployment', () => {
     expect(passed.count).toBe(ALL_PATHS.length);
   });
 
-  it('forwards a moved session\'s dashboard pages and dashboard APIs, keeping path and query', async () => {
+  it('forwards a moved session\'s pages (path and query kept) and answers its dashboard APIs 410', async () => {
     process.env.MATE_MOVED_SESSIONS = `${OWN}=https://client.example.com`;
 
     const page = await go(`/dash/${OWN}/pipeline?sort=score`);
     expect(page.status).toBe(307);
     expect(page.headers.get('location')).toBe(`https://client.example.com/dash/${OWN}/pipeline?sort=score`);
 
-    const api = await go(`/api/dash/${OWN}/events?since=x`);
-    expect(api.headers.get('location')).toBe(`https://client.example.com/api/dash/${OWN}/events?since=x`);
+    // A stale tab's API call is never redirected cross-domain (it would arrive
+    // without the new domain's cookie): it is told to reload instead.
+    for (const method of ['GET', 'POST']) {
+      const api = await go(`/api/dash/${OWN}/snapshot`, method);
+      expect(api.status).toBe(410);
+      expect(api.headers.get('location')).toBeNull();
+      expect(await api.json()).toEqual({ error: 'This dashboard has moved. Reload the page.' });
+    }
 
     // Other tenants and the demo stay where they are.
     for (const p of [`/dash/${OTHER}`, '/dash/demo', `/dash/${DEMO_SESSION_ID}`, '/login']) {

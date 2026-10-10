@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import type { Metadata } from 'next';
 import 'react-grid-layout/css/styles.css';
-import { redirect } from 'next/navigation';
+import { notFound, redirect } from 'next/navigation';
 import { createServiceClient } from '@/lib/supabase/service';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -12,6 +12,7 @@ import { TopBar } from '@/components/dash/chrome/TopBar';
 import { IconRail } from '@/components/dash/chrome/IconRail';
 import { DashEditingProvider } from '@/lib/dashEditing';
 import { resolveSessionId } from '@/lib/portal/demo';
+import { routeSession } from '@/lib/supabase/tenancy';
 import { practiceCompanyName } from '@/lib/portal/practice';
 
 async function signOutAction() {
@@ -43,6 +44,9 @@ export default async function DashLayout({ children, params }: DashLayoutProps) 
   // "demo" alias -> real demo UUID so the brand/incident reads and the TopBar
   // links resolve to the same public session as /dash/<uuid>.
   const sessionId = resolveSessionId(rawSessionId);
+  // Tenancy before the brand/incident reads below (lib/supabase/tenancy). The
+  // proxy already stops these requests; this keeps the layout safe on its own.
+  if (!routeSession(sessionId).served) notFound();
 
   // Fetch session brand + client identity + open incident count. Fail-open:
   // missing data falls back to Auto Mate defaults (black logo, zero badge).

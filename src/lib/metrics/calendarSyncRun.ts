@@ -13,7 +13,7 @@
 // expired token cannot stop the rest of the run.
 
 import { createServiceClient } from '@/lib/supabase/service';
-import { routeSession } from '@/lib/supabase/tenancy';
+import { readTenancy, routeSession } from '@/lib/supabase/tenancy';
 import { googleOAuthConfig, calendarAccessToken, fetchCalendarEvents } from './calendarFetch';
 import { mapEventsToRows, syncWindow, type AppointmentRow } from './calendarSync';
 
@@ -155,15 +155,24 @@ async function pruneStale(
  */
 export async function syncAllCalendars(): Promise<CalendarSyncResult[]> {
   const supabase = createServiceClient();
+  const tenancy = readTenancy();
 
-  const { data, error } = await supabase
+  const scan = supabase
     .from('onboarding_sessions')
     .select('id, google_token_ref')
     .not('google_token_ref', 'is', null);
+  // Constrain the scan in the database, not after the fact: a deployment never
+  // fetches another tenant's row (or its Google token). Unchanged query when
+  // nothing is dedicated or moved.
+  const { data, error } = await (tenancy.mode === 'dedicated'
+    ? scan.in('id', [...tenancy.sessions])
+    : tenancy.moved.size > 0
+      ? scan.not('id', 'in', `(${[...tenancy.moved.keys()].join(',')})`)
+      : scan);
 
   if (error) throw new Error(`session scan failed: ${error.message}`);
 
-  // Only the sessions this deployment serves (tenancy).
+  // Belt and braces: the query above already excludes unserved sessions.
   const sessions = ((data ?? []) as { id: string; google_token_ref: string | null }[])
     .filter((s) => routeSession(s.id).served);
   return Promise.all(
