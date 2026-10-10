@@ -92,14 +92,16 @@ export function isCountingAgentMessage(message: RevenueLeadMessage): boolean {
 /**
  * Partner cash for one lead. Positive payments count only from first contact
  * (inclusive) until the strict 24-month line. A negative payment is a statement
- * credit only when the setting is positive and a prior eligible positive
- * payment exists within that many calendar months. At zero (the opening
- * position), refunds never reduce the share. The floor prevents a refund from
- * ever producing a cash-back/negative payout.
+ * credit only when the setting is positive and it matches eligible positive
+ * payments within that many calendar months; its credit is capped at the sum
+ * of those matching payments. At zero (the opening position), refunds never
+ * reduce the share. The floor prevents a refund from ever producing a
+ * cash-back/negative payout.
  */
 export function partnerBasisCents(
   payments: LeadPayment[], firstContactAt: string | Date | null,
   clawbackWindowMonths = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS,
+  startAtFirstContact = true,
 ): number {
   if (firstContactAt == null) return 0;
   const firstContact = new Date(firstContactAt);
@@ -111,18 +113,27 @@ export function partnerBasisCents(
     const amount = cents(payment.amount_cents);
     const paymentAt = new Date(payment.paid_at).getTime();
     const inAttributionWindow = Number.isFinite(paymentAt)
-      && paymentAt >= firstContactMs && paymentAt < attributionEndMs;
+      && (!startAtFirstContact || paymentAt >= firstContactMs)
+      && paymentAt < attributionEndMs;
     if (amount >= 0) return inAttributionWindow ? sum + amount : sum;
     if (clawbackWindowMonths <= 0) return sum;
     const refundAt = paymentAt;
-    const matched = Number.isFinite(refundAt) && payments.some(original => {
-      const originalAmount = cents(original.amount_cents);
-      const originalAt = new Date(original.paid_at).getTime();
-      if (originalAmount <= 0 || !Number.isFinite(originalAt)
-        || originalAt < firstContactMs || originalAt >= attributionEndMs || originalAt > refundAt) return false;
-      return refundAt < addMonthsUtc(new Date(original.paid_at), clawbackWindowMonths).getTime();
-    });
-    return matched ? sum + amount : sum;
+    const matchingEligibleAmount = Number.isFinite(refundAt)
+      ? payments.reduce((matched, original) => {
+        const originalAmount = cents(original.amount_cents);
+        const originalAt = new Date(original.paid_at).getTime();
+        if (originalAmount <= 0 || !Number.isFinite(originalAt)
+          || (startAtFirstContact && originalAt < firstContactMs)
+          || originalAt >= attributionEndMs || originalAt > refundAt
+          || refundAt >= addMonthsUtc(new Date(original.paid_at), clawbackWindowMonths).getTime()) {
+          return matched;
+        }
+        return matched + originalAmount;
+      }, 0)
+      : 0;
+    return matchingEligibleAmount > 0
+      ? sum - Math.min(Math.abs(amount), matchingEligibleAmount)
+      : sum;
   }, 0);
   return Math.max(0, total);
 }
@@ -136,6 +147,7 @@ export function partnerBasisCents(
  */
 export function revenueRowsFromLeads(
   leads: Lead[], payments: LeadPayment[] = [], now = new Date(), messages: RevenueLeadMessage[] = [],
+  clawbackWindowMonths = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS,
 ): SourceRevenueRow[] {
   const bySource = new Map<string, SourceRevenueRow>();
   const since30d = now.getTime() - 30 * DAY_MS;
@@ -183,13 +195,17 @@ export function revenueRowsFromLeads(
       const amount = cents(p.amount_cents);
       const at = new Date(p.paid_at).getTime();
       row.collected_cents += amount;
-      if (Number.isFinite(at) && at >= firstContactMs && at < attributionEndMs) {
+      if (Number.isFinite(at)
+        && (l.source !== 'self_sourced' || at >= firstContactMs)
+        && at < attributionEndMs) {
         row.collected_in_window_cents += amount;
       }
       if (at >= since30d) row.collected_30d_cents += amount;
     }
     if (l.source !== 'self_sourced' || firstCountingAgentContactAtByLead.has(l.id)) {
-      row.partner_collected_in_window_cents! += partnerBasisCents(leadPayments, firstContactAt);
+      row.partner_collected_in_window_cents! += partnerBasisCents(
+        leadPayments, firstContactAt, clawbackWindowMonths, l.source === 'self_sourced',
+      );
     }
   }
   return [...bySource.values()];

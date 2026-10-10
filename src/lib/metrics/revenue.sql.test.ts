@@ -156,7 +156,7 @@ const daysAgo = (d: number) => new Date(Date.now() - d * DAY);
 
 describe('recording a won job and a payment (the required test)', () => {
   it('updates the per-source return and the 15% figure, and leaves status alone', async () => {
-    const metaLead = await insertLead(TENANT, { source: 'meta', status: 'quoted', created_at: daysAgo(90).toISOString() });
+    const metaLead = await insertLead(TENANT, { source: 'meta', status: 'quoted' });
     await insertLead(TENANT, { source: 'meta' });
     await insertLead(TENANT, { source: 'call' });
     await insertLead(TENANT, { source: 'web_form' });
@@ -219,6 +219,23 @@ describe('cash is counted by payment date', () => {
     const [row] = await viewRows(S);
     expect(row).toMatchObject({ collected_cents: 600000, collected_in_window_cents: 600000, collected_30d_cents: 100000 });
     expect(summarizeReturn([row], { metaSpend30dCents: 50000 }).meta).toMatchObject({ collected30dCents: 100000, returnPerDollar: 2 });
+  });
+
+  it('keeps backdated payment cash for an ordinary source in SQL and TypeScript', async () => {
+    const S = await newSession();
+    const createdAt = new Date().toISOString();
+    const paidAt = daysAgo(2).toISOString();
+    const id = await insertLead(S, { source: 'referral', created_at: createdAt });
+    await markWon(id, S, 100000);
+    await addPayment(id, S, 25000, paidAt);
+    const sql = await viewRows(S);
+    const ts = revenueRowsFromLeads([{
+      id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
+      status: 'open', quote_cents: null, contacted: false, after_hours: false, first_reply_seconds: null,
+      source: 'referral', created_at: createdAt, job_outcome: 'won', job_value_cents: 100000,
+    }], [{ lead_id: id, amount_cents: 25000, paid_at: paidAt }], new Date());
+    expect(sql).toEqual(ts);
+    expect(sql[0]).toMatchObject({ collected_cents: 25000, collected_in_window_cents: 25000, partner_collected_in_window_cents: 25000 });
   });
 
   it('a job paid across the 24-month line counts only the payments inside it', async () => {
@@ -305,12 +322,66 @@ describe('self-sourced partner exception', () => {
   });
 
   it('pins the single refund setting to off in the unapplied migration', () => {
-    expect(PARTNER_RULE_MIGRATION).toContain(
-      `partner_attribution_window_months = ${PARTNER_WINDOW_MONTHS}`,
+    expect(PARTNER_RULE_MIGRATION.match(/(\d+)::integer\s+as partner_attribution_window_months/)?.[1])
+      .toBe(String(PARTNER_WINDOW_MONTHS));
+    expect(PARTNER_RULE_MIGRATION.match(/(\d+)::integer\s+as partner_refund_clawback_window_months/)?.[1])
+      .toBe(String(PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS));
+    expect(PARTNER_RULE_MIGRATION).toContain('-- The live J&C instrumentation already has this column.');
+    expect(PARTNER_RULE_MIGRATION).toContain('n8n First Responder');
+    expect(PARTNER_RULE_MIGRATION).toContain('workflow writes lead_messages');
+  });
+});
+
+describe('three-month refund clawback fallback', () => {
+  it('caps matching refunds and floors the view at zero, in parity with TypeScript', async () => {
+    const S = await newSession();
+    const firstContact = '2025-01-01T00:00:00.000Z';
+    const specs: { source: Lead['source']; payments: [number, string][]; expected: number }[] = [
+      { source: 'referral' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [-25000, '2025-02-01T00:00:00.000Z']], expected: 75000 },
+      { source: 'google' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [-25000, '2025-05-01T00:00:00.000Z']], expected: 100000 },
+      { source: 'call' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [100000, '2025-06-01T00:00:00.000Z'], [-150000, '2025-06-02T00:00:00.000Z']], expected: 100000 },
+      { source: 'web_form' as const, payments: [[100000, '2025-01-10T00:00:00.000Z'], [-150000, '2025-01-20T00:00:00.000Z']], expected: 0 },
+    ];
+    const leads: Lead[] = [];
+    const payments: LeadPayment[] = [];
+    const threeMonthMigration = PARTNER_RULE_MIGRATION.replace(
+      /0::integer\s+as partner_refund_clawback_window_months/,
+      '3::integer as partner_refund_clawback_window_months',
     );
-    expect(PARTNER_RULE_MIGRATION).toContain(
-      `partner_refund_clawback_window_months = ${PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS}`,
-    );
+    await db.exec(threeMonthMigration);
+    try {
+      for (const spec of specs) {
+        const id = await insertLead(S, { source: spec.source, created_at: firstContact });
+        await markWon(id, S, 300000);
+        for (const [amount, paidAt] of spec.payments) {
+          if (amount < 0 && spec.source === 'web_form') {
+            await db.exec('alter table client_lead_payments disable trigger trg_client_lead_payments_before_insert');
+            try { await addPayment(id, S, amount, paidAt); }
+            finally { await db.exec('alter table client_lead_payments enable trigger trg_client_lead_payments_before_insert'); }
+          } else {
+            await addPayment(id, S, amount, paidAt);
+          }
+          payments.push({ lead_id: id, amount_cents: amount, paid_at: paidAt });
+        }
+        leads.push({
+          id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
+          status: 'open', quote_cents: null, contacted: false, after_hours: false, first_reply_seconds: null,
+          source: spec.source, created_at: firstContact, job_outcome: 'won', job_value_cents: 300000,
+        });
+      }
+      const sql = await viewRows(S);
+      const ts = revenueRowsFromLeads(leads, payments, new Date(), [], 3)
+        .sort((a, b) => a.source.localeCompare(b.source));
+      expect(sql).toEqual(ts);
+      for (const spec of specs) {
+        expect(sql.find(row => row.source === spec.source)).toMatchObject({
+          collected_in_window_cents: spec.payments.reduce((sum, [amount]) => sum + amount, 0),
+          partner_collected_in_window_cents: spec.expected,
+        });
+      }
+    } finally {
+      await db.exec(PARTNER_RULE_MIGRATION);
+    }
   });
 });
 

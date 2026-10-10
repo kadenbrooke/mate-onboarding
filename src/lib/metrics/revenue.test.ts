@@ -104,6 +104,27 @@ describe('partner-channel config', () => {
     expect(partnerBasisCents([payment, oldRefund], payment.paid_at, 3)).toBe(400000);
     expect(PARTNER_WINDOW_MONTHS).toBe(24);
   });
+
+  it('caps a three-month refund credit to the eligible payments it matches', () => {
+    const firstContact = '2025-01-01T00:00:00.000Z';
+    expect(partnerBasisCents([
+      { lead_id: 'within', amount_cents: 100000, paid_at: '2025-01-10T00:00:00.000Z' },
+      { lead_id: 'within', amount_cents: -25000, paid_at: '2025-02-01T00:00:00.000Z' },
+    ], firstContact, 3)).toBe(75000);
+    expect(partnerBasisCents([
+      { lead_id: 'late', amount_cents: 100000, paid_at: '2025-01-10T00:00:00.000Z' },
+      { lead_id: 'late', amount_cents: -25000, paid_at: '2025-05-01T00:00:00.000Z' },
+    ], firstContact, 3)).toBe(100000);
+    expect(partnerBasisCents([
+      { lead_id: 'partial', amount_cents: 100000, paid_at: '2025-01-10T00:00:00.000Z' },
+      { lead_id: 'partial', amount_cents: 100000, paid_at: '2025-06-01T00:00:00.000Z' },
+      { lead_id: 'partial', amount_cents: -150000, paid_at: '2025-06-02T00:00:00.000Z' },
+    ], firstContact, 3)).toBe(100000);
+    expect(partnerBasisCents([
+      { lead_id: 'floor', amount_cents: 100000, paid_at: '2025-01-10T00:00:00.000Z' },
+      { lead_id: 'floor', amount_cents: -150000, paid_at: '2025-01-20T00:00:00.000Z' },
+    ], firstContact, 3)).toBe(0);
+  });
 });
 
 function payFor(l: Lead, amount_cents: number): LeadPayment {

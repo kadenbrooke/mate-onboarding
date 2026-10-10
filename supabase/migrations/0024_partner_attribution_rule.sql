@@ -15,9 +15,11 @@
 --
 -- This migration is intentionally UNAPPLIED in the founder-gated workflow.
 
--- The live J&C instrumentation already has this column. Adding it here keeps a
--- database built from Mate's own history able to run the same view. This does
--- not touch jc_sms_conversations or any lead-handling table.
+-- The live J&C instrumentation already has this column. The n8n First Responder
+-- workflow writes lead_messages; adding the tag here keeps a database built
+-- from Mate's own history able to run the same view. This does not touch
+-- jc_sms_conversations or any lead-handling table, and adds no constraint,
+-- default, or index to the tag.
 alter table public.lead_messages add column if not exists source text;
 
 create or replace view public.client_lead_revenue_by_source
@@ -74,7 +76,7 @@ left join lateral (
     sum(pay.amount_cents) as collected,
     sum(pay.amount_cents) filter (
       where first_contact.first_contact_at is not null
-        and pay.paid_at >= first_contact.first_contact_at
+        and (l.source <> 'self_sourced' or pay.paid_at >= first_contact.first_contact_at)
         and pay.paid_at < first_contact.first_contact_at
           + agreement.partner_attribution_window_months * interval '1 month'
     ) as in_window,
@@ -83,26 +85,29 @@ left join lateral (
     greatest(coalesce(sum(case
       when pay.amount_cents > 0
        and first_contact.first_contact_at is not null
-       and pay.paid_at >= first_contact.first_contact_at
+       and (l.source <> 'self_sourced' or pay.paid_at >= first_contact.first_contact_at)
        and pay.paid_at < first_contact.first_contact_at
          + agreement.partner_attribution_window_months * interval '1 month'
         then pay.amount_cents
       when pay.amount_cents < 0
        and agreement.partner_refund_clawback_window_months > 0
-       and exists (
-         select 1
-         from public.client_lead_payments original
-         where original.lead_id = pay.lead_id
-           and original.session_id = pay.session_id
-           and original.amount_cents > 0
-           and first_contact.first_contact_at is not null
-           and original.paid_at >= first_contact.first_contact_at
-           and original.paid_at < first_contact.first_contact_at
-             + agreement.partner_attribution_window_months * interval '1 month'
-           and original.paid_at <= pay.paid_at
-           and pay.paid_at < original.paid_at
-             + agreement.partner_refund_clawback_window_months * interval '1 month'
-       ) then pay.amount_cents
+       and first_contact.first_contact_at is not null
+        then -least(
+          abs(pay.amount_cents),
+          coalesce((
+            select sum(original.amount_cents)
+            from public.client_lead_payments original
+            where original.lead_id = pay.lead_id
+              and original.session_id = pay.session_id
+              and original.amount_cents > 0
+              and (l.source <> 'self_sourced' or original.paid_at >= first_contact.first_contact_at)
+              and original.paid_at < first_contact.first_contact_at
+                + agreement.partner_attribution_window_months * interval '1 month'
+              and original.paid_at <= pay.paid_at
+              and pay.paid_at < original.paid_at
+                + agreement.partner_refund_clawback_window_months * interval '1 month'
+          ), 0)
+        )
       else 0
     end), 0), 0) as partner_basis
   from public.client_lead_payments pay
