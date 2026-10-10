@@ -129,7 +129,7 @@ export async function POST(request: Request) {
     const { data: lead } = await supabase.from('client_leads')
       .select('id, session_id, phone, name').eq('id', pc.lead_id).single();
     const { data: config, error: configError } = await supabase.from('onboarding_sessions')
-      .select('onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
+      .select('operator_phone, onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
     if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
     const { choice, notes } = classifyReply(body.text);
 
@@ -156,7 +156,42 @@ export async function POST(request: Request) {
       const sendForSession = async (to: string, text: string) => (
         config?.is_practice === true ? { ok: true, practice: true } : sendSms(to, text)
       );
-      await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
+      const actionResult = await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
+      if (!actionResult.ok) {
+        const blockedMessage = actionResult.reason === 'opted_out'
+          ? 'Not sent: this lead asked not to be contacted'
+          : actionResult.reason === 'invalid_phone'
+            ? 'Not sent: lead has no valid phone number'
+            : "Not sent: couldn't check opt-out status, reply again to retry";
+        let warning: string | undefined;
+        const setWarning = (message: string) => {
+          warning = `Operator notice could not be sent: ${message}`;
+          console.error('[postcall] blocked operator notice failed:', message, { postcallId: pc.id });
+        };
+        const resolvedAt = new Date().toISOString();
+        if (actionResult.reason !== 'opt_out_unavailable') {
+          await supabase.from('lead_postcall').update({
+            status: 'resolved', choice, resolved_at: resolvedAt, notes: blockedMessage,
+          }).eq('id', pc.id);
+        }
+        if (config?.is_practice === true) {
+          const operatorLog = await logMessage(supabase, {
+            leadId: lead.id, sessionId: lead.session_id, direction: 'outbound', author: 'system', channel: 'system',
+            body: fakePracticeMessage(blockedMessage, 'office'),
+          });
+          if (operatorLog.error) setWarning(operatorLog.error);
+        } else if (config?.operator_phone) {
+          try {
+            const operatorSend = await sendSms(config.operator_phone, blockedMessage);
+            if (!operatorSend.ok) setWarning(operatorSend.error ?? 'provider rejected the message');
+          } catch (error) {
+            setWarning(error instanceof Error ? error.message : 'provider request failed');
+          }
+        } else {
+          setWarning('no operator phone configured');
+        }
+        return NextResponse.json({ ok: true, blocked: true, reason: actionResult.reason, ...(warning ? { warning } : {}) });
+      }
       const resolvedAt = new Date().toISOString();
       await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
       await emitClientEvent(supabase, postcallResolvedEvent({

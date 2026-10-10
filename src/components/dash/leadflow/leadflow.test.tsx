@@ -131,6 +131,23 @@ describe('HotLeads (with merged quality gauge)', () => {
     expect(screen.getByText(/lead scoring is not running yet/i)).toBeInTheDocument();
     expect(screen.getByText(/once leads come in/i)).toBeInTheDocument();
   });
+
+  it('leaves an opted-out lead out of Hot Leads and brings it back when the live latch clears', () => {
+    const blocked = lead({ id: 'blocked', name: 'Blocked', phone: '+18015550100', score: 99 });
+    const live = lead({ id: 'live', name: 'Live', phone: '+18015550101', score: 80 });
+    const { rerender } = render(<HotLeads leads={[blocked, live]} sessionId="s1" optedOutPhones={['+18015550100']} />);
+    expect(screen.queryByText('Blocked')).toBeNull();
+    expect(screen.getByText('Live')).toBeInTheDocument();
+    rerender(<HotLeads leads={[blocked, live]} sessionId="s1" optedOutPhones={[]} />);
+    expect(screen.getByText('Blocked')).toBeInTheDocument();
+  });
+
+  it('says the call list is hidden when opt-out status cannot be checked', () => {
+    render(<HotLeads leads={[lead({ score: 92 })]} sessionId="s1" optedOutReadAvailable={false} />);
+    expect(screen.getByText("Opt-out status couldn't be checked, so the call list is hidden. Refresh to retry.")).toBeInTheDocument();
+    expect(screen.queryByText('Mike R.')).toBeNull();
+    expect(screen.queryByText(/every lead is serviced/i)).toBeNull();
+  });
 });
 
 describe('SourceDonut', () => {

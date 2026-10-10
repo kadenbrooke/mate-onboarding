@@ -14,6 +14,7 @@ import { nextSendWindowStart, DEFAULT_OUTREACH_HOURS } from '@/lib/agent/quietHo
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { describeLead } from '@/lib/metrics/eventSources';
 import { fakePracticeMessage } from '@/lib/portal/practice';
+import { loadOptedOutPhones, normalizeJcConsentPhone } from '@/lib/leads/doNotContact';
 
 // POST /api/dash/<sessionId>/snapshot/<id>/confirm
 //
@@ -35,6 +36,9 @@ import { fakePracticeMessage } from '@/lib/portal/practice';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
+
+const OPT_OUT_BLOCK_MESSAGE = "This lead asked not to be contacted, or opt-out status couldn't be checked; sending is blocked. Refresh to retry.";
+const INVALID_JC_PHONE_MESSAGE = 'This lead has no valid J&C phone number; sending is blocked.';
 
 type Ctx = { params: Promise<{ sessionId: string; id: string }> };
 
@@ -163,6 +167,12 @@ export async function POST(req: NextRequest, { params }: Ctx) {
   const now = new Date();
   const defaultSource: LeadEntrySource = snapshot.storage_path === 'typed' ? 'typed' : 'lead_snapshot';
   const plan = planConfirm(rows, known, now, blocked, defaultSource);
+  // Read the live latch once for the whole text batch. A read failure blocks
+  // every candidate, and no row can accidentally race a later page read.
+  const textSends = plan.filter(v => v.kind === 'send' && v.mode === 'text') as Array<Extract<RowVerdict, { kind: 'send' }>>;
+  const optedOutRead = textSends.length > 0
+    ? await loadOptedOutPhones(service, sessionId, textSends.map(v => ({ id: v.leadKey, phone: v.e164 })))
+    : { available: true, phones: new Set<string>() };
 
   // ---- who is attesting --------------------------------------------------------
 
@@ -203,6 +213,15 @@ export async function POST(req: NextRequest, { params }: Ctx) {
     }
     if (v.mode === 'save') {
       outcomes.push(await saveOne(service, v, sessionId, now));
+      continue;
+    }
+    const normalized = normalizeJcConsentPhone(v.e164);
+    if (!isPractice && !normalized) {
+      outcomes.push({ index: v.index, outcome: 'failed', message: INVALID_JC_PHONE_MESSAGE });
+      continue;
+    }
+    if (!optedOutRead.available || (normalized && optedOutRead.phones.has(normalized))) {
+      outcomes.push({ index: v.index, outcome: 'failed', message: OPT_OUT_BLOCK_MESSAGE });
       continue;
     }
     const outcome = isPractice

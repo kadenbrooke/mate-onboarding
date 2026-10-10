@@ -15,6 +15,7 @@ import { fetchLiveScores, mergeLiveScores, type LiveScoreQuery } from '@/lib/lea
 import { fetchMetaSpend30dCents, fetchRevenueBySource, summarizeReturn, type AdSpendQuery, type RevenueQuery } from '@/lib/metrics/revenue';
 import { agentDisplayNameForSession } from '@/lib/agent/displayName';
 import { hidePartnerBasis } from '@/lib/metrics/revenueVisibility';
+import { loadOptedOutPhones } from '@/lib/leads/doNotContact';
 
 export default async function DashPage({ params }: { params: Promise<{ sessionId: string }> }) {
   const { sessionId: rawSessionId } = await params;
@@ -158,6 +159,7 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
   // is and how recently they texted back RIGHT NOW. Same cast-through-unknown
   // reason as fetchMoneyTotals.
   const loadedLeads = (leadsResult.data ?? []) as Lead[];
+  const optedOutRead = await loadOptedOutPhones(supabase, sessionId, loadedLeads);
   // Return by lead source (migration 0021): per-source sums over the WHOLE
   // book of business from a PII-free view, not the 500 leads above, because
   // the partner-share basis must not quietly drop older jobs. null until 0021
@@ -258,6 +260,8 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
         monthlyRetainerCents,
       }}
       leads={mergeLiveScores(loadedLeads, liveScores)}
+      optedOutPhones={[...optedOutRead.phones]}
+      optedOutReadAvailable={optedOutRead.available}
       returns={returns}
       data={data}
       locks={locks}

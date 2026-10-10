@@ -38,6 +38,7 @@ export interface Query<T> extends PromiseLike<Result<T>> {
   in(col: string, vs: string[]): Query<T>;
   gt(col: string, v: string): Query<T>;
   is(col: string, v: null): Query<T>;
+  like(col: string, pattern: string): Query<T>;
   order(col: string, o: { ascending: boolean }): Query<T>;
   range(from: number, to: number): Query<T>;
 }

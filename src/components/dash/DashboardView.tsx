@@ -65,7 +65,7 @@ function LinkCard({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function DashboardView({ session, leads, returns = null, data, locks, glance }: {
+export function DashboardView({ session, leads, optedOutPhones = [], optedOutReadAvailable = true, returns = null, data, locks, glance }: {
   session: {
     id: string; mate_name?: string | null;
     agent_name?: string;
@@ -77,7 +77,7 @@ export function DashboardView({ session, leads, returns = null, data, locks, gla
      *  suppresses the ROI multiple rather than inventing one. */
     monthlyRetainerCents?: number | null;
   };
-  leads: Lead[]; data: DashData;
+  leads: Lead[]; optedOutPhones?: string[]; optedOutReadAvailable?: boolean; data: DashData;
   /** Return by lead source + partner-share basis (page.tsx, migration 0021).
    *  null until job outcomes are set up, which leaves the card out. */
   returns?: ReturnSummary | ClientReturnSummary | null;
@@ -171,7 +171,7 @@ export function DashboardView({ session, leads, returns = null, data, locks, gla
     <div style={{ display: 'grid', gap: 10 }}>
       <TrendCard leads={leads} />
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <HotLeads leads={leads} sessionId={session.id} />
+        <HotLeads leads={leads} sessionId={session.id} optedOutPhones={optedOutPhones} optedOutReadAvailable={optedOutReadAvailable} />
         <SourceDonut leads={leads} />
         <ServiceShareBar leads={leads} />
         <AreaBars leads={leads} />
@@ -245,7 +245,7 @@ export function DashboardView({ session, leads, returns = null, data, locks, gla
   // a full chat view, rendered directly below (never reorderable).
   const mobileStacks: Record<Exclude<MobileView, 'assistant'>, StackItem[]> = {
     home: [
-      { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} /> },
+      { id: 'm-hotleads', node: <HotLeads leads={leads} sessionId={session.id} optedOutPhones={optedOutPhones} optedOutReadAvailable={optedOutReadAvailable} /> },
       { id: 'm-calendar', node: mobileZone('zone-calendar', 'Calendar', calendarZone) },
     ],
     // Order (2026-07 design pass): Leads, Open full leads table, Source,

@@ -19,6 +19,9 @@ import { resolveSessionId } from '@/lib/portal/demo';
 import { BackLink } from '@/components/dash/chrome/BackLink';
 import { MobileNav } from '@/components/dash/MobileNav';
 import { agentDisplayNameForSession } from '@/lib/agent/displayName';
+import { intakeTenantFor } from '@/lib/leads/intakeTenants';
+import { practiceStatus } from '@/lib/portal/practice';
+import { readLeadOptOutState, type DoNotContactState } from '@/lib/leads/doNotContact';
 
 export default async function PipelinePage({ params, searchParams }: {
   params: Promise<{ sessionId: string }>;
@@ -34,6 +37,8 @@ export default async function PipelinePage({ params, searchParams }: {
   // tile on the dashboard lands here with newest-captured first.
   const initialSort = parseSortParam(sort, dir);
   const supabase = createServiceClient();
+  const practice = await practiceStatus(supabase, sessionId);
+  const doNotContactEnabled = access !== 'demo' && (intakeTenantFor(sessionId) !== null || (practice.ok && practice.isPractice));
   const { data: session } = await supabase.from('onboarding_sessions').select('id, contact_id').eq('id', sessionId).single();
   if (!session) notFound();
   // Lead Snapshot (DEL-38) is capability gated per client; the "Add lead"
@@ -59,7 +64,7 @@ export default async function PipelinePage({ params, searchParams }: {
   );
 
   let thread: {
-    messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null;
+    messages: LeadMessage[]; handler: 'agent' | 'human'; leadId: string; leadName: string | null; doNotContact: DoNotContactState | null;
   } | null = null;
   if (spotlight) {
     // phone + source come along so a nameless lead's thread header can fall back
@@ -69,11 +74,15 @@ export default async function PipelinePage({ params, searchParams }: {
     if (lead) {
       const { data: messages } = await supabase.from('lead_messages')
         .select('*').eq('lead_id', spotlight).eq('session_id', sessionId).order('created_at', { ascending: true }).limit(200);
+      const doNotContact = doNotContactEnabled
+        ? await readLeadOptOutState(supabase, sessionId, lead.phone, { leadId: lead.id, isPractice: practice.ok && practice.isPractice })
+        : null;
       thread = {
         messages: (messages ?? []) as LeadMessage[],
         handler: (lead.handler ?? 'agent') as 'agent' | 'human',
         leadId: lead.id,
         leadName: leadLabel(lead),
+        doNotContact,
       };
     }
   }
@@ -128,6 +137,8 @@ export default async function PipelinePage({ params, searchParams }: {
             messages={thread.messages}
             leadName={thread.leadName}
             agentName={agentName}
+            doNotContactEnabled={doNotContactEnabled}
+            doNotContact={thread.doNotContact}
           />
           {outcome && (
             <div style={{ marginTop: 8 }}>

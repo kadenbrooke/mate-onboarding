@@ -41,6 +41,29 @@ describe('LeadThread', () => {
     fireEvent.click(screen.getByRole('button', { name: /send/i }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/leads/l1/reply', expect.objectContaining({ method: 'POST' })));
   });
+  it('hides the reply box for a lead already on the opt-out latch', () => {
+    render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} doNotContactEnabled doNotContact={{ available: true, optedOut: true, source: 'phone_call', recordedBy: 'jeff@example.com', recordedAt: '2026-10-09T12:00:00Z' }} />);
+    expect(screen.queryByPlaceholderText(/type a reply/i)).toBeNull();
+    expect(screen.getByText('Do not contact')).toBeInTheDocument();
+  });
+  it('keeps the action and reply box when the reloaded latch is clear', () => {
+    render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} doNotContactEnabled doNotContact={{ available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null }} />);
+    expect(screen.getByRole('button', { name: 'Do not contact' })).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/type a reply/i)).toBeInTheDocument();
+  });
+  it('shows a distinct blocked state when the J&C lead has no valid phone', () => {
+    render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} doNotContactEnabled doNotContact={{ available: false, optedOut: true, source: 'unknown', recordedBy: null, recordedAt: null, unavailableReason: 'invalid_phone' }} />);
+    expect(screen.getByRole('alert')).toHaveTextContent(/no valid phone number/i);
+    expect(screen.queryByText(/couldn't be checked/i)).toBeNull();
+    expect(screen.queryByPlaceholderText(/type a reply/i)).toBeNull();
+  });
+  it('resets the do-not-contact receipt when router refresh shows the latch cleared', () => {
+    const view = render(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} doNotContactEnabled doNotContact={{ available: true, optedOut: true, source: 'phone_call', recordedBy: 'jeff@example.com', recordedAt: '2026-10-09T12:00:00Z' }} />);
+    expect(screen.getByTestId('do-not-contact-state')).toBeInTheDocument();
+    view.rerender(<LeadThread leadId="l1" sessionId="s1" handler="agent" messages={msgs} doNotContactEnabled doNotContact={{ available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null }} />);
+    expect(screen.queryByTestId('do-not-contact-state')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Do not contact' })).toBeInTheDocument();
+  });
   it('PATCHes the handler route when handing back', async () => {
     render(<LeadThread leadId="l1" sessionId="s1" handler="human" messages={msgs} />);
     fireEvent.click(screen.getByRole('button', { name: /hand back to mate/i }));

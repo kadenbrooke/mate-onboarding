@@ -5,6 +5,9 @@ import { X } from '@phosphor-icons/react';
 import type { LeadMessage } from '@/lib/agent/messages';
 import { BG_CARD, BORDER_SOFT, FONT_BODY, TEXT_DARK, TEXT_MUTED } from '@/lib/theme';
 import { DEFAULT_AGENT_DISPLAY_NAME } from '@/lib/agent/displayName';
+import { DoNotContactButton } from './DoNotContactButton';
+import type { DoNotContactState } from '@/lib/leads/doNotContact';
+import { INVALID_PHONE_NOTICE, OPT_OUT_UNAVAILABLE_NOTICE } from '@/lib/leads/doNotContact';
 
 // The lead's conversation, opened by clicking a row in the pipeline table
 // (which sets ?spotlight=<leadId>).
@@ -23,14 +26,15 @@ function authorLabel(author: LeadMessage['author'], agentName: string): string {
   return 'System';
 }
 
-export function LeadThread({ leadId, sessionId, handler, messages, leadName, agentName }: {
+export function LeadThread({ leadId, sessionId, handler, messages, leadName, agentName, doNotContactEnabled = false, doNotContact = null }: {
   leadId: string; sessionId: string; handler: 'agent' | 'human'; messages: LeadMessage[];
-  leadName?: string | null; agentName?: string;
+  leadName?: string | null; agentName?: string; doNotContactEnabled?: boolean; doNotContact?: DoNotContactState | null;
 }) {
   const router = useRouter();
   const [text, setText] = useState('');
   const [driver, setDriver] = useState(handler);
   const [busy, setBusy] = useState(false);
+  const [contactState, setContactState] = useState<DoNotContactState | null>(doNotContact);
   const rootRef = useRef<HTMLDivElement>(null);
   const who = leadName?.trim() || 'this lead';
   const displayAgentName = agentName?.trim() || DEFAULT_AGENT_DISPLAY_NAME;
@@ -46,7 +50,8 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName, age
     // eslint-disable-next-line react-hooks/set-state-in-effect -- resets per-lead draft and driver when the lead changes
     setDriver(handler);
     setText('');
-  }, [leadId, handler]);
+    setContactState(doNotContact);
+  }, [leadId, handler, doNotContact]);
 
   function close() {
     router.push(`/dash/${sessionId}/pipeline`);
@@ -102,6 +107,20 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName, age
           ? <button onClick={() => toggle('human')} disabled={busy}>Take over</button>
           : <button onClick={() => toggle('agent')} disabled={busy}>Hand back to {displayAgentName}</button>}
       </div>
+      {doNotContactEnabled && <div style={{ marginBottom: 8 }}>
+        {contactState?.available === false
+          ? <div role="alert" style={{ color: TEXT_MUTED, fontSize: 12, fontFamily: FONT_BODY }}>
+            {contactState.unavailableReason === 'invalid_phone' ? INVALID_PHONE_NOTICE : OPT_OUT_UNAVAILABLE_NOTICE}
+          </div>
+          : <DoNotContactButton
+            key={`${leadId}:${contactState?.optedOut ? 'opted-out' : 'contactable'}`}
+            leadId={leadId} sessionId={sessionId} initial={contactState?.optedOut ? contactState : null}
+            onRecorded={receipt => setContactState({
+              available: true, optedOut: true, source: receipt.source ?? 'phone_call',
+              recordedBy: receipt.recordedBy, recordedAt: receipt.recordedAt, warning: receipt.warning,
+            })}
+          />}
+      </div>}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 320, overflowY: 'auto' }}>
         {messages.length === 0 && (
           <div style={{ color: TEXT_MUTED, fontSize: 13, fontFamily: FONT_BODY, padding: '8px 0' }}>
@@ -115,11 +134,11 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName, age
           </div>
         ))}
       </div>
-      <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+      {(!contactState || (contactState.available && !contactState.optedOut)) && <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
         <input value={text} onChange={e => setText(e.target.value)} placeholder="Type a reply"
           onKeyDown={e => { if (e.key === 'Enter') send(); }} style={{ flex: 1 }} />
         <button onClick={send} disabled={busy}>Send</button>
-      </div>
+      </div>}
     </div>
   );
 }

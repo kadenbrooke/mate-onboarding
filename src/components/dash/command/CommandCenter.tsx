@@ -5,6 +5,7 @@ import {
   Phone, Fire, ChatCircleDots, UserSwitch, Sparkle, CurrencyDollar, HourglassMedium, CheckCircle, CaretRight,
 } from '@phosphor-icons/react/dist/ssr';
 import type { CommandModel, CallRow, WaitRow, StuckRow, WaitKind, Books } from '@/lib/command/commandCenter';
+import { OPT_OUT_UNAVAILABLE_NOTICE } from '@/lib/leads/doNotContact';
 import { SOURCE_LABELS } from '@/lib/metrics/colors';
 import { moneyShort } from '@/lib/metrics/format';
 import {
@@ -311,25 +312,29 @@ export function CommandCenter({ model, today, demo }: { model: CommandModel; tod
       <div className="cc-grid">
         <Section area="call" title="Call now" icon={<Fire size={18} weight="fill" />} incomplete={model.incomplete.call}>
           {call.length === 0
-            ? <Empty>{model.scored ? 'Nobody to call' : 'Scoring not on yet'}</Empty>
+            ? <Empty>{model.optOutUnavailable ? OPT_OUT_UNAVAILABLE_NOTICE : model.scored ? 'Nobody to call' : 'Scoring not on yet'}</Empty>
             : <ul style={listStyle}>{call.map(r => <CallRowView key={r.id} r={r} demo={demo} />)}</ul>}
         </Section>
 
         <Section area="wait" title="Waiting on you" icon={<ChatCircleDots size={18} weight="fill" />} count={waitTotal} incomplete={model.incomplete.waiting}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 6 }}>
-            {WAIT_KINDS.map(k => (
-              <div key={k} data-testid={`wait-count-${k}`} style={{ background: STONE, borderRadius: 14, padding: '8px 10px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: WAIT_META[k].tint }}>
-                  <span aria-hidden style={{ display: 'inline-flex' }}>{WAIT_META[k].icon}</span>
-                  <span style={{ ...NUM_DISPLAY, fontSize: 26, color: INK }}>{waiting.counts[k]}</span>
-                </div>
-                <div style={{ fontSize: 12, fontWeight: 600, color: SLATE, marginTop: 2, whiteSpace: 'nowrap' }}>{WAIT_META[k].label}</div>
+          {model.optOutUnavailable
+            ? <Empty>{OPT_OUT_UNAVAILABLE_NOTICE}</Empty>
+            : <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 8, marginBottom: 6 }}>
+                {WAIT_KINDS.map(k => (
+                  <div key={k} data-testid={`wait-count-${k}`} style={{ background: STONE, borderRadius: 14, padding: '8px 10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: WAIT_META[k].tint }}>
+                      <span aria-hidden style={{ display: 'inline-flex' }}>{WAIT_META[k].icon}</span>
+                      <span style={{ ...NUM_DISPLAY, fontSize: 26, color: INK }}>{waiting.counts[k]}</span>
+                    </div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: SLATE, marginTop: 2, whiteSpace: 'nowrap' }}>{WAIT_META[k].label}</div>
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-          {waiting.rows.length === 0
-            ? <Empty ok>All caught up</Empty>
-            : <ul style={listStyle}>{waiting.rows.map(r => <WaitRowView key={r.id} r={r} demo={demo} />)}</ul>}
+              {waiting.rows.length === 0
+                ? <Empty ok>All caught up</Empty>
+                : <ul style={listStyle}>{waiting.rows.map(r => <WaitRowView key={r.id} r={r} demo={demo} />)}</ul>}
+            </>}
           <More n={waiting.more} href={model.pipelineHref} />
         </Section>
 
