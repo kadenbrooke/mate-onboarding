@@ -3,7 +3,7 @@ import { createControlServiceClient, createServiceClient } from '@/lib/supabase/
 import { readTenancy, routeSession } from '@/lib/supabase/tenancy';
 import { verifyCalcomSignature } from '@/lib/calcom/verify';
 import { extractContact, buildBookingPatch, type CalcomWebhook } from '@/lib/calcom/booking';
-import { attributeBooking, readCalcomOwners, type CalcomOwners } from '@/lib/calcom/attribution';
+import { attributeBooking, readCalcomOwners } from '@/lib/calcom/attribution';
 import { forwardBooking, holdBooking } from '@/lib/calcom/held';
 
 export const runtime = 'nodejs';
@@ -21,8 +21,13 @@ export const runtime = 'nodejs';
 //                              a failed forward or an unattributable booking is
 //                              held and the founder is told (lib/calcom/held).
 //                              Bookings of tenants still served here run as before.
-//   dedicated               -> a booking attributed to a tenant this deployment
-//                              does not serve is refused, never written.
+//   dedicated               -> fail closed: only a booking attributed to a
+//                              session this deployment serves is written. Missing
+//                              or bad owner config, no match, or another tenant's
+//                              booking is held + founder signal, never written.
+// A held booking answers 2xx only once both the hold and the founder alert have
+// landed; otherwise non-2xx, so cal.com retries and the idempotent hold retries
+// the alert.
 export async function POST(request: Request) {
   const raw = await request.text();
   const signature = request.headers.get('x-cal-signature-256');
@@ -48,16 +53,9 @@ export async function POST(request: Request) {
     const routed = await routeForMovedTenants(raw, signature as string, hook, tenancy.moved);
     if (routed) return routed;
   } else if (tenancy.mode === 'dedicated') {
-    let owners: CalcomOwners | null = null;
-    try {
-      owners = readCalcomOwners();
-    } catch {
-      // Bad owner config: this deployment's own table is the only one it can
-      // touch, so carry on rather than lose the booking.
-    }
-    const owner = owners ? attributeBooking(payload, owners) : null;
-    if (owner && !routeSession(owner, tenancy).served) {
-      return NextResponse.json({ error: 'booking belongs to another deployment' }, { status: 404 });
+    const { owner, reason } = attribute(hook);
+    if (!owner || !routeSession(owner, tenancy).served) {
+      return holdAndRespond(raw, hook, owner ? 'booking belongs to a tenant this deployment does not serve' : reason, owner);
     }
   }
 
@@ -122,14 +120,9 @@ async function routeForMovedTenants(
   hook: CalcomWebhook,
   moved: ReadonlyMap<string, string>,
 ): Promise<NextResponse | null> {
-  const payload = hook.payload ?? {};
-  let owner: string | null = null;
-  let reason = 'no configured event type or organizer matched';
-  try {
-    owner = attributeBooking(payload, readCalcomOwners());
-  } catch {
-    reason = 'booking owner config is invalid';
-  }
+  const attributed = attribute(hook);
+  const owner = attributed.owner;
+  let reason = attributed.reason;
   if (owner && !moved.has(owner)) return null;
 
   if (owner) {
@@ -138,6 +131,31 @@ async function routeForMovedTenants(
     reason = forwarded.detail;
   }
 
+  return holdAndRespond(raw, hook, reason, owner);
+}
+
+/** Owning session from the signed payload, or null with the reason why not. */
+function attribute(hook: CalcomWebhook): { owner: string | null; reason: string } {
+  try {
+    const owner = attributeBooking(hook.payload ?? {}, readCalcomOwners());
+    return { owner, reason: 'no configured event type or organizer matched' };
+  } catch {
+    return { owner: null, reason: 'booking owner config is invalid' };
+  }
+}
+
+/**
+ * Hold the booking (control project) and answer for it: 202 only when both the
+ * hold and the founder alert have landed. Held but alert not delivered -> 503,
+ * not stored -> 500; cal.com retries either, and the hold is idempotent.
+ */
+async function holdAndRespond(
+  raw: string,
+  hook: CalcomWebhook,
+  reason: string,
+  owner: string | null,
+): Promise<NextResponse> {
+  const payload = hook.payload ?? {};
   const held = await holdBooking(createControlServiceClient(), {
     rawBody: raw,
     triggerEvent: hook.triggerEvent ?? null,
@@ -146,9 +164,10 @@ async function routeForMovedTenants(
     targetSessionId: owner,
   });
   if (!held.held) {
-    // Not stored: answer an error so the sender sees a failure (and may retry);
-    // the founder signal above was still attempted.
     return NextResponse.json({ error: 'booking could not be held', alerted: held.alerted }, { status: 500 });
+  }
+  if (!held.alerted) {
+    return NextResponse.json({ error: 'booking held, founder alert not delivered; retry', held: true }, { status: 503 });
   }
   return NextResponse.json({ ok: true, held: true, duplicate: held.duplicate }, { status: 202 });
 }

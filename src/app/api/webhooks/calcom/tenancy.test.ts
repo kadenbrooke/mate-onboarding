@@ -10,12 +10,14 @@ import { verifyCalcomSignature } from '@/lib/calcom/verify';
 type Row = Record<string, unknown>;
 const h = vi.hoisted(() => ({
   data: null as unknown as FakeDb,
-  held: [] as Row[],
-  texts: [] as Row[],
+  held: [] as Record<string, unknown>[],
+  texts: [] as Record<string, unknown>[],
   holdError: null as null | { code: string; message: string },
+  alertError: null as null | { code: string; message: string },
 }));
 
-// Control project stub: the held-bookings table and the founder outbox.
+// Control project stub: the held-bookings table (unique on dedupe_key, like
+// migration 0025) and the founder outbox.
 function controlClient() {
   return {
     from(table: string) {
@@ -25,16 +27,41 @@ function controlClient() {
             select: () => ({
               single: async () => {
                 if (h.holdError) return { data: null, error: h.holdError };
+                if (h.held.some((r) => r.dedupe_key === row.dedupe_key)) {
+                  return { data: null, error: { code: '23505', message: 'duplicate key' } };
+                }
                 const id = `aaaaaaaa-0000-4000-8000-${String(h.held.length + 1).padStart(12, '0')}`;
-                h.held.push({ id, ...row });
-                return { data: { id }, error: null };
+                const stored: Row = { id, alerted_at: null, ...row };
+                h.held.push(stored);
+                return { data: { id, reason: stored.reason, alerted_at: null }, error: null };
               },
             }),
+          }),
+          select: () => ({
+            eq: (_col: string, key: unknown) => ({
+              maybeSingle: async () => {
+                const r = h.held.find((x) => x.dedupe_key === key);
+                return { data: r ? { id: r.id, reason: r.reason, alerted_at: r.alerted_at } : null, error: null };
+              },
+            }),
+          }),
+          update: (patch: Row) => ({
+            eq: async (_col: string, id: unknown) => {
+              const r = h.held.find((x) => x.id === id);
+              if (r) Object.assign(r, patch);
+              return { error: null };
+            },
           }),
         };
       }
       if (table === 'outbound_texts') {
-        return { insert: async (row: Row) => { h.texts.push(row); return { error: null }; } };
+        return {
+          insert: async (row: Row) => {
+            if (h.alertError) return { error: h.alertError };
+            h.texts.push(row);
+            return { error: null };
+          },
+        };
       }
       throw new Error(`control project has no ${table} in this test`);
     },
@@ -47,6 +74,7 @@ vi.mock('@/lib/supabase/service', () => ({
 }));
 
 import { POST } from './route';
+import { replayRow } from '../../../../../scripts/replay-held-calcom.mjs';
 
 const SECRET = 'whsec_test_placeholder';
 const OWN = '11111111-1111-4111-8111-111111111111';
@@ -74,6 +102,7 @@ beforeEach(() => {
   h.held = [];
   h.texts = [];
   h.holdError = null;
+  h.alertError = null;
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -189,7 +218,9 @@ describe('shared deployment after the client moved', () => {
     expect(await res.json()).toEqual({ ok: true, held: true, duplicate: false });
     expect(h.held).toEqual([expect.objectContaining({
       raw_body: raw, trigger_event: 'BOOKING_CREATED', booking_uid: 'bk_test_1', reason, target_session_id: OWN,
+      dedupe_key: 'uid:BOOKING_CREATED:bk_test_1',
     })]);
+    expect(h.held[0].alerted_at).toEqual(expect.any(String));
     expect(h.texts).toHaveLength(1);
     expect(h.texts[0].source).toBe('mate:calcom-held:aaaaaaaa');
     dataUntouched();
@@ -221,13 +252,48 @@ describe('shared deployment after the client moved', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('a retried booking that is already held is not held or alerted twice', async () => {
-    h.holdError = { code: '23505', message: 'duplicate key' };
-    const { request } = req(booking({ eventTypeId: 7 }));
-    const res = await POST(request);
-    expect(res.status).toBe(202);
-    expect(await res.json()).toEqual({ ok: true, held: true, duplicate: true });
+  it('a retried booking that is already held and alerted is not held or alerted twice', async () => {
+    const body = booking({ eventTypeId: 7 });
+    expect((await POST(req(body).request)).status).toBe(202);
+    const again = await POST(req(body).request);
+    expect(again.status).toBe(202);
+    expect(await again.json()).toEqual({ ok: true, held: true, duplicate: true });
+    expect(h.held).toHaveLength(1);
+    expect(h.texts).toHaveLength(1);
+  });
+
+  it('a booking with no uid is still held once per signed body', async () => {
+    const body = booking({ eventTypeId: 7, uid: undefined });
+    await POST(req(body).request);
+    await POST(req(body).request);
+    expect(h.held).toHaveLength(1);
+    expect(String(h.held[0].dedupe_key)).toMatch(/^body:[0-9a-f]{64}$/);
+    expect(h.texts).toHaveLength(1);
+    // A different booking without a uid is its own row.
+    await POST(req(booking({ eventTypeId: 7, uid: undefined, startTime: '2026-09-01T15:00:00.000Z' })).request);
+    expect(h.held).toHaveLength(2);
+  });
+
+  it('if the alert does not land it answers 503 so cal.com retries, and the retry delivers it once', async () => {
+    h.alertError = { code: '08006', message: 'connection failure' };
+    const body = booking({ eventTypeId: 7 });
+    const first = await POST(req(body).request);
+    expect(first.status).toBe(503);
+    expect(h.held).toHaveLength(1);
+    expect(h.held[0].alerted_at).toBeNull();
     expect(h.texts).toEqual([]);
+
+    h.alertError = null;
+    const retry = await POST(req(body).request);
+    expect(retry.status).toBe(202);
+    expect(await retry.json()).toEqual({ ok: true, held: true, duplicate: true });
+    expect(h.held).toHaveLength(1);
+    expect(h.texts).toHaveLength(1);
+    expect(h.held[0].alerted_at).toEqual(expect.any(String));
+
+    // Later retries do not alert again.
+    expect((await POST(req(body).request)).status).toBe(202);
+    expect(h.texts).toHaveLength(1);
   });
 
   it('if the hold itself fails it answers 500 and still raises the founder signal', async () => {
@@ -256,21 +322,55 @@ describe('shared deployment after the client moved', () => {
   });
 });
 
-describe('dedicated deployment', () => {
+describe('dedicated deployment (fails closed)', () => {
   beforeEach(dedicated);
 
-  it('refuses a booking attributed to a tenant it does not serve, before any read', async () => {
-    const { request } = req(booking({ eventTypeId: 999 }));
-    const res = await POST(request);
-    expect(res.status).toBe(404);
-    dataUntouched();
+  it('writes a booking attributed to a session it serves', async () => {
+    const res = await POST(req(booking()).request);
+    expect(await res.json()).toMatchObject({ matched: true, status: 'quote_booked' });
+    expect(h.held).toEqual([]);
   });
 
-  it('books its own (and unattributed) bookings in its own project', async () => {
-    expect(await (await POST(req(booking()).request)).json()).toMatchObject({ matched: true });
-    h.data.tables.jc_sms_conversations[0].calcom_booking_uid = null;
-    const unattributed = await POST(req(booking({ uid: 'bk_test_2', eventTypeId: 7 })).request);
-    expect(await unattributed.json()).toMatchObject({ matched: true });
+  it.each([
+    ['owner config missing', () => { delete process.env.CALCOM_BOOKING_OWNERS; }, booking(), 'no configured event type or organizer matched'],
+    ['owner config malformed', () => { process.env.CALCOM_BOOKING_OWNERS = 'garbage'; }, booking(), 'booking owner config is invalid'],
+    ['booking unattributed', () => {}, booking({ eventTypeId: 7 }), 'no configured event type or organizer matched'],
+    ['another tenant\'s booking', () => {}, booking({ eventTypeId: 999 }), 'booking belongs to a tenant this deployment does not serve'],
+  ])('holds instead of writing when %s', async (_label, arrange, body, reason) => {
+    arrange();
+    const res = await POST(req(body).request);
+    expect(res.status).toBe(202);
+    dataUntouched();
+    expect(h.held).toEqual([expect.objectContaining({ reason })]);
+    expect(h.texts).toHaveLength(1);
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('replaying held bookings against the real route', () => {
+  // The replay script talks to the webhook; here its "network" is this route.
+  const viaRoute: typeof fetch = async (input, init) =>
+    POST(new Request(input instanceof Request ? input.url : input, { method: init?.method, headers: init?.headers, body: init?.body }));
+
+  it('resolves only when the target applied the booking, not when it held it again', async () => {
+    dedicated();
+    const raw = JSON.stringify(booking());
+
+    delete process.env.CALCOM_BOOKING_OWNERS; // target still cannot attribute it
+    const heldAgain = await replayRow({ raw_body: raw }, { target: NEW_ORIGIN, secret: SECRET, fetchImpl: viaRoute });
+    expect(heldAgain).toEqual({ ok: false, status: 202, outcome: 'held' });
+    dataUntouched();
+
+    process.env.CALCOM_BOOKING_OWNERS = `${OWN}=event:123`;
+    const applied = await replayRow({ raw_body: raw }, { target: NEW_ORIGIN, secret: SECRET, fetchImpl: viaRoute });
+    expect(applied).toEqual({ ok: true, status: 200, outcome: 'applied' });
+    expect(h.data.writes).toHaveLength(1);
+  });
+
+  it('a forwarded answer from the shared deployment also resolves', async () => {
+    moved();
+    const raw = JSON.stringify(booking());
+    const result = await replayRow({ raw_body: raw }, { target: 'https://mate.example.com', secret: SECRET, fetchImpl: viaRoute });
+    expect(result).toEqual({ ok: true, status: 200, outcome: 'forwarded' });
   });
 });

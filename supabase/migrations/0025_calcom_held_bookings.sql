@@ -1,32 +1,36 @@
 -- 0025_calcom_held_bookings.sql
 --
--- Control (main) project only. Holds cal.com bookings that reached the SHARED
--- deployment for a client that has moved to its own deployment, when the
--- booking could not be forwarded or could not be attributed to a tenant
--- (src/lib/calcom/held.ts). Each row keeps the exact signed body so it can be
+-- Control (main) project only. Holds cal.com bookings that a deployment would
+-- not write: on the SHARED deployment, a moved client's booking that could not
+-- be forwarded or attributed; on a DEDICATED deployment, any booking not
+-- attributed to a session it serves (src/lib/calcom/held.ts). Each row keeps the exact signed body so it can be
 -- replayed later (scripts/replay-held-calcom.mjs); nothing here is ever shown
 -- to a client.
 --
 -- Must be applied before MATE_MOVED_SESSIONS is set on the shared deployment.
--- Until then the shared webhook answers 500 for an unroutable booking (and
--- still raises the founder signal), it never drops one silently.
+-- Until then the webhook answers 500 for an unroutable booking (and still
+-- raises the founder signal), it never drops one silently.
 
 create table if not exists public.calcom_held_bookings (
   id uuid primary key default gen_random_uuid(),
+  -- 'uid:<trigger>:<booking uid>', or 'body:<sha256 of the signed body>' when
+  -- the booking has no uid. One row per delivery, however often cal.com retries.
+  dedupe_key text not null,
   received_at timestamptz not null default now(),
   trigger_event text,
   booking_uid text,
   reason text not null,
   target_session_id uuid,
   raw_body text not null,
+  -- Set once the founder alert is in outbound_texts. Null = a retry re-sends it.
+  alerted_at timestamptz,
   resolved_at timestamptz,
   resolution text
 );
 
 -- cal.com may deliver the same booking twice: hold it (and alert) once.
-create unique index if not exists calcom_held_bookings_uid_trigger_uq
-  on public.calcom_held_bookings (booking_uid, trigger_event)
-  where booking_uid is not null;
+create unique index if not exists calcom_held_bookings_dedupe_key_uq
+  on public.calcom_held_bookings (dedupe_key);
 
 create index if not exists calcom_held_bookings_open_idx
   on public.calcom_held_bookings (received_at)

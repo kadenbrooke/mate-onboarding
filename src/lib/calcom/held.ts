@@ -1,8 +1,9 @@
-// Moved-tenant handling for the cal.com webhook on the SHARED deployment.
+// Cross-deployment handling for the cal.com webhook.
 //
 // Once a client has moved to its own deployment (MATE_MOVED_SESSIONS), a
 // booking that still arrives at the old URL must not be written to the old
-// project, and must never vanish:
+// project, and must never vanish. A dedicated deployment likewise holds any
+// booking it cannot attribute to a session it serves. On the shared side:
 //   * attributed to a moved session -> forwarded server-side to that
 //     deployment's webhook, with the exact signed body and only the headers the
 //     receiver needs (content-type, x-cal-signature-256);
@@ -14,6 +15,7 @@
 // Reconcile held rows with scripts/replay-held-calcom.mjs (see
 // docs/deploy/jc-dedicated-deployment.md, "Held cal.com bookings").
 
+import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 export const FORWARD_TIMEOUT_MS = 8000;
@@ -58,10 +60,21 @@ export type HoldInput = {
 };
 
 export type HoldResult =
+  /** Stored. `alerted` = the founder signal is in the outbox (now or on an earlier delivery). */
   | { held: true; id: string; alerted: boolean; duplicate: boolean }
   | { held: false; alerted: boolean; detail: string };
 
 const UNIQUE_VIOLATION = '23505';
+
+/**
+ * Deterministic identity of a delivery, so cal.com retries of the same booking
+ * land on one held row: the booking uid + trigger when there is a uid, else a
+ * hash of the exact signed body.
+ */
+export function holdKey(input: Pick<HoldInput, 'rawBody' | 'triggerEvent' | 'bookingUid'>): string {
+  if (input.bookingUid) return `uid:${input.triggerEvent ?? ''}:${input.bookingUid}`;
+  return `body:${createHash('sha256').update(input.rawBody, 'utf8').digest('hex')}`;
+}
 
 function alertMessage(ref: string, reason: string): string {
   return (
@@ -71,31 +84,69 @@ function alertMessage(ref: string, reason: string): string {
   );
 }
 
-/** Store the booking and raise the founder signal. Idempotent per (booking uid, trigger). */
+type HeldRow = { id: string; reason: string; alerted_at: string | null };
+
+/**
+ * Store the booking, then make sure the founder signal is in the outbox.
+ *
+ * Idempotent per holdKey. The alert's delivery is tracked on the row
+ * (alerted_at): a retry of a booking whose alert did not land tries the alert
+ * again. The caller answers non-2xx unless `held && alerted`, so cal.com keeps
+ * retrying until both are true. The alert text is deterministic per row, so a
+ * repeat that slips through (alert landed, alerted_at write failed) is folded
+ * by the router's dedupe.
+ */
 export async function holdBooking(control: SupabaseClient, input: HoldInput): Promise<HoldResult> {
-  const { data, error } = await control
+  const dedupeKey = holdKey(input);
+  let duplicate = false;
+  let row: HeldRow | null = null;
+
+  const inserted = await control
     .from('calcom_held_bookings')
     .insert({
+      dedupe_key: dedupeKey,
       raw_body: input.rawBody,
       trigger_event: input.triggerEvent,
       booking_uid: input.bookingUid,
       reason: input.reason,
       target_session_id: input.targetSessionId,
     })
-    .select('id')
+    .select('id, reason, alerted_at')
     .single();
 
-  if (error?.code === UNIQUE_VIOLATION) {
-    // cal.com retried a booking we already hold and already alerted on.
-    return { held: true, id: 'existing', alerted: false, duplicate: true };
+  if (inserted.error?.code === UNIQUE_VIOLATION) {
+    duplicate = true;
+    const existing = await control
+      .from('calcom_held_bookings')
+      .select('id, reason, alerted_at')
+      .eq('dedupe_key', dedupeKey)
+      .maybeSingle();
+    row = (existing.data as HeldRow | null) ?? null;
+    if (!row) return { held: false, alerted: false, detail: existing.error?.message ?? 'held row vanished' };
+  } else if (inserted.error || !inserted.data) {
+    // Not stored. Still tell the founder, then let the caller answer an error.
+    const { error: alertError } = await control.from('outbound_texts').insert({
+      message: alertMessage('unsaved', `${input.reason}; could not store it: ${inserted.error?.code ?? 'error'}`),
+      source: 'mate:calcom-held:unsaved',
+    });
+    return { held: false, alerted: !alertError, detail: inserted.error?.message ?? 'no row' };
+  } else {
+    row = inserted.data as HeldRow;
   }
 
-  const ref = data?.id ? String(data.id).slice(0, 8) : 'unsaved';
-  const reason = error ? `${input.reason}; could not store it: ${error.code ?? 'error'}` : input.reason;
+  if (row.alerted_at) return { held: true, id: row.id, alerted: true, duplicate };
+
+  const ref = row.id.slice(0, 8);
   const { error: alertError } = await control
     .from('outbound_texts')
-    .insert({ message: alertMessage(ref, reason), source: `mate:calcom-held:${ref}` });
+    .insert({ message: alertMessage(ref, row.reason), source: `mate:calcom-held:${ref}` });
+  if (alertError) return { held: true, id: row.id, alerted: false, duplicate };
 
-  if (error || !data) return { held: false, alerted: !alertError, detail: error?.message ?? 'no row' };
-  return { held: true, id: String(data.id), alerted: !alertError, duplicate: false };
+  // The alert is in the outbox. If recording that fails, a retry may queue it
+  // again; the identical text is deduped by the router, so that is harmless.
+  await control
+    .from('calcom_held_bookings')
+    .update({ alerted_at: new Date().toISOString() })
+    .eq('id', row.id);
+  return { held: true, id: row.id, alerted: true, duplicate };
 }
