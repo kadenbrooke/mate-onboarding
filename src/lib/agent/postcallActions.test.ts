@@ -7,6 +7,7 @@ function makeDeps(optedOut = false, readError = false, practiceFake = false) {
   const logs: unknown[] = [];
   const practiceQuery = {
     eq: () => practiceQuery,
+    like: () => practiceQuery,
     order: () => ({ range: async () => ({ data: [{ id: 'fake', body: '[Practice fake] Do not contact phone=+18015551234', created_at: '2026-10-09T12:00:00.000Z' }], error: null }) }),
   };
   const supabase = {
@@ -37,13 +38,13 @@ describe('applyPostcallChoice', () => {
   it.each(['1', '2', '3'] as const)('refuses opted-out lead before choice %s sends', async choice => {
     const d = makeDeps(true);
     const result = await applyPostcallChoice(choice, { lead: jcLead, config, supabase: d.supabase as never, sendSms: d.sendSms as never });
-    expect(result).toMatchObject({ status: 409 });
+    expect(result).toMatchObject({ status: 409, reason: 'opted_out' });
     expect(d.sends).toHaveLength(0);
   });
   it('refuses the send when opt-out status cannot be read', async () => {
     const d = makeDeps(false, true);
     const result = await applyPostcallChoice('2', { lead: jcLead, config, supabase: d.supabase as never, sendSms: d.sendSms as never });
-    expect(result).toMatchObject({ status: 409 });
+    expect(result).toMatchObject({ status: 409, reason: 'opt_out_unavailable' });
     expect(d.sends).toHaveLength(0);
   });
   it('refuses an unnormalizable J&C phone before any menu choice sends', async () => {
@@ -51,7 +52,7 @@ describe('applyPostcallChoice', () => {
     const result = await applyPostcallChoice('2', {
       lead: { ...jcLead, phone: '8010550001' }, config, supabase: d.supabase as never, sendSms: d.sendSms as never,
     });
-    expect(result).toMatchObject({ status: 409, error: expect.stringContaining('valid J&C phone number') });
+    expect(result).toMatchObject({ status: 409, reason: 'invalid_phone', error: expect.stringContaining('valid J&C phone number') });
     expect(d.sends).toHaveLength(0);
   });
   it('uses the Mate fake latch for practice without reading the J&C table', async () => {

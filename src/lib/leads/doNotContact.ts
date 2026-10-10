@@ -33,13 +33,15 @@ export type DoNotContactState = {
   source: DoNotContactSource;
   recordedBy: string | null;
   recordedAt: string | null;
+  unavailableReason?: 'read_error' | 'invalid_phone';
   warning?: string;
 };
 
 export const OPT_OUT_UNAVAILABLE_NOTICE = "Opt-out status couldn't be checked, so the call list is hidden. Refresh to retry.";
+export const INVALID_PHONE_NOTICE = 'This lead has no valid phone number, so texting is blocked.';
 
-const unavailableState = (): DoNotContactState => ({
-  available: false, optedOut: true, source: 'unknown', recordedBy: null, recordedAt: null,
+const unavailableState = (reason: 'read_error' | 'invalid_phone' = 'read_error'): DoNotContactState => ({
+  available: false, optedOut: true, source: 'unknown', recordedBy: null, recordedAt: null, unavailableReason: reason,
 });
 
 async function readLiveOptedOutPhones(
@@ -80,6 +82,7 @@ type PracticeRead = {
 async function readPracticeLatch(client: SupabaseClient, sessionId: string): Promise<PracticeRead> {
   const scan = await scanAll<PracticeRow>(() => client.from('lead_messages')
     .select('id, body, created_at').eq('session_id', sessionId).eq('channel', 'call_note').eq('author', 'human')
+    .like('body', '[Practice fake] Do not contact%')
     // lead_messages.id is unique; all pages therefore have a stable boundary.
     .order('id', { ascending: true }) as unknown as Query<PracticeRow>);
   if ('error' in scan || !scan.complete) {
@@ -180,7 +183,7 @@ export async function readLeadOptOutState(
 ): Promise<DoNotContactState> {
   const normalized = normalizeJcConsentPhone(phone);
   const tenant = intakeTenantFor(sessionId);
-  if (!normalized) return tenant ? unavailableState() : { available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null };
+  if (!normalized) return tenant ? unavailableState('invalid_phone') : { available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null };
   let isPractice = options.isPractice;
   if (isPractice === undefined) {
     const practice = await practiceStatus(client, sessionId);

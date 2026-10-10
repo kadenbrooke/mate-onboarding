@@ -7,7 +7,7 @@ import { BG_CARD, BORDER_SOFT, FONT_BODY, TEXT_DARK, TEXT_MUTED } from '@/lib/th
 import { DEFAULT_AGENT_DISPLAY_NAME } from '@/lib/agent/displayName';
 import { DoNotContactButton } from './DoNotContactButton';
 import type { DoNotContactState } from '@/lib/leads/doNotContact';
-import { OPT_OUT_UNAVAILABLE_NOTICE } from '@/lib/leads/doNotContact';
+import { INVALID_PHONE_NOTICE, OPT_OUT_UNAVAILABLE_NOTICE } from '@/lib/leads/doNotContact';
 
 // The lead's conversation, opened by clicking a row in the pipeline table
 // (which sets ?spotlight=<leadId>).
@@ -109,7 +109,9 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName, age
       </div>
       {doNotContactEnabled && <div style={{ marginBottom: 8 }}>
         {contactState?.available === false
-          ? <div role="alert" style={{ color: TEXT_MUTED, fontSize: 12, fontFamily: FONT_BODY }}>{OPT_OUT_UNAVAILABLE_NOTICE}</div>
+          ? <div role="alert" style={{ color: TEXT_MUTED, fontSize: 12, fontFamily: FONT_BODY }}>
+            {contactState.unavailableReason === 'invalid_phone' ? INVALID_PHONE_NOTICE : OPT_OUT_UNAVAILABLE_NOTICE}
+          </div>
           : <DoNotContactButton
             key={`${leadId}:${contactState?.optedOut ? 'opted-out' : 'contactable'}`}
             leadId={leadId} sessionId={sessionId} initial={contactState?.optedOut ? contactState : null}

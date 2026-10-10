@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Lead } from '@/lib/metrics/leads';
-import { filterOptedOutLeads, loadOptedOutPhones, normalizeJcConsentPhone, readLeadOptOutState } from './doNotContact';
+import { filterOptedOutLeads, isOptedOut, loadOptedOutPhones, normalizeJcConsentPhone, readLeadOptOutState } from './doNotContact';
 
 const lead = (id: string, phone: string): Lead => ({
   id, name: id, city: null, service: null, phone, source: 'call', referrer_name: null,
@@ -142,6 +142,7 @@ describe('J&C spoken opt-out phone contract', () => {
     };
     const query = {
       eq: () => query,
+      like: () => query,
       order: (column: string, options: { ascending: boolean }) => ({
         range: async (from: number, to: number) => {
           order = [column, options];
@@ -161,6 +162,14 @@ describe('J&C spoken opt-out phone contract', () => {
   });
 
   it('fails closed for an invalid J&C phone instead of allowing a send', async () => {
-    expect(await import('./doNotContact').then(({ isOptedOut }) => isOptedOut({} as never, '61400e73-0570-4167-88d9-d3a69650b15b', '8010550001', { isPractice: false }))).toBe(true);
+    expect(await isOptedOut({} as never, '61400e73-0570-4167-88d9-d3a69650b15b', '8010550001', { isPractice: false })).toBe(true);
+    expect(await readLeadOptOutState({} as never, '61400e73-0570-4167-88d9-d3a69650b15b', '8010550001', { isPractice: false })).toMatchObject({
+      available: false, optedOut: true, unavailableReason: 'invalid_phone',
+    });
+  });
+
+  it('does not apply the J&C invalid-phone guard to practice or other tenants', async () => {
+    expect(await isOptedOut({} as never, 'practice', '8010550001', { isPractice: true })).toBe(false);
+    expect(await isOptedOut({} as never, 'non-jc-tenant', '8010550001', { isPractice: false })).toBe(false);
   });
 });

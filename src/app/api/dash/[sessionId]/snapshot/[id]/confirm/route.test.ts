@@ -166,6 +166,21 @@ describe('POST /api/dash/[sessionId]/snapshot/[id]/confirm', () => {
     }));
   });
 
+  it('allows a practice snapshot row with a phone the J&C normalizer rejects', async () => {
+    const response = await POST(
+      new Request('http://x/api/dash/practice-session/snapshot/snapshot-1/confirm', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, rows: [{ ...requestBody.rows[0], phone: '8010550001' }] }),
+      }) as never,
+      { params: Promise.resolve({ sessionId: 'practice-session', id: 'snapshot-1' }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.outcomes).toEqual([expect.objectContaining({ outcome: 'sent' })]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('uses the intake webhook for a normal tenant', async () => {
     state.practice = false;
     const response = await POST(

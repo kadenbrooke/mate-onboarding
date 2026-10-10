@@ -27,7 +27,12 @@ export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
     let op: 'select' | FakeWrite['op'] = 'select';
     let values: unknown;
     let columns = '*';
-    const rows = () => (db.tables[table] ?? []).filter(r => filters.every(([k, v]) => r[k] === v));
+    const likes: [string, string][] = [];
+    const rows = () => (db.tables[table] ?? []).filter(r => filters.every(([k, v]) => r[k] === v) && likes.every(([k, pattern]) => {
+      const prefix = pattern.endsWith('%') ? pattern.slice(0, -1) : pattern;
+      const value = r[k];
+      return typeof value === 'string' && (pattern.endsWith('%') ? value.startsWith(prefix) : value === pattern);
+    }));
     const logRead = () => { db.reads.push({ table, columns, filters: [...filters] }); };
     const settle = () => {
       if (op === 'select') { logRead(); return { data: rows(), error: null }; }
@@ -37,6 +42,7 @@ export function createFakeDb(tables: Record<string, Row[]> = {}): FakeDb {
     const b = {
       select: (cols?: string) => { columns = cols ?? '*'; return b; },
       eq: (k: string, v: unknown) => { filters.push([k, v]); return b; },
+      like: (k: string, pattern: string) => { likes.push([k, pattern]); return b; },
       order: () => b,
       limit: () => b,
       range: () => b,

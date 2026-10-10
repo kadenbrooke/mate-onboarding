@@ -4,12 +4,13 @@ import { setHandler } from './handler';
 import { logMessage } from './messages';
 import { fakePracticeMessage } from '@/lib/portal/practice';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
-import { isOptedOut, normalizeJcConsentPhone } from '@/lib/leads/doNotContact';
+import { normalizeJcConsentPhone, readLeadOptOutState } from '@/lib/leads/doNotContact';
 
 type Lead = { id: string; session_id: string; phone: string | null };
 type Config = { onboarding_form_url?: string | null; faq_url?: string | null; is_practice?: boolean; operator_phone?: string | null };
 type Send = (to: string, text: string) => Promise<{ ok: boolean; practice?: boolean }>;
-export type PostcallActionResult = { ok: true } | { ok: false; status: 409; error: string };
+export type PostcallBlockReason = 'opted_out' | 'invalid_phone' | 'opt_out_unavailable';
+export type PostcallActionResult = { ok: true } | { ok: false; status: 409; reason: PostcallBlockReason; error: string };
 
 /** Run the side effects for a chosen menu option. */
 export async function applyPostcallChoice(
@@ -21,13 +22,29 @@ export async function applyPostcallChoice(
   const refuseIfBlocked = async (): Promise<PostcallActionResult | null> => {
     if (intakeTenantFor(lead.session_id) && !normalizeJcConsentPhone(lead.phone)) {
       return {
-        ok: false, status: 409,
+        ok: false, status: 409, reason: 'invalid_phone',
         error: 'This lead has no valid J&C phone number; sending is blocked.',
       };
     }
-    if (!await isOptedOut(supabase, lead.session_id, lead.phone, { leadId: lead.id, isPractice: config.is_practice === true })) return null;
+    let state;
+    try {
+      state = await readLeadOptOutState(supabase, lead.session_id, lead.phone, { leadId: lead.id, isPractice: config.is_practice === true });
+    } catch (error) {
+      console.error('[postcall] opt-out read failed:', error);
+      return {
+        ok: false, status: 409, reason: 'opt_out_unavailable',
+        error: "Opt-out status couldn't be checked; sending is blocked. Reply again to retry.",
+      };
+    }
+    if (!state.optedOut && state.available) return null;
+    if (!state.available) {
+      return {
+        ok: false, status: 409, reason: 'opt_out_unavailable',
+        error: "Opt-out status couldn't be checked; sending is blocked. Reply again to retry.",
+      };
+    }
     return {
-      ok: false, status: 409,
+      ok: false, status: 409, reason: 'opted_out',
       error: "This lead asked not to be contacted, or opt-out status couldn't be checked; sending is blocked. Refresh to retry.",
     };
   };

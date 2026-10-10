@@ -141,6 +141,19 @@ describe('POST /api/leads/[id]/reply', () => {
     expect(h.db.writes).toEqual([]);
   });
 
+  it('does not apply the J&C invalid-phone refusal to a practice lead', async () => {
+    h.user = USERS.practice;
+    const practiceLead = h.db.tables.client_leads.find(lead => lead.id === 'lead-practice');
+    if (!practiceLead) throw new Error('practice fixture lead missing');
+    practiceLead.phone = '8010550001';
+    const res = await call('lead-practice', { session_id: PRACTICE, text: 'Practice reply' });
+    expect(res.status).toBe(200);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+    expect(h.db.writes.find(w => w.table === 'lead_messages')?.values).toMatchObject({
+      body: '[Practice fake sent to lead] Practice reply',
+    });
+  });
+
   it('allows an internal (portal_access mate) user', async () => {
     h.user = USERS.internal;
     expect((await call('lead-a', { text: 'hi' })).status).toBe(200);

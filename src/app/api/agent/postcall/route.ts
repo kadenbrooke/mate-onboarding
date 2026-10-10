@@ -158,21 +158,39 @@ export async function POST(request: Request) {
       );
       const actionResult = await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
       if (!actionResult.ok) {
-        const blockedMessage = 'Not sent: this lead asked not to be contacted';
+        const blockedMessage = actionResult.reason === 'opted_out'
+          ? 'Not sent: this lead asked not to be contacted'
+          : actionResult.reason === 'invalid_phone'
+            ? 'Not sent: lead has no valid phone number'
+            : "Not sent: couldn't check opt-out status, reply again to retry";
+        let warning: string | undefined;
+        const setWarning = (message: string) => {
+          warning = `Operator notice could not be sent: ${message}`;
+          console.error('[postcall] blocked operator notice failed:', message, { postcallId: pc.id });
+        };
         const resolvedAt = new Date().toISOString();
-        await supabase.from('lead_postcall').update({
-          status: 'resolved', choice, resolved_at: resolvedAt, notes: blockedMessage,
-        }).eq('id', pc.id);
+        if (actionResult.reason !== 'opt_out_unavailable') {
+          await supabase.from('lead_postcall').update({
+            status: 'resolved', choice, resolved_at: resolvedAt, notes: blockedMessage,
+          }).eq('id', pc.id);
+        }
         if (config?.is_practice === true) {
-          await logMessage(supabase, {
+          const operatorLog = await logMessage(supabase, {
             leadId: lead.id, sessionId: lead.session_id, direction: 'outbound', author: 'system', channel: 'system',
             body: fakePracticeMessage(blockedMessage, 'office'),
           });
+          if (operatorLog.error) setWarning(operatorLog.error);
         } else if (config?.operator_phone) {
-          const operatorSend = await sendSms(config.operator_phone, blockedMessage);
-          if (!operatorSend.ok) console.warn('blocked postcall operator notice failed', { postcallId: pc.id, error: operatorSend.error });
+          try {
+            const operatorSend = await sendSms(config.operator_phone, blockedMessage);
+            if (!operatorSend.ok) setWarning(operatorSend.error ?? 'provider rejected the message');
+          } catch (error) {
+            setWarning(error instanceof Error ? error.message : 'provider request failed');
+          }
+        } else {
+          setWarning('no operator phone configured');
         }
-        return NextResponse.json({ ok: true, blocked: true, warning: actionResult.error });
+        return NextResponse.json({ ok: true, blocked: true, reason: actionResult.reason, ...(warning ? { warning } : {}) });
       }
       const resolvedAt = new Date().toISOString();
       await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
