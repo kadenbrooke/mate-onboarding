@@ -6,7 +6,11 @@ const { practiceStatus, resolveEndpoints } = vi.hoisted(() => ({
   resolveEndpoints: vi.fn(),
 }));
 
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => ({}) }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: () => ({}) };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/portal/dash-gate', () => ({ requireDashAccess: vi.fn(async () => 'member') }));
 vi.mock('@/lib/portal/demo', () => ({ resolveSessionId: (id: string) => id }));
 vi.mock('@/lib/portal/practice', () => ({ practiceStatus }));

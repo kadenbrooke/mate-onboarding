@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { readTenancy, routeSession } from "@/lib/supabase/tenancy"
 import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
 import { practiceStatus } from "@/lib/portal/practice"
 
@@ -29,7 +30,16 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 const FIRST_SYNC_TIMEOUT_MS = 8000
 
 function backToOnboard(req: NextRequest, status: string): NextResponse {
-  const url = new URL("/onboard", req.nextUrl.origin)
+  // A dedicated deployment has no /onboard (lib/supabase/tenant-proxy): send
+  // the user back to their own dashboard instead.
+  const sessionId = req.nextUrl.searchParams.get("state") ?? ""
+  const dedicated = readTenancy().mode === "dedicated"
+  const path = !dedicated
+    ? "/onboard"
+    : sessionId && routeSession(sessionId).served
+      ? `/dash/${sessionId}`
+      : "/postlogin"
+  const url = new URL(path, req.nextUrl.origin)
   url.searchParams.set("google", status)
   return NextResponse.redirect(url)
 }
@@ -57,6 +67,8 @@ export async function GET(req: NextRequest) {
   }
 
   if (sessionId) {
+    // Never store a token for a session whose data this deployment does not own.
+    if (!routeSession(sessionId).served) return backToOnboard(req, "unavailable")
     const practice = await practiceStatus(createServiceClient(), sessionId)
     if (!practice.ok) return backToOnboard(req, "unavailable")
     if (practice.isPractice) return backToOnboard(req, "practice")

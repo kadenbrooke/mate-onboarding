@@ -19,7 +19,11 @@ function query(data: unknown = []) {
 }
 
 vi.mock('@/lib/portal/dash-gate', () => ({ requireDashAccess: accessMock }));
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: serviceMock }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: serviceMock };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('next/navigation', () => ({ notFound: notFoundMock }));
 vi.mock('@/lib/command/fetch', () => ({
   fetchOpenBook: vi.fn(async () => ({ leads: [], signals: new Map(), complete: true })),

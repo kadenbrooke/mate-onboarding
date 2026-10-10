@@ -27,9 +27,13 @@ function tableStub(table: string) {
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: { id: 'fake-user' } } }) } }),
 }));
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({ from: (table: string) => tableStub(table) }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/portal/api-gate', () => ({ checkDashApiAccess: async () => ({ ok: true, access: 'member' }) }));
 vi.mock('@/lib/portal/demo', () => ({ resolveSessionId: (id: string) => id }));
 vi.mock('@/lib/leads/capability', () => ({ canUseLeadSnapshot: () => true }));

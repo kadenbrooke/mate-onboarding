@@ -23,7 +23,8 @@ const contactsInsert = vi.fn(() => ({ select: contactSelect }));
 // nudges insert: returns a thenable (route calls .then()).
 const nudgesInsert = vi.fn(() => Promise.resolve({ error: null }));
 
-vi.mock("@/lib/supabase/service", () => ({
+vi.mock("@/lib/supabase/service", () => {
+  const m = {
   createServiceClient: () => ({
     from: (table: string) => {
       if (table === "portal_waitlist") return { select: waitlistSelect, upsert: waitlistUpsert };
@@ -32,7 +33,10 @@ vi.mock("@/lib/supabase/service", () => ({
       throw new Error(`unexpected table ${table}`);
     },
   }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 import { POST } from "./route";
 

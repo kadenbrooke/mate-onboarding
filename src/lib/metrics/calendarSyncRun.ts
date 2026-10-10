@@ -13,6 +13,7 @@
 // expired token cannot stop the rest of the run.
 
 import { createServiceClient } from '@/lib/supabase/service';
+import { routeSession } from '@/lib/supabase/tenancy';
 import { googleOAuthConfig, calendarAccessToken, fetchCalendarEvents } from './calendarFetch';
 import { mapEventsToRows, syncWindow, type AppointmentRow } from './calendarSync';
 
@@ -46,6 +47,15 @@ export async function syncSessionCalendar(
   refreshToken?: string | null,
 ): Promise<CalendarSyncResult> {
   const base = { session_id: sessionId, upserted: 0, removed: 0 };
+
+  // client_appointments goes to this deployment's data project
+  // (lib/supabase/tenancy). Another deployment's session is never synced here.
+  const route = routeSession(sessionId);
+  if (!route.served) {
+    return route.movedTo
+      ? { ...base, status: 'skipped', detail: 'served by another deployment' }
+      : { ...base, status: 'error', detail: 'session not served by this deployment' };
+  }
 
   try {
     const cfg = googleOAuthConfig();
@@ -153,7 +163,9 @@ export async function syncAllCalendars(): Promise<CalendarSyncResult[]> {
 
   if (error) throw new Error(`session scan failed: ${error.message}`);
 
-  const sessions = (data ?? []) as { id: string; google_token_ref: string | null }[];
+  // Only the sessions this deployment serves (tenancy).
+  const sessions = ((data ?? []) as { id: string; google_token_ref: string | null }[])
+    .filter((s) => routeSession(s.id).served);
   return Promise.all(
     sessions.map((s) => syncSessionCalendar(s.id, s.google_token_ref)),
   );

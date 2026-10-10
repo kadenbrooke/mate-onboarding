@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 
 const LEAD_FIELDS = [
   'name', 'phone', 'city', 'service', 'source', 'referrer_name', 'score', 'status',
@@ -115,8 +116,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'session_id and leads[] required' }, { status: 400 });
   }
 
-  const supabase = createServiceClient();
   const sessionId = body.session_id;
+  // A session this deployment does not serve never reaches a database read: a
+  // moved session is forwarded (307, body kept) to the deployment that owns its
+  // data, anything else is unknown here. See lib/supabase/tenancy.
+  const unserved = unservedSessionResponse(request, sessionId);
+  if (unserved) return unserved;
+
+  const supabase = createServiceClient();
 
   // An is_demo session renders without authentication, so anything written here
   // is world-readable to anyone holding the URL. A caller-supplied session_id

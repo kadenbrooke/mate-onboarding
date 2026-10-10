@@ -6,7 +6,11 @@ const h = vi.hoisted(() => ({
   db: null as unknown as FakeDb,
   user: null as { id: string; email: string } | null,
 }));
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => h.db.client }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: () => h.db.client };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({ auth: { getUser: async () => ({ data: { user: h.user } }) } }),
 }));

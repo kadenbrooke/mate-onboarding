@@ -35,9 +35,13 @@ function builder(table: string) {
   return query;
 }
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({ from: (table: string) => builder(table) }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/agent/telnyx', () => ({ sendSms }));
 vi.mock('@/lib/agent/quietHours', () => ({
   isWithinSendWindow: () => true,

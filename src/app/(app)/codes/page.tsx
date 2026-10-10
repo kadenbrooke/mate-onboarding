@@ -1,7 +1,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createControlServiceClient } from "@/lib/supabase/service";
 import { generateAccessCode, codeState } from "@/lib/portal/access-code";
 
 export const dynamic = "force-dynamic";
@@ -12,7 +12,7 @@ async function requireInternalEmail(): Promise<string> {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user?.email) redirect("/login");
-  const service = createServiceClient();
+  const service = createControlServiceClient();
   const { data: access } = await service
     .from("portal_access")
     .select("client_slug")
@@ -28,7 +28,7 @@ async function createCodeAction(formData: FormData) {
   const email = await requireInternalEmail();
   const label = String(formData.get("company_label") ?? "").trim();
   if (!label) return;
-  const service = createServiceClient();
+  const service = createControlServiceClient();
   await service.from("portal_codes").insert({
     code: generateAccessCode(),
     company_label: label,
@@ -42,7 +42,7 @@ async function revokeCodeAction(formData: FormData) {
   await requireInternalEmail();
   const code = String(formData.get("code") ?? "");
   if (!code) return;
-  const service = createServiceClient();
+  const service = createControlServiceClient();
   // Only unclaimed codes can be revoked; expiring now kills the invite.
   await service
     .from("portal_codes")
@@ -54,7 +54,7 @@ async function revokeCodeAction(formData: FormData) {
 
 export default async function CodesPage() {
   await requireInternalEmail();
-  const service = createServiceClient();
+  const service = createControlServiceClient();
   const { data: codes } = await service
     .from("portal_codes")
     .select("code, company_label, claimed_by_email, claimed_at, expires_at, created_at")

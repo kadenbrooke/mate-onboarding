@@ -74,9 +74,13 @@ function fakeClient() {
   };
 }
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => fakeClient(),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 async function post(body: unknown, token: string | null = TOKEN) {
   const { POST } = await import('./route');

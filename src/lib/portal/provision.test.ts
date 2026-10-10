@@ -80,7 +80,11 @@ function makeClient() {
   };
 }
 
-vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => makeClient() }));
+vi.mock("@/lib/supabase/service", () => {
+  const m = { createServiceClient: () => makeClient() };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 import { claimCode, attachMembership } from "./provision";
 

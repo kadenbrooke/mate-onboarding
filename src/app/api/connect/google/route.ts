@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
+import { unservedSessionResponse } from "@/lib/supabase/tenant-response"
 import { practiceStatus } from "@/lib/portal/practice"
 
 /**
@@ -44,6 +45,9 @@ export async function GET(req: NextRequest) {
 
   const sessionId = req.nextUrl.searchParams.get("sessionId") ?? ""
   if (sessionId) {
+    // Connect from the deployment that owns this session's data (tenancy).
+    const unserved = unservedSessionResponse(req, sessionId)
+    if (unserved) return unserved
     const practice = await practiceStatus(createServiceClient(), sessionId)
     if (!practice.ok) {
       return NextResponse.redirect(new URL(`/dash/${sessionId}?google=unavailable`, req.url))

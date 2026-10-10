@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 import { sendSms } from '@/lib/agent/telnyx';
 import { runQuoteMenuScan } from '@/lib/agent/quoteOutcome';
 import { isWithinSendWindow, type QuietHours } from '@/lib/agent/quietHours';
@@ -29,6 +30,8 @@ export async function POST(request: Request) {
   if (!sessionId) {
     return NextResponse.json({ ok: true, opened: 0, reasked: 0, skipped: 'JC_ONBOARDING_SESSION_ID unset' });
   }
+  const unserved = unservedSessionResponse(request, sessionId);
+  if (unserved) return unserved;
 
   const supabase = createServiceClient();
   const { data: session, error: sessionError } = await supabase

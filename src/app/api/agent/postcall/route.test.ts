@@ -67,7 +67,11 @@ function tableStub(table: string) {
     },
   };
 }
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => ({ from: (t: string) => tableStub(t) }) }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: () => ({ from: (t: string) => tableStub(t) }) };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/agent/telnyx', () => ({ sendSms: vi.fn(async () => ({ ok: true })) }));
 // The note extractor is a live LLM call; the route contract is only that it
 // runs and never throws, so it is stubbed everywhere here.

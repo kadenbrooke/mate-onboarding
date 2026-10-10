@@ -23,7 +23,11 @@ function query(data: unknown = [], count: number | null = 0) {
 }
 
 vi.mock('@/lib/portal/dash-gate', () => ({ requireDashAccess: accessMock }));
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: serviceMock }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: serviceMock };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/components/dash/DashboardView', () => ({
   DashboardView: (props: Record<string, unknown>) => {
     dashboardProps.value = props;

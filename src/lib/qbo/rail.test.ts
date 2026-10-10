@@ -5,7 +5,8 @@ const { fetchMock, sessionPractice } = vi.hoisted(() => ({
   sessionPractice: { value: true },
 }));
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({
     from: () => ({
       select: () => ({
@@ -13,7 +14,10 @@ vi.mock('@/lib/supabase/service', () => ({
       }),
     }),
   }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.stubGlobal('fetch', fetchMock);
 
 import { requestTokenExchange } from './rail';

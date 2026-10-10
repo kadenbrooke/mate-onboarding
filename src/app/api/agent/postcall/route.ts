@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 import { sendSms } from '@/lib/agent/telnyx';
 import { buildMenuText, classifyReply } from '@/lib/agent/postcall';
 import { applyPostcallChoice } from '@/lib/agent/postcallActions';
@@ -25,6 +26,10 @@ export async function POST(request: Request) {
   const action = params.get('action');
   let body: { session_id?: string; caller?: string; from?: string; text?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
+  if (body.session_id) {
+    const unserved = unservedSessionResponse(request, body.session_id);
+    if (unserved) return unserved;
+  }
   const supabase = createServiceClient();
 
   if (action === 'fire') {

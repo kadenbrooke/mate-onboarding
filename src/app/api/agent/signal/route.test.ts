@@ -6,7 +6,8 @@ const insertMock = vi.fn(() => ({
 const practiceSession = { value: false };
 // Derived ticker rows the route mirrors into client_events.
 const emitted: Record<string, unknown>[] = [];
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({
     from: () => ({
       select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { is_practice: practiceSession.value }, error: null }) }) }),
@@ -14,7 +15,10 @@ vi.mock('@/lib/supabase/service', () => ({
       upsert: (v: unknown) => { emitted.push(v as Record<string, unknown>); return Promise.resolve({ error: null }); },
     }),
   }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 import { POST, OPTIONS } from './route';
 

@@ -5,7 +5,9 @@
 //
 // Ownership split: the CALLER owns unclaiming the code and deleting any auth
 // user it created. attachMembership only cleans up a session IT created here.
-import { createServiceClient } from "@/lib/supabase/service";
+// Projects (lib/supabase/tenancy): portal_codes and portal_members live with the
+// logins in the control project; onboarding_sessions in the data project.
+import { createControlServiceClient, createServiceClient } from "@/lib/supabase/service";
 
 type ClaimResult = { code: string; sessionId: string | null };
 
@@ -16,7 +18,7 @@ type ClaimResult = { code: string; sessionId: string | null };
  * is missing, already claimed, or expired.
  */
 export async function claimCode(code: string): Promise<ClaimResult | null> {
-  const supabase = createServiceClient();
+  const supabase = createControlServiceClient();
   const { data } = await supabase
     .from("portal_codes")
     .update({ claimed_at: new Date().toISOString() })
@@ -30,7 +32,7 @@ export async function claimCode(code: string): Promise<ClaimResult | null> {
 
 /** Release a claim so a failed signup does not burn a single-use code. */
 export async function unclaimCode(code: string): Promise<void> {
-  const supabase = createServiceClient();
+  const supabase = createControlServiceClient();
   await supabase
     .from("portal_codes")
     .update({ claimed_at: null, claimed_by_email: null })
@@ -50,11 +52,12 @@ export async function attachMembership(args: {
   email: string;
   claimedSessionId: string | null;
 }): Promise<{ sessionId: string } | { error: string }> {
+  const control = createControlServiceClient();
   const supabase = createServiceClient();
   const emailLower = args.email.toLowerCase();
 
   // Record who claimed the code (deferred from claimCode for the OAuth path).
-  await supabase
+  await control
     .from("portal_codes")
     .update({ claimed_by_email: emailLower })
     .eq("code", args.code);
@@ -74,7 +77,7 @@ export async function attachMembership(args: {
     sessionId = session.id;
   }
 
-  const { error: memberErr } = await supabase.from("portal_members").insert({
+  const { error: memberErr } = await control.from("portal_members").insert({
     user_id: args.userId,
     email: emailLower,
     session_id: sessionId,

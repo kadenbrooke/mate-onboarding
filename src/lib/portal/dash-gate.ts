@@ -3,7 +3,8 @@
 // deny; returns the access mode on allow.
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createControlServiceClient, createServiceClient } from "@/lib/supabase/service";
+import { readTenancy, routeSession } from "@/lib/supabase/tenancy";
 import { resolveDashAccess, type DashAccess } from "./dash-access";
 import { resolveSessionId } from "./demo";
 
@@ -20,12 +21,20 @@ export async function checkDashAccess(rawSessionId: string): Promise<DashAccess>
   // Map the "demo" alias to the real demo UUID before any DB read / redirect,
   // so /dash/demo is gated exactly like /dash/<demo-uuid> (public, is_demo).
   const sessionId = resolveSessionId(rawSessionId);
+  // Tenancy before any data read (lib/supabase/tenancy): a session this
+  // deployment does not serve is "not found" here. A moved session's page URL
+  // is forwarded by the proxy before it ever reaches this gate.
+  const tenancy = readTenancy();
+  if (!routeSession(sessionId, tenancy).served) return "not-found";
+
   const service = createServiceClient();
   const { data: session } = await service
     .from("onboarding_sessions")
     .select("id, is_demo")
     .eq("id", sessionId)
     .maybeSingle();
+  // A dedicated deployment serves nothing publicly.
+  if (tenancy.mode === "dedicated" && session?.is_demo) return "not-found";
 
   const supabase = await createClient();
   const {
@@ -35,14 +44,16 @@ export async function checkDashAccess(rawSessionId: string): Promise<DashAccess>
   let isMember = false;
   let isInternal = false;
   if (user && session && !session.is_demo) {
+    // Logins live in the control project, so membership is read there.
+    const control = createControlServiceClient();
     const [memberRes, internalRes] = await Promise.all([
-      service
+      control
         .from("portal_members")
         .select("role")
         .eq("user_id", user.id)
         .eq("session_id", sessionId)
         .maybeSingle(),
-      service
+      control
         .from("portal_access")
         .select("client_slug")
         .eq("email", user.email ?? "")

@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { routeSession } from '@/lib/supabase/tenancy';
 import { mapInsightsToRows, mapGoogleRowsToRows, type AdMetricRow } from '@/lib/metrics/ads';
 import { metaConfig, fetchInsights } from '@/lib/metrics/adsFetch';
 import { googleAdsConfig, fetchGoogleAdsCampaigns } from '@/lib/metrics/googleAdsFetch';
@@ -88,7 +89,9 @@ async function runPlatform(
   }
 }
 
-async function runRefresh(): Promise<{ platforms: PlatformResult[]; leads: number; spend_cents: number }> {
+type RefreshResult = { platforms: PlatformResult[]; leads: number; spend_cents: number; skipped?: string };
+
+async function runRefresh(): Promise<RefreshResult> {
   // No hardcoded demo-session fallback (see header comment): refuse to guess a
   // target rather than risk writing a paying client's ad data to the public
   // is_demo session. This preserves PR #2's security fix on top of the
@@ -96,6 +99,17 @@ async function runRefresh(): Promise<{ platforms: PlatformResult[]; leads: numbe
   const sessionId = process.env.META_JC_SESSION_ID;
   if (!sessionId) {
     throw new Error('META_JC_SESSION_ID is not set; refusing to guess a target session');
+  }
+
+  // ad_metrics goes to this deployment's data project (lib/supabase/tenancy).
+  // A session that moved to its own deployment is that deployment's cron's job,
+  // so this one stands down instead of writing to a project that no longer owns
+  // it. A dedicated deployment pointed at a session it does not serve is a
+  // misconfiguration and fails loudly.
+  const route = routeSession(sessionId);
+  if (!route.served) {
+    if (route.movedTo) return { platforms: [], leads: 0, spend_cents: 0, skipped: 'session served by another deployment' };
+    throw new Error('META_JC_SESSION_ID is not a session this deployment serves; refusing');
   }
 
   // UTC day key for the snapshot -- matches the `date_pulled` column and the

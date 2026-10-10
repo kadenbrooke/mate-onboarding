@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
+import { readTenancy } from '@/lib/supabase/tenancy';
 import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { handoffSignalEvent } from '@/lib/metrics/eventSources';
 import { practiceStatus } from '@/lib/portal/practice';
@@ -26,8 +28,16 @@ export async function POST(request: Request) {
   }
   const kind = url.searchParams.get('kind');
   if (!kind) return NextResponse.json({ error: 'kind required' }, { status: 400, headers: CORS });
-  const supabase = createServiceClient();
   const sessionId = url.searchParams.get('session_id');
+  // Session-less signals are internal plumbing that belongs to the shared
+  // deployment; a dedicated one records only its own sessions' signals.
+  const unserved = sessionId
+    ? unservedSessionResponse(request, sessionId)
+    : readTenancy().mode === 'dedicated'
+      ? NextResponse.json({ error: 'session_id required' }, { status: 404, headers: CORS })
+      : null;
+  if (unserved) return unserved;
+  const supabase = createServiceClient();
   if (sessionId) {
     const practice = await practiceStatus(supabase, sessionId);
     if (!practice.ok) return NextResponse.json({ error: practice.error }, { status: 500, headers: CORS });

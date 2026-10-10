@@ -20,9 +20,13 @@ function tableStub(table: string) {
   return chain;
 }
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({ from: (table: string) => tableStub(table) }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/portal/practice', () => ({ practiceStatus }));
 vi.mock('@/lib/metrics/calendarSyncRun', () => ({ syncSessionCalendar }));
 vi.stubGlobal('fetch', fetchMock);

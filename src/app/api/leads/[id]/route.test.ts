@@ -7,9 +7,13 @@ const eq2 = vi.fn((...a: unknown[]) => { deleteEqArgs.push(a); return Promise.re
 const eq1 = vi.fn((...a: unknown[]) => { deleteEqArgs.push(a); return { eq: eq2 }; });
 const deleteMock = vi.fn(() => ({ eq: eq1 }));
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({ from: () => ({ delete: deleteMock }) }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 const verdict = vi.fn((_sessionId: string) => Promise.resolve({ ok: true, access: "member" as const }));
 vi.mock('@/lib/portal/api-gate', () => ({ checkDashApiAccess: (id: string) => verdict(id) }));

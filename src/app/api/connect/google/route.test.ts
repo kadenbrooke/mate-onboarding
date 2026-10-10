@@ -3,7 +3,11 @@ import { NextRequest } from 'next/server';
 
 const { practiceStatus } = vi.hoisted(() => ({ practiceStatus: vi.fn() }));
 
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => ({}) }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: () => ({}) };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 vi.mock('@/lib/portal/practice', () => ({ practiceStatus }));
 
 import { GET } from './route';

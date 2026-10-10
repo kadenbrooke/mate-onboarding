@@ -3,7 +3,7 @@
 // users get immediate access). Membership/waitlist attachment happens later at
 // /claim or /waitlist, post-login.
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createControlServiceClient } from "@/lib/supabase/service";
 import { validateSignupInput, type SignupInput } from "@/lib/portal/signup-validation";
 
 export async function POST(req: Request) {
@@ -13,7 +13,8 @@ export async function POST(req: Request) {
 
   const { email, password } = body!;
 
-  const supabase = createServiceClient();
+  // Logins live in the control project (lib/supabase/tenancy).
+  const supabase = createControlServiceClient();
   const { data: created, error: userErr } = await supabase.auth.admin.createUser({
     email: email.toLowerCase(),
     password,

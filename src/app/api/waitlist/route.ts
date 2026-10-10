@@ -3,7 +3,7 @@
 // founder nudge. A nudge or CRM-insert failure never fails the request.
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createControlServiceClient } from "@/lib/supabase/service";
 
 export async function POST(req: Request) {
   const supabase = await createClient();
@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   const phone = body?.phone ?? null;
   const website = body?.website ?? null;
 
-  const service = createServiceClient();
+  const service = createControlServiceClient();
 
   // Reuse the CRM lead from an existing waitlist row if the user already joined.
   const { data: existing } = await service

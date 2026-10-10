@@ -10,7 +10,11 @@ function tableStub() {
     update,
   };
 }
-vi.mock('@/lib/supabase/service', () => ({ createServiceClient: () => ({ from: () => tableStub() }) }));
+vi.mock('@/lib/supabase/service', () => {
+  const m = { createServiceClient: () => ({ from: () => tableStub() }) };
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 import { POST } from './route';
 

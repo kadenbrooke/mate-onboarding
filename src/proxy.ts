@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { updateSession } from "@/lib/supabase/middleware";
+import { tenantRoute } from "@/lib/supabase/tenant-proxy";
 
 const PUBLIC_FILE = /\.(?:js|css|svg|png|jpg|jpeg|gif|webp|woff2?|ico)$/;
 
@@ -13,6 +14,9 @@ export async function proxy(request: NextRequest) {
   if (PUBLIC_FILE.test(path) || PUBLIC_PWA.has(path)) {
     return NextResponse.next();
   }
+  // Dedicated data-project deployments and moved sessions (lib/supabase/tenancy).
+  const routed = tenantRoute(request);
+  if (routed) return routed;
   return await updateSession(request);
 }
 

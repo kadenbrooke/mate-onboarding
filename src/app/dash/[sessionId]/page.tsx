@@ -1,4 +1,4 @@
-import { createServiceClient } from '@/lib/supabase/service';
+import { createControlServiceClient, createServiceClient } from '@/lib/supabase/service';
 import { notFound } from 'next/navigation';
 import type { Lead } from '@/lib/metrics/leads';
 import { activeAgentCount } from '@/lib/metrics/crew';
@@ -144,9 +144,11 @@ export default async function DashPage({ params }: { params: Promise<{ sessionId
     // The client's monthly retainer, for the hero ROI multiple. Lives on the
     // CRM contact the session was linked to at onboarding completion. NOTE:
     // contacts.monthly_retainer is stored in DOLLARS, unlike every *_cents
-    // column in this schema, so it is converted below.
+    // column in this schema, so it is converted below. contacts is our CRM, so
+    // it is read from the control project even when this deployment's data
+    // project is a client's own (lib/supabase/tenancy).
     session.contact_id
-      ? supabase
+      ? createControlServiceClient()
           .from('contacts')
           .select('monthly_retainer')
           .eq('id', session.contact_id as string)

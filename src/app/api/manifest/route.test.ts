@@ -11,12 +11,16 @@ const contactMaybeSingle = vi.fn();
 const contactEq = vi.fn(() => ({ maybeSingle: contactMaybeSingle }));
 const contactSelect = vi.fn(() => ({ eq: contactEq }));
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({
     from: (table: string) =>
       table === 'contacts' ? { select: contactSelect } : { select: sessionSelect },
   }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 const { GET } = await import('./route');
 

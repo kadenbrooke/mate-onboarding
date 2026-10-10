@@ -17,7 +17,8 @@
  * session UUID (which is the dash bearer today), so no new exposure surface.
  */
 import { NextResponse } from "next/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import { createControlServiceClient, createServiceClient } from "@/lib/supabase/service";
+import { routeSession } from "@/lib/supabase/tenancy";
 import { resolveSessionId, DEMO_ALIAS, DEMO_SESSION_ID } from "@/lib/portal/demo";
 import { BG_PAGE } from "@/lib/theme";
 import { practiceCompanyName } from "@/lib/portal/practice";
@@ -52,6 +53,8 @@ const ICONS = [
 async function resolveBusinessName(sessionId: string): Promise<string | null> {
   if (sessionId === DEMO_SESSION_ID) return null;
   try {
+    // A session this deployment does not serve gets the generic manifest.
+    if (!routeSession(sessionId).served) return null;
     const service = createServiceClient();
     const { data } = await service
       .from("onboarding_sessions")
@@ -67,7 +70,8 @@ async function resolveBusinessName(sessionId: string): Promise<string | null> {
     }
 
     if (data?.contact_id) {
-      const { data: contact } = await service
+      // contacts is our CRM: always the control project.
+      const { data: contact } = await createControlServiceClient()
         .from("contacts")
         .select("company")
         .eq("id", data.contact_id)

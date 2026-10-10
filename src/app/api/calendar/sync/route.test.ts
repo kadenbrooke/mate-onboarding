@@ -47,7 +47,8 @@ function builder(result: unknown, record = false, maybeSingleResult?: unknown): 
   return b;
 }
 
-vi.mock('@/lib/supabase/service', () => ({
+vi.mock('@/lib/supabase/service', () => {
+  const m = {
   createServiceClient: () => ({
     from: (table: string) => {
       if (table === 'onboarding_sessions') {
@@ -63,7 +64,10 @@ vi.mock('@/lib/supabase/service', () => ({
       return b;
     },
   }),
-}));
+};
+  // Shared mode: logins and data are the same project, so the control client is the same fake.
+  return { ...m, createControlServiceClient: m.createServiceClient };
+});
 
 // --- Google stub ---------------------------------------------------------
 // Network is mocked at the calendarFetch boundary; the real mapping and the
