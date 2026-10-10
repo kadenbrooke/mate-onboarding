@@ -6,7 +6,7 @@ import {
 import type { SnapshotCandidate } from '@/lib/leads/snapshotParse';
 
 const cand = (o: Partial<SnapshotCandidate> = {}): SnapshotCandidate => ({
-  name: 'Faux Sample', phone: '801-577-5322', address: null, service: null, notes: null,
+  name: 'Sample Person', phone: '801-555-0142', address: null, service: null, notes: null,
   confidence: { name: 0.9, phone: 0.9, address: 0 }, withheld: [], ...o,
 });
 
@@ -99,8 +99,8 @@ describe('copy', () => {
     expect(duplicateMessage({ index: 0, reason: 'recent-contact', lead_id: null })).toMatch(/last 7 days/);
   });
   it('displayPhone formats a US number and leaves others alone', () => {
-    expect(displayPhone('8015775322')).toBe('(801) 577-5322');
-    expect(displayPhone('+18015775322')).toBe('(801) 577-5322');
+    expect(displayPhone('8015550142')).toBe('(801) 555-0142');
+    expect(displayPhone('+18015550142')).toBe('(801) 555-0142');
     expect(displayPhone('+44 20 7183 8750')).toBe('+44 20 7183 8750');
     expect(displayPhone('')).toBe('');
   });

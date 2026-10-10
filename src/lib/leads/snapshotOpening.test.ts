@@ -6,9 +6,9 @@ const jc = intakeTenantFor('61400e73-0570-4167-88d9-d3a69650b15b')!;
 
 describe('snapshotOpening', () => {
   it('says why we are texting before it asks anything', () => {
-    const text = snapshotOpening(jc, { name: 'Faux Sample', service: 'driveway' });
+    const text = snapshotOpening(jc, { name: 'Sample Person', service: 'driveway' });
     expect(text).toBe(
-      'Hi Faux, this is Ashley with J&C Asphalt. You left your info with us about driveway, so I wanted to reach out. ' +
+      'Hi Sample, this is Ashley with J&C Asphalt. You left your info with us about driveway, so I wanted to reach out. ' +
       'Can you tell me a bit about the job and the property address? Txt STOP to opt out anytime.',
     );
   });
@@ -44,7 +44,7 @@ describe('snapshotOpening', () => {
 
 describe('helpers', () => {
   it('firstNameOf', () => {
-    expect(firstNameOf('Faux Sample')).toBe('Faux');
+    expect(firstNameOf('Sample Person')).toBe('Sample');
     expect(firstNameOf('  ')).toBeNull();
     expect(firstNameOf(null)).toBeNull();
   });
