@@ -18,6 +18,9 @@ export type ChannelOwner = 'partner' | 'company';
 /** The share rate, in basis points (1500 = 15%). Draft agreement figure. */
 export const PARTNER_SHARE_BPS = 1500;
 
+/** Positive cash counts for 24 months after first contact, at the strict line. */
+export const PARTNER_WINDOW_MONTHS = 24;
+
 /** Refund clawback months; zero means refunds never lower the partner share. */
 export const PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS = 0;
 

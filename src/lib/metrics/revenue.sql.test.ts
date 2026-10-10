@@ -7,8 +7,8 @@
 //      and leaves status, its stamp and the CAPI marker alone,
 //   2. cash is time-correct: each payment counts in the window of its own
 //      date ($5,000 earlier + $1,000 this week is $1,000 in the last 30 days;
-//      cash is not cut off by the lead's age and refunds follow the one
-//      clawback setting),
+//      a job paid across the 24-month line is split at the line, and refunds
+//      follow the separate clawback setting),
 //   3. the view agrees with the TypeScript twin (revenueRowsFromLeads),
 //   4. the ledger guards: won jobs only, tenant from the lead, no negative
 //      total, no edits, no un-winning a paid job, cascade on lead delete,
@@ -27,7 +27,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { PGlite } from '@electric-sql/pglite';
 import { revenueRowsFromLeads, summarizeReturn, type LeadPayment, type RevenueLeadMessage, type SourceRevenueRow } from './revenue';
-import { PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS } from './partnerChannels';
+import { PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_WINDOW_MONTHS } from './partnerChannels';
 import type { Lead } from './leads';
 
 const MIGRATION = readFileSync(
@@ -64,6 +64,8 @@ const BASE_SCHEMA = (withIsTest: boolean) => `
     session_id uuid not null references onboarding_sessions(id) on delete cascade,
     direction text not null,
     author text not null,
+    source text,
+    created_at timestamptz not null default now(),
     body text not null default ''
   );
   -- The live status stamp (amos migration 020), so the test can prove an
@@ -154,7 +156,7 @@ const daysAgo = (d: number) => new Date(Date.now() - d * DAY);
 
 describe('recording a won job and a payment (the required test)', () => {
   it('updates the per-source return and the 15% figure, and leaves status alone', async () => {
-    const metaLead = await insertLead(TENANT, { source: 'meta', status: 'quoted' });
+    const metaLead = await insertLead(TENANT, { source: 'meta', status: 'quoted', created_at: daysAgo(90).toISOString() });
     await insertLead(TENANT, { source: 'meta' });
     await insertLead(TENANT, { source: 'call' });
     await insertLead(TENANT, { source: 'web_form' });
@@ -219,17 +221,34 @@ describe('cash is counted by payment date', () => {
     expect(summarizeReturn([row], { metaSpend30dCents: 50000 }).meta).toMatchObject({ collected30dCents: 100000, returnPerDollar: 2 });
   });
 
-  it('counts payments after first contact because there is no cash cutoff', async () => {
+  it('a job paid across the 24-month line counts only the payments inside it', async () => {
     const S = await newSession();
     const l = await insertLead(S, { source: 'web_form', created_at: '2024-03-31T09:00:00.000Z' });
     await markWon(l, S, 700000);
     await addPayment(l, S, 300000, '2024-05-01T12:00:00.000Z'); // deposit, inside
+    await addPayment(l, S, 200000, '2026-03-31T08:59:59.000Z'); // one second inside
+    await addPayment(l, S, 150000, '2026-03-31T09:00:00.000Z'); // exactly 24 months: outside
+    await addPayment(l, S, 50000, '2026-06-01T12:00:00.000Z');  // well outside
+    const [row] = await viewRows(S);
+    expect(row).toMatchObject({ leads: 1, won: 1, collected_cents: 700000, collected_in_window_cents: 500000 });
+    expect(summarizeReturn([row]).partner).toMatchObject({ collectedCents: 500000, shareCents: 75000 });
+  });
+
+  it('starts a self-sourced window at the first counting-agent message', async () => {
+    const S = await newSession();
+    const l = await insertLead(S, { source: 'self_sourced', created_at: '2024-01-01T00:00:00.000Z' });
+    await markWon(l, S, 700000);
+    await addPayment(l, S, 300000, '2024-03-01T12:00:00.000Z');
     await addPayment(l, S, 200000, '2026-03-31T08:59:59.000Z');
     await addPayment(l, S, 150000, '2026-03-31T09:00:00.000Z');
     await addPayment(l, S, 50000, '2026-06-01T12:00:00.000Z');
+    await db.query(
+      `insert into lead_messages (lead_id, session_id, direction, author, source, created_at, body)
+       values ($1, $2, 'outbound', 'agent', 'fr', $3, 'first agent contact')`,
+      [l, S, '2024-03-31T09:00:00.000Z'],
+    );
     const [row] = await viewRows(S);
-    expect(row).toMatchObject({ leads: 1, won: 1, collected_cents: 700000, collected_in_window_cents: 700000 });
-    expect(summarizeReturn([row]).partner).toMatchObject({ collectedCents: 700000, shareCents: 105000 });
+    expect(row).toMatchObject({ collected_cents: 700000, collected_in_window_cents: 200000, partner_collected_in_window_cents: 200000 });
   });
 
   it('a refund lands in the window it happened in, and the lead still counts once', async () => {
@@ -271,24 +290,27 @@ describe('self-sourced partner exception', () => {
     await addPayment(reviewLead, S, 30000, daysAgo(1));
     await addPayment(humanLead, S, 40000, daysAgo(1));
     await db.query(
-      `insert into lead_messages (lead_id, session_id, direction, author, source, body)
-       values ($1, $2, 'outbound', 'agent', 'fr', 'practice message'),
-              ($3, $2, 'outbound', 'agent', 'reputation', 'review request'),
-              ($4, $2, 'outbound', 'human', 'fr', 'manual re-text')`, [agentLead, S, reviewLead, humanLead],
+      `insert into lead_messages (lead_id, session_id, direction, author, source, created_at, body)
+       values ($1, $2, 'outbound', 'agent', 'fr', $5, 'practice message'),
+              ($3, $2, 'outbound', 'agent', 'reputation', $5, 'review request'),
+              ($4, $2, 'outbound', 'human', 'fr', $5, 'manual re-text')`,
+      [agentLead, S, reviewLead, humanLead, daysAgo(2).toISOString()],
     );
 
     const { rows } = await db.query<Record<string, unknown>>(
       `select collected_in_window_cents, partner_collected_in_window_cents
          from client_lead_revenue_by_source where session_id = $1 and source = 'self_sourced'`, [S],
     );
-    expect(rows[0]).toMatchObject({ collected_in_window_cents: 100000, partner_collected_in_window_cents: 10000 });
+    expect(rows[0]).toMatchObject({ collected_in_window_cents: 10000, partner_collected_in_window_cents: 10000 });
   });
 
   it('pins the single refund setting to off in the unapplied migration', () => {
     expect(PARTNER_RULE_MIGRATION).toContain(
+      `partner_attribution_window_months = ${PARTNER_WINDOW_MONTHS}`,
+    );
+    expect(PARTNER_RULE_MIGRATION).toContain(
       `partner_refund_clawback_window_months = ${PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS}`,
     );
-    expect(PARTNER_RULE_MIGRATION).not.toMatch(/24 months|24-month/);
   });
 });
 
@@ -306,9 +328,10 @@ describe('view parity with the TypeScript twin', () => {
         payments: [[100000, at(45)], [-20000, at(29)]] },
       { lead: { source: 'meta', created_at: at(20), job_outcome: 'lost', lost_reason: 'price' } },
       { lead: { source: 'meta', created_at: at(3) } },
-      // Payment age does not cut off the basis.
+      // Exactly 24 months after first contact: outside (strict <). One second earlier: inside.
       { lead: { source: 'web_form', created_at: '2024-03-31T09:00:00.000Z', job_outcome: 'won' },
         payments: [[70000, '2026-03-31T09:00:00.000Z'], [30000, '2026-03-31T08:59:59.000Z']] },
+      // Feb 29 + 24 months clamps to Feb 28.
       { lead: { source: 'web_form', created_at: '2024-02-29T12:00:00.000Z', job_outcome: 'won' },
         payments: [[11100, '2026-02-28T12:00:00.000Z'], [22200, '2026-02-28T11:59:59.000Z']] },
       { lead: { source: 'call', created_at: at(10), job_outcome: 'won', job_value_cents: 900000 } },
@@ -338,10 +361,10 @@ describe('view parity with the TypeScript twin', () => {
       }
       if (f.agentMessage) {
         await db.query(
-          `insert into lead_messages (lead_id, session_id, direction, author, source, body)
-           values ($1, $2, 'outbound', 'agent', 'fr', 'fake agent message')`, [id, S],
+          `insert into lead_messages (lead_id, session_id, direction, author, source, created_at, body)
+           values ($1, $2, 'outbound', 'agent', 'fr', $3, 'fake agent message')`, [id, S, at(6)],
         );
-        messages.push({ lead_id: id, direction: 'outbound', author: 'agent', source: 'fr' });
+        messages.push({ lead_id: id, direction: 'outbound', author: 'agent', source: 'fr', created_at: at(6) });
       }
       leads.push({
         id, name: null, city: null, service: null, phone: null, referrer_name: null, score: null,
@@ -359,13 +382,13 @@ describe('view parity with the TypeScript twin', () => {
       collected_cents: 580000, collected_in_window_cents: 580000, collected_30d_cents: 30000,
     });
     expect(sql.find(r => r.source === 'web_form')).toMatchObject({
-      collected_cents: 133300, collected_in_window_cents: 133300,
+      collected_cents: 133300, collected_in_window_cents: 52200,
     });
     expect(sql.find(r => r.source === 'self_sourced')).toMatchObject({
-      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
+      collected_in_window_cents: 70000, partner_collected_in_window_cents: 70000,
     });
     expect(ts.find(r => r.source === 'self_sourced')).toMatchObject({
-      collected_in_window_cents: 100000, partner_collected_in_window_cents: 70000,
+      collected_in_window_cents: 70000, partner_collected_in_window_cents: 70000,
     });
   });
 });

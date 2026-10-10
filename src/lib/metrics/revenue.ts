@@ -5,8 +5,8 @@
 // Inputs are the job outcomes the client enters per lead (migration 0021:
 // job_outcome, job_value_cents on client_leads) and the cash ledger
 // (client_lead_payments: one row per payment, negative for a refund). Partner
-// cash has no age cutoff; the one refund clawback setting decides whether an
-// eligible refund is a credit. Two ways in:
+// cash counts for 24 months after first contact; the separate refund clawback
+// setting decides whether an eligible refund is a credit. Two ways in:
 //   * the client_lead_revenue_by_source view (0021), which sums the WHOLE book
 //     of business per source in a few PII-free rows. /dash and the assistant
 //     read this.
@@ -27,7 +27,8 @@ import type { Lead } from './leads';
 import type { AdMetricRow } from './ads';
 import {
   channelOwner, partnerShareCents, PARTNER_COUNTING_AGENT_MESSAGE_SOURCES,
-  PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_SHARE_BPS, type ChannelOwner,
+  PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_SHARE_BPS, PARTNER_WINDOW_MONTHS,
+  type ChannelOwner,
 } from './partnerChannels';
 
 /** One row of client_lead_revenue_by_source, minus the tenant id. */
@@ -38,7 +39,7 @@ export type SourceRevenueRow = {
   lost: number;
   job_value_cents: number;
   collected_cents: number;
-  /** Net cash collected; partner cash has no lead-age cutoff. */
+  /** Net cash collected within PARTNER_WINDOW_MONTHS of first contact. */
   collected_in_window_cents: number;
   /** Payments dated in the last 30 days. */
   collected_30d_cents: number;
@@ -78,6 +79,7 @@ export type RevenueLeadMessage = {
   author: 'lead' | 'agent' | 'human' | 'system';
   /** Live instrumentation tag: fr, cultivator, reactivator, operator, or null. */
   source?: string | null;
+  created_at?: string | null;
 };
 
 /** Whether a message proves that one of the three counting agents worked a lead. */
@@ -88,24 +90,36 @@ export function isCountingAgentMessage(message: RevenueLeadMessage): boolean {
 }
 
 /**
- * Partner cash for one lead. Positive payments always count. A negative payment
- * is a statement credit only when the setting is positive and a prior positive
+ * Partner cash for one lead. Positive payments count only from first contact
+ * (inclusive) until the strict 24-month line. A negative payment is a statement
+ * credit only when the setting is positive and a prior eligible positive
  * payment exists within that many calendar months. At zero (the opening
  * position), refunds never reduce the share. The floor prevents a refund from
  * ever producing a cash-back/negative payout.
  */
 export function partnerBasisCents(
-  payments: LeadPayment[], clawbackWindowMonths = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS,
+  payments: LeadPayment[], firstContactAt: string | Date | null,
+  clawbackWindowMonths = PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS,
 ): number {
+  if (firstContactAt == null) return 0;
+  const firstContact = new Date(firstContactAt);
+  const firstContactMs = firstContact.getTime();
+  if (!Number.isFinite(firstContactMs)) return 0;
+  const attributionEndMs = addMonthsUtc(firstContact, PARTNER_WINDOW_MONTHS).getTime();
+
   const total = payments.reduce((sum, payment) => {
     const amount = cents(payment.amount_cents);
-    if (amount >= 0) return sum + amount;
+    const paymentAt = new Date(payment.paid_at).getTime();
+    const inAttributionWindow = Number.isFinite(paymentAt)
+      && paymentAt >= firstContactMs && paymentAt < attributionEndMs;
+    if (amount >= 0) return inAttributionWindow ? sum + amount : sum;
     if (clawbackWindowMonths <= 0) return sum;
-    const refundAt = new Date(payment.paid_at).getTime();
+    const refundAt = paymentAt;
     const matched = Number.isFinite(refundAt) && payments.some(original => {
       const originalAmount = cents(original.amount_cents);
       const originalAt = new Date(original.paid_at).getTime();
-      if (originalAmount <= 0 || !Number.isFinite(originalAt) || originalAt > refundAt) return false;
+      if (originalAmount <= 0 || !Number.isFinite(originalAt)
+        || originalAt < firstContactMs || originalAt >= attributionEndMs || originalAt > refundAt) return false;
       return refundAt < addMonthsUtc(new Date(original.paid_at), clawbackWindowMonths).getTime();
     });
     return matched ? sum + amount : sum;
@@ -125,11 +139,14 @@ export function revenueRowsFromLeads(
 ): SourceRevenueRow[] {
   const bySource = new Map<string, SourceRevenueRow>();
   const since30d = now.getTime() - 30 * DAY_MS;
-  const agentMessagedLeadIds = new Set(
-    messages
-      .filter(isCountingAgentMessage)
-      .map(m => m.lead_id),
-  );
+  const firstCountingAgentContactAtByLead = new Map<string, string>();
+  for (const message of messages.filter(isCountingAgentMessage)) {
+    if (!message.created_at || !Number.isFinite(new Date(message.created_at).getTime())) continue;
+    const prior = firstCountingAgentContactAtByLead.get(message.lead_id);
+    if (!prior || new Date(message.created_at).getTime() < new Date(prior).getTime()) {
+      firstCountingAgentContactAtByLead.set(message.lead_id, message.created_at);
+    }
+  }
   const paymentsByLead = new Map<string, LeadPayment[]>();
   for (const p of payments) {
     const list = paymentsByLead.get(p.lead_id);
@@ -153,15 +170,26 @@ export function revenueRowsFromLeads(
     }
     // The DB only lets payments onto a won lead, so no outcome check here.
     const leadPayments = paymentsByLead.get(l.id) ?? [];
+    // For self_sourced work, first contact is the first counting-agent message:
+    // that is the date our agent first worked the lead, not lead creation.
+    const firstContactAt = l.source === 'self_sourced'
+      ? firstCountingAgentContactAtByLead.get(l.id) ?? null
+      : l.created_at;
+    const firstContactMs = firstContactAt == null ? Number.NaN : new Date(firstContactAt).getTime();
+    const attributionEndMs = Number.isFinite(firstContactMs)
+      ? addMonthsUtc(new Date(firstContactAt!), PARTNER_WINDOW_MONTHS).getTime()
+      : Number.NaN;
     for (const p of leadPayments) {
       const amount = cents(p.amount_cents);
       const at = new Date(p.paid_at).getTime();
       row.collected_cents += amount;
-      row.collected_in_window_cents += amount;
+      if (Number.isFinite(at) && at >= firstContactMs && at < attributionEndMs) {
+        row.collected_in_window_cents += amount;
+      }
       if (at >= since30d) row.collected_30d_cents += amount;
     }
-    if (l.source !== 'self_sourced' || agentMessagedLeadIds.has(l.id)) {
-      row.partner_collected_in_window_cents! += partnerBasisCents(leadPayments);
+    if (l.source !== 'self_sourced' || firstCountingAgentContactAtByLead.has(l.id)) {
+      row.partner_collected_in_window_cents! += partnerBasisCents(leadPayments, firstContactAt);
     }
   }
   return [...bySource.values()];

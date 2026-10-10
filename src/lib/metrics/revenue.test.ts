@@ -5,7 +5,8 @@ import {
   type SourceRevenueRow, type LeadPayment, type AdSpendQuery, type RevenueLeadMessage,
 } from './revenue';
 import {
-  PARTNER_CHANNEL_SOURCES, PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, channelOwner, partnerShareCents,
+  PARTNER_CHANNEL_SOURCES, PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS, PARTNER_WINDOW_MONTHS,
+  channelOwner, partnerShareCents,
 } from './partnerChannels';
 import type { Lead } from './leads';
 
@@ -61,12 +62,12 @@ describe('partner-channel config', () => {
       payFor(keptByOwner, 20000),
     ];
     const messages: RevenueLeadMessage[] = [
-      { lead_id: handedToAgent.id, direction: 'outbound', author: 'agent', source: 'fr' },
+      { lead_id: handedToAgent.id, direction: 'outbound', author: 'agent', source: 'fr', created_at: ago(2) },
     ];
     const summary = summarizeReturn(revenueRowsFromLeads([handedToAgent, keptByOwner], payments, NOW, messages));
     expect(summary.rows.find(r => r.source === 'self_sourced')).toMatchObject({
       collected_cents: 30000,
-      collected_in_window_cents: 30000,
+      collected_in_window_cents: 10000,
       partner_collected_in_window_cents: 10000,
     });
     expect(summary.partner).toMatchObject({ collectedCents: 10000, shareCents: 1500 });
@@ -81,10 +82,10 @@ describe('partner-channel config', () => {
     const leads = [fr, cultivator, review, human, untagged];
     const payments = leads.map(l => payFor(l, 1000));
     const messages: RevenueLeadMessage[] = [
-      { lead_id: fr.id, direction: 'outbound', author: 'agent', source: 'fr' },
-      { lead_id: cultivator.id, direction: 'outbound', author: 'agent', source: 'cultivator' },
-      { lead_id: review.id, direction: 'outbound', author: 'agent', source: 'reputation' },
-      { lead_id: human.id, direction: 'outbound', author: 'human', source: 'fr' },
+      { lead_id: fr.id, direction: 'outbound', author: 'agent', source: 'fr', created_at: ago(2) },
+      { lead_id: cultivator.id, direction: 'outbound', author: 'agent', source: 'cultivator', created_at: ago(2) },
+      { lead_id: review.id, direction: 'outbound', author: 'agent', source: 'reputation', created_at: ago(2) },
+      { lead_id: human.id, direction: 'outbound', author: 'human', source: 'fr', created_at: ago(2) },
       { lead_id: untagged.id, direction: 'outbound', author: 'agent' },
     ];
 
@@ -98,9 +99,10 @@ describe('partner-channel config', () => {
     const oldRefund = { lead_id: 'lead', amount_cents: -25000, paid_at: '2026-11-01T00:00:00.000Z' };
 
     expect(PARTNER_REFUND_CLAWBACK_WINDOW_MONTHS).toBe(0);
-    expect(partnerBasisCents([payment, recentRefund], 0)).toBe(400000);
-    expect(partnerBasisCents([payment, recentRefund], 3)).toBe(350000);
-    expect(partnerBasisCents([payment, oldRefund], 3)).toBe(400000);
+    expect(partnerBasisCents([payment, recentRefund], payment.paid_at, 0)).toBe(400000);
+    expect(partnerBasisCents([payment, recentRefund], payment.paid_at, 3)).toBe(350000);
+    expect(partnerBasisCents([payment, oldRefund], payment.paid_at, 3)).toBe(400000);
+    expect(PARTNER_WINDOW_MONTHS).toBe(24);
   });
 });
 
@@ -153,16 +155,32 @@ describe('return per source', () => {
     expect(s.partner).toMatchObject({ collectedCents: 600000, shareCents: 90000 });
   });
 
-  it('counts payments after first contact because there is no cash cutoff', () => {
+  it('counts a job paid across the 24-month line only inside it', () => {
     const l = lead({ source: 'web_form', created_at: '2024-03-31T09:00:00.000Z', job_outcome: 'won' });
     const rows = revenueRowsFromLeads([l], [
       pay(l, 300000, '2024-05-01T12:00:00.000Z'), // deposit, inside
-      pay(l, 200000, '2026-03-31T08:59:59.000Z'),
-      pay(l, 150000, '2026-03-31T09:00:00.000Z'),
-      pay(l, 50000, '2026-06-01T12:00:00.000Z'),
+      pay(l, 200000, '2026-03-31T08:59:59.000Z'), // one second inside
+      pay(l, 150000, '2026-03-31T09:00:00.000Z'), // exactly 24 months: outside
+      pay(l, 50000, '2026-06-01T12:00:00.000Z'),  // well outside
     ], NOW);
-    expect(rows[0]).toMatchObject({ collected_cents: 700000, collected_in_window_cents: 700000 });
-    expect(summarizeReturn(rows).partner).toMatchObject({ collectedCents: 700000, shareCents: 105000 });
+    expect(rows[0]).toMatchObject({ collected_cents: 700000, collected_in_window_cents: 500000 });
+    expect(summarizeReturn(rows).partner).toMatchObject({ collectedCents: 500000, shareCents: 75000 });
+  });
+
+  it('starts a self-sourced window at the first counting-agent message', () => {
+    const l = lead({ source: 'self_sourced', created_at: '2024-01-01T00:00:00.000Z' });
+    const firstAgentContact = '2024-03-31T09:00:00.000Z';
+    const payments = [
+      pay(l, 300000, '2024-03-01T12:00:00.000Z'), // before the agent worked it
+      pay(l, 200000, '2026-03-31T08:59:59.000Z'), // inside the agent window
+      pay(l, 150000, '2026-03-31T09:00:00.000Z'), // exactly 24 months: outside
+      pay(l, 50000, '2026-06-01T12:00:00.000Z'),  // well outside
+    ];
+    const messages: RevenueLeadMessage[] = [
+      { lead_id: l.id, direction: 'outbound', author: 'agent', source: 'fr', created_at: firstAgentContact },
+    ];
+    const [row] = revenueRowsFromLeads([l], payments, NOW, messages);
+    expect(row).toMatchObject({ collected_cents: 700000, collected_in_window_cents: 200000, partner_collected_in_window_cents: 200000 });
   });
 
   it('a refund counts in the window it happened in', () => {
