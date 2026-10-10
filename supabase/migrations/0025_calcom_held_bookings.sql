@@ -22,8 +22,8 @@ create table if not exists public.calcom_held_bookings (
   reason text not null,
   target_session_id uuid,
   raw_body text not null,
-  -- Set once the founder alert is in outbound_texts. Null = a retry re-sends it.
-  alerted_at timestamptz,
+  -- The delivery's founder alert (calcom_held_alerts / outbound_texts.source).
+  alert_key text not null,
   resolved_at timestamptz,
   resolution text
 );
@@ -36,12 +36,25 @@ create index if not exists calcom_held_bookings_open_idx
   on public.calcom_held_bookings (received_at)
   where resolved_at is null;
 
+-- Exactly-once founder alert per held delivery. alert_key is derived from the
+-- delivery's dedupe_key before anything is stored, and is also the alert's
+-- outbound_texts.source. A delivery may enqueue only after inserting this row
+-- (or re-claiming one left unconfirmed past a short TTL); enqueued_at records
+-- that the alert is in the outbox. Keyed separately from the held row so a
+-- booking that could not be stored still alerts once.
+create table if not exists public.calcom_held_alerts (
+  alert_key text primary key,
+  claimed_at timestamptz not null default now(),
+  enqueued_at timestamptz
+);
+
 -- Server-side only: service role, no API access for anon or signed-in users.
 -- Tables created through the Management API do not inherit PostgREST grants,
 -- so grant explicitly.
 alter table public.calcom_held_bookings enable row level security;
-revoke all on table public.calcom_held_bookings from anon, authenticated;
-grant all privileges on table public.calcom_held_bookings to service_role;
+alter table public.calcom_held_alerts enable row level security;
+revoke all on table public.calcom_held_bookings, public.calcom_held_alerts from anon, authenticated;
+grant all privileges on table public.calcom_held_bookings, public.calcom_held_alerts to service_role;
 
 comment on table public.calcom_held_bookings is
   'cal.com bookings for a moved client that the shared Mate deployment could not forward or attribute. Contains booking PII; service role only.';

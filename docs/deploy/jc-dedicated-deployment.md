@@ -267,11 +267,28 @@ missing or malformed. Nothing is written to either project. The founder gets a t
 through the router (`outbound_texts`, source `mate:calcom-held:<ref>`); it names no
 lead.
 
-The webhook answers cal.com `202` only once both the held row and that alert have
-landed. If the alert insert fails it answers `503` (the row stays with
-`alerted_at` empty), so cal.com retries; the hold is idempotent (one row per booking
-uid + trigger, or per signed-body hash when there is no uid) and the retry sends the
-alert once. The list below shows `alerted=NO` for any row whose alert never landed.
+Exactly one alert per delivery:
+
+- **Keys.** `dedupe_key` = trigger + booking uid (or a SHA-256 of the signed body when
+  there is no uid). `alert_key` = `mate:calcom-held:<first 16 hex of sha256(dedupe_key)>`,
+  computed before anything is stored. The alert key is the `outbound_texts.source`,
+  the primary key of the claim ledger `calcom_held_alerts`, and the `ref` in the
+  text, so a booking that could not be stored and the same booking stored on a retry
+  enqueue the identical alert.
+- **Claim.** A delivery may enqueue only after inserting the ledger row (or
+  re-claiming one left unconfirmed for over 60 s, by a conditional update). A
+  concurrent delivery sees the claim and answers `503`.
+- **Check, enqueue, confirm.** Before enqueueing it looks for an outbox row with that
+  source, so an alert that was queued but never confirmed is not queued twice. After
+  enqueueing it sets `enqueued_at`; if that write fails the webhook answers `503`.
+- **Answers.** `202` only when the held row is stored and the alert is confirmed.
+  Held but alert not confirmed: `503`. Not stored: `500` (the alert is still sent).
+  cal.com retries non-2xx; every retry is idempotent.
+- If the ledger table itself is unavailable, the alert is still sent, guarded only by
+  the source lookup; a concurrent duplicate there carries the same source and text,
+  which the amos router folds by fingerprint.
+
+The list below shows each row's `ref` and `alert=sent | claimed-unconfirmed | NONE`.
 
 ```bash
 cd $MAIN
@@ -335,6 +352,6 @@ rollback to a deployment built without it).
 - `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL`, `AGENT_WEBHOOK_TOKEN` and (if used) `QBO_*`
   need copying by hand; they are not in the Keychain.
 - The alert retry relies on cal.com retrying a non-2xx webhook. If it does not, the
-  booking is still held (never lost) but its alert may be missing; `alerted=NO` in the
-  held list shows it. A backstop that texts about held rows with no alert after a few
+  booking is still held (never lost) but its alert may be missing or unconfirmed;
+  `alert=NONE` or `alert=claimed-unconfirmed` in the held list shows it. A backstop that texts about held rows with no alert after a few
   minutes (amos health check or a Mate cron) is not built.

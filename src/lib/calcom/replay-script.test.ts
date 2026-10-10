@@ -1,7 +1,7 @@
 // scripts/replay-held-calcom.mjs: the reconcile path for held bookings.
 import { describe, expect, it, vi } from 'vitest';
 import { verifyCalcomSignature } from './verify';
-import { parseArgs, replayOutcome, replayRow, signBody } from '../../../scripts/replay-held-calcom.mjs';
+import { alertState, parseArgs, replayOutcome, replayRow, signBody } from '../../../scripts/replay-held-calcom.mjs';
 
 describe('replay-held-calcom', () => {
   it('re-signs the stored body exactly as cal.com does', () => {
@@ -45,6 +45,12 @@ describe('replay-held-calcom', () => {
       .toMatchObject({ ok: false, status: 307 });
     expect(await replayRow({ raw_body: '{}' }, { target: 'https://c.example', secret: 's', fetchImpl: async () => { throw new TypeError('x'); } }))
       .toMatchObject({ ok: false, status: 0 });
+  });
+
+  it('reports each held row\'s alert from the claim ledger', () => {
+    expect(alertState(undefined)).toBe('NONE');
+    expect(alertState({ alert_key: 'k', enqueued_at: null })).toBe('claimed-unconfirmed');
+    expect(alertState({ alert_key: 'k', enqueued_at: '2026-10-10T08:00:00Z' })).toBe('sent');
   });
 
   it('validates arguments', () => {

@@ -6,66 +6,93 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createHmac } from 'crypto';
 import { createFakeDb, type FakeDb } from '@/test/fakeSupabase';
 import { verifyCalcomSignature } from '@/lib/calcom/verify';
+import { ALERT_CLAIM_TTL_MS, alertKey, alertMessage, holdKey } from '@/lib/calcom/held';
 
 type Row = Record<string, unknown>;
+type Err = { code: string; message: string };
 const h = vi.hoisted(() => ({
   data: null as unknown as FakeDb,
   held: [] as Record<string, unknown>[],
+  alerts: [] as Record<string, unknown>[],
   texts: [] as Record<string, unknown>[],
   holdError: null as null | { code: string; message: string },
+  claimError: null as null | { code: string; message: string },
   alertError: null as null | { code: string; message: string },
+  confirmError: null as null | { code: string; message: string },
 }));
 
-// Control project stub: the held-bookings table (unique on dedupe_key, like
-// migration 0025) and the founder outbox.
-function controlClient() {
-  return {
-    from(table: string) {
-      if (table === 'calcom_held_bookings') {
-        return {
-          insert: (row: Row) => ({
-            select: () => ({
-              single: async () => {
-                if (h.holdError) return { data: null, error: h.holdError };
-                if (h.held.some((r) => r.dedupe_key === row.dedupe_key)) {
-                  return { data: null, error: { code: '23505', message: 'duplicate key' } };
-                }
-                const id = `aaaaaaaa-0000-4000-8000-${String(h.held.length + 1).padStart(12, '0')}`;
-                const stored: Row = { id, alerted_at: null, ...row };
-                h.held.push(stored);
-                return { data: { id, reason: stored.reason, alerted_at: null }, error: null };
-              },
-            }),
-          }),
-          select: () => ({
-            eq: (_col: string, key: unknown) => ({
-              maybeSingle: async () => {
-                const r = h.held.find((x) => x.dedupe_key === key);
-                return { data: r ? { id: r.id, reason: r.reason, alerted_at: r.alerted_at } : null, error: null };
-              },
-            }),
-          }),
-          update: (patch: Row) => ({
-            eq: async (_col: string, id: unknown) => {
-              const r = h.held.find((x) => x.id === id);
-              if (r) Object.assign(r, patch);
-              return { error: null };
-            },
-          }),
-        };
+// Control-project fake: the held-bookings table (unique dedupe_key), the alert
+// claim ledger (primary key alert_key) and the founder outbox. Every operation
+// yields to the event loop before it runs, so concurrent deliveries really
+// interleave; each insert's uniqueness check and write happen in one step, like
+// a database constraint.
+const UNIQUE: Record<string, string> = { calcom_held_bookings: 'dedupe_key', calcom_held_alerts: 'alert_key' };
+
+function tableRows(table: string): Row[] {
+  if (table === 'calcom_held_bookings') return h.held;
+  if (table === 'calcom_held_alerts') return h.alerts;
+  if (table === 'outbound_texts') return h.texts;
+  throw new Error(`control project has no ${table} in this test`);
+}
+
+function injected(table: string, op: string, payload?: Row): Err | null {
+  if (table === 'calcom_held_bookings' && op === 'insert') return h.holdError;
+  if (table === 'calcom_held_alerts' && op === 'insert') return h.claimError;
+  if (table === 'outbound_texts' && op === 'insert') return h.alertError;
+  if (table === 'calcom_held_alerts' && op === 'update' && payload && 'enqueued_at' in payload) return h.confirmError;
+  return null;
+}
+
+function controlBuilder(table: string) {
+  const filters: ((r: Row) => boolean)[] = [];
+  let op: 'select' | 'insert' | 'update' | 'delete' = 'select';
+  let payload: Row | undefined;
+  let returning = false;
+  const run = async (): Promise<{ data: unknown; error: Err | null }> => {
+    await Promise.resolve();
+    await Promise.resolve();
+    const rows = tableRows(table);
+    const err = injected(table, op, payload);
+    if (err) return { data: null, error: err };
+    if (op === 'insert') {
+      const key = UNIQUE[table];
+      if (key && rows.some((r) => r[key] === payload![key])) {
+        return { data: null, error: { code: '23505', message: 'duplicate key' } };
       }
-      if (table === 'outbound_texts') {
-        return {
-          insert: async (row: Row) => {
-            if (h.alertError) return { error: h.alertError };
-            h.texts.push(row);
-            return { error: null };
-          },
-        };
-      }
-      throw new Error(`control project has no ${table} in this test`);
-    },
+      rows.push({ ...payload });
+      return { data: null, error: null };
+    }
+    const hit = rows.filter((r) => filters.every((f) => f(r)));
+    if (op === 'update') {
+      hit.forEach((r) => Object.assign(r, payload));
+      return { data: returning ? hit.map((r) => ({ ...r })) : null, error: null };
+    }
+    if (op === 'delete') {
+      for (const r of hit) rows.splice(rows.indexOf(r), 1);
+      return { data: null, error: null };
+    }
+    return { data: hit.map((r) => ({ ...r })), error: null };
   };
+  const b: Record<string, unknown> = {
+    insert: (row: Row) => { op = 'insert'; payload = row; return b; },
+    update: (patch: Row) => { op = 'update'; payload = patch; return b; },
+    delete: () => { op = 'delete'; return b; },
+    select: () => { if (op !== 'select') returning = true; return b; },
+    eq: (k: string, v: unknown) => { filters.push((r) => r[k] === v); return b; },
+    is: (k: string, v: unknown) => { filters.push((r) => (r[k] ?? null) === v); return b; },
+    lt: (k: string, v: string) => { filters.push((r) => Date.parse(String(r[k])) < Date.parse(v)); return b; },
+    limit: () => b,
+    maybeSingle: async () => {
+      const res = await run();
+      return res.error ? res : { data: (res.data as Row[])[0] ?? null, error: null };
+    },
+    then: (res: (v: unknown) => unknown, rej?: (e: unknown) => unknown) => run().then(res, rej),
+  };
+  return b;
+}
+
+function controlClient() {
+  return { from: (table: string) => controlBuilder(table) };
 }
 
 vi.mock('@/lib/supabase/service', () => ({
@@ -101,8 +128,11 @@ beforeEach(() => {
   });
   h.held = [];
   h.texts = [];
+  h.alerts = [];
   h.holdError = null;
+  h.claimError = null;
   h.alertError = null;
+  h.confirmError = null;
   fetchMock.mockReset();
   fetchMock.mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
   vi.stubGlobal('fetch', fetchMock);
@@ -220,9 +250,10 @@ describe('shared deployment after the client moved', () => {
       raw_body: raw, trigger_event: 'BOOKING_CREATED', booking_uid: 'bk_test_1', reason, target_session_id: OWN,
       dedupe_key: 'uid:BOOKING_CREATED:bk_test_1',
     })]);
-    expect(h.held[0].alerted_at).toEqual(expect.any(String));
+    expect(h.alerts).toEqual([expect.objectContaining({ alert_key: h.held[0].alert_key, enqueued_at: expect.any(String) })]);
     expect(h.texts).toHaveLength(1);
-    expect(h.texts[0].source).toBe('mate:calcom-held:aaaaaaaa');
+    expect(h.texts[0].source).toBe(alertKey(holdKey({ rawBody: raw, triggerEvent: 'BOOKING_CREATED', bookingUid: 'bk_test_1' })));
+    expect(h.texts[0].source).toMatch(/^mate:calcom-held:[0-9a-f]{16}$/);
     dataUntouched();
   });
 
@@ -280,7 +311,7 @@ describe('shared deployment after the client moved', () => {
     const first = await POST(req(body).request);
     expect(first.status).toBe(503);
     expect(h.held).toHaveLength(1);
-    expect(h.held[0].alerted_at).toBeNull();
+    expect(h.alerts).toEqual([]); // the failed enqueue released its claim
     expect(h.texts).toEqual([]);
 
     h.alertError = null;
@@ -289,7 +320,7 @@ describe('shared deployment after the client moved', () => {
     expect(await retry.json()).toEqual({ ok: true, held: true, duplicate: true });
     expect(h.held).toHaveLength(1);
     expect(h.texts).toHaveLength(1);
-    expect(h.held[0].alerted_at).toEqual(expect.any(String));
+    expect(h.alerts[0].enqueued_at).toEqual(expect.any(String));
 
     // Later retries do not alert again.
     expect((await POST(req(body).request)).status).toBe(202);
@@ -302,8 +333,72 @@ describe('shared deployment after the client moved', () => {
     const res = await POST(request);
     expect(res.status).toBe(500);
     expect(h.texts).toHaveLength(1);
-    expect(String(h.texts[0].message)).toContain('could not store it');
+    expect(h.texts[0].message).toBe(alertMessage(String(h.texts[0].source)));
     dataUntouched();
+  });
+
+  it('unsaved, then saved on retry: one alert, same source and text on both paths', async () => {
+    const body = booking({ eventTypeId: 7 });
+    h.holdError = { code: '08006', message: 'connection failure' };
+    expect((await POST(req(body).request)).status).toBe(500);
+    expect(h.held).toEqual([]);
+    expect(h.texts).toHaveLength(1);
+    const first = { ...h.texts[0] };
+
+    h.holdError = null;
+    const retry = await POST(req(body).request);
+    expect(retry.status).toBe(202);
+    expect(h.held).toHaveLength(1);
+    expect(h.held[0].alert_key).toBe(first.source);
+    expect(h.texts).toEqual([first]);
+  });
+
+  it('two concurrent deliveries of the same booking enqueue one alert', async () => {
+    const body = booking({ eventTypeId: 7 });
+    const [a, b] = await Promise.all([POST(req(body).request), POST(req(body).request)]);
+    expect(h.held).toHaveLength(1);
+    expect(h.texts).toHaveLength(1);
+    // The delivery that lost the claim answered 503 (cal.com retries) unless it
+    // already saw the alert confirmed.
+    expect([a.status, b.status]).toContain(202);
+    for (const s of [a.status, b.status]) expect([202, 503]).toContain(s);
+    const later = await POST(req(body).request);
+    expect(later.status).toBe(202);
+    expect(h.texts).toHaveLength(1);
+  });
+
+  it('if confirming the alert fails it answers non-2xx, and the retry confirms without re-sending', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      vi.setSystemTime(new Date('2026-10-10T08:00:00.000Z'));
+      const body = booking({ eventTypeId: 7 });
+      h.confirmError = { code: '08006', message: 'connection failure' };
+      expect((await POST(req(body).request)).status).toBe(503);
+      expect(h.texts).toHaveLength(1);
+      expect(h.alerts[0].enqueued_at ?? null).toBeNull();
+
+      // A retry inside the claim window leaves the claim alone.
+      h.confirmError = null;
+      expect((await POST(req(body).request)).status).toBe(503);
+      expect(h.texts).toHaveLength(1);
+
+      // After the window the retry re-claims, finds the alert already queued,
+      // confirms it, and succeeds. Still one alert.
+      vi.setSystemTime(new Date(Date.now() + ALERT_CLAIM_TTL_MS + 1));
+      expect((await POST(req(body).request)).status).toBe(202);
+      expect(h.texts).toHaveLength(1);
+      expect(h.alerts[0].enqueued_at).toEqual(expect.any(String));
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('with the claim ledger unavailable it still alerts, once per delivery key', async () => {
+    h.claimError = { code: '42P01', message: 'relation does not exist' };
+    const body = booking({ eventTypeId: 7 });
+    expect((await POST(req(body).request)).status).toBe(202);
+    expect((await POST(req(body).request)).status).toBe(202);
+    expect(h.texts).toHaveLength(1);
   });
 
   it('bookings of tenants still served here run exactly as before', async () => {

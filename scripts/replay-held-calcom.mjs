@@ -79,7 +79,13 @@ export async function replayRow(row, { target, secret, fetchImpl = fetch }) {
   }
 }
 
-const label = (r) => `${String(r.id).slice(0, 8)} ${r.received_at} ${r.trigger_event ?? '-'} target=${r.target_session_id ? String(r.target_session_id).slice(0, 8) : 'none'}${'alerted_at' in r ? ` alerted=${r.alerted_at ? 'yes' : 'NO'}` : ''} reason="${r.reason}"`;
+/** Alert state for a held row from the claim ledger (calcom_held_alerts). */
+export function alertState(ledgerRow) {
+  if (!ledgerRow) return 'NONE';
+  return ledgerRow.enqueued_at ? 'sent' : 'claimed-unconfirmed';
+}
+
+const label = (r, alert) => `${String(r.id).slice(0, 8)} ${r.received_at} ${r.trigger_event ?? '-'} target=${r.target_session_id ? String(r.target_session_id).slice(0, 8) : 'none'}${r.alert_key ? ` ref=${String(r.alert_key).split(':').pop()}` : ''}${alert ? ` alert=${alert}` : ''} reason="${r.reason}"`;
 
 async function findOne(db, prefix) {
   const { data, error } = await db.from('calcom_held_bookings')
@@ -101,12 +107,18 @@ async function main() {
 
   if (!args.replay && !args.resolve) {
     const { data, error } = await db.from('calcom_held_bookings')
-      .select('id, received_at, trigger_event, reason, target_session_id, alerted_at')
+      .select('id, received_at, trigger_event, reason, target_session_id, alert_key')
       .is('resolved_at', null)
       .order('received_at', { ascending: true });
     if (error) throw new Error(error.message);
+    const keys = (data ?? []).map((r) => r.alert_key).filter(Boolean);
+    const { data: alerts, error: alertError } = keys.length
+      ? await db.from('calcom_held_alerts').select('alert_key, enqueued_at').in('alert_key', keys)
+      : { data: [], error: null };
+    if (alertError) throw new Error(alertError.message);
+    const byKey = new Map((alerts ?? []).map((a) => [a.alert_key, a]));
     console.log(`${(data ?? []).length} open held booking(s)`);
-    for (const r of data ?? []) console.log(label(r));
+    for (const r of data ?? []) console.log(label(r, alertState(byKey.get(r.alert_key))));
     return;
   }
 
