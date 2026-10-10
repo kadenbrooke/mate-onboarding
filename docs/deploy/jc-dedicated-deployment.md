@@ -112,7 +112,7 @@ Changed or fresh values:
 | `SIGNAL_TOKEN` | fresh, Keychain `MATE_JC_SIGNAL_TOKEN` (only the e2e page uses it) |
 | `CRON_SECRET` | fresh, Keychain `MATE_JC_CRON_SECRET`. **Set only at switch step 4**; until then both crons answer 401 and write nothing |
 | `META_JC_SESSION_ID`, `JC_ONBOARDING_SESSION_ID` | `61400e73-0570-4167-88d9-d3a69650b15b`, **set only at switch step 4** |
-| `JC_DASHBOARD_WRITES_ENABLED` | **Not set during prep** (read-only). `1` only at switch step 2 (runbook 5b), right after the shared app stops serving J&C (step 1, runbook 5a), which itself runs only once the runbook has verified the final copy and blocked the old project's J&C writes. Rollback step (a) removes it |
+| `JC_DASHBOARD_WRITES_ENABLED` | **Not set during prep** (read-only). `1` only at switch step 2 (runbook 5.3), right after the shared app stops serving J&C (step 1, runbook 5.2), which itself runs only once the runbook has verified the final copy and blocked the old project's J&C writes. Rollback step (a) removes it |
 
 Not needed on `mate-jc` (onboarding/demo only): `MATE_SESSION_SECRET`,
 `DEMO_TELNYX_NUMBER`, `DEMO_MAX_*`.
@@ -122,7 +122,7 @@ Not needed on `mate-jc` (onboarding/demo only): `MATE_SESSION_SECRET`,
 | Name | When | Value |
 |---|---|---|
 | `CALCOM_BOOKING_OWNERS` | prep (inert until a session is moved) | `61400e73-0570-4167-88d9-d3a69650b15b=event:<J&C event type id>` for each J&C event type, plus `…=organizer:<J&C organizer email>` as a second key. Find the ids with prep step 2 |
-| `MATE_MOVED_SESSIONS` | switch step 1 (runbook 5a) | `61400e73-0570-4167-88d9-d3a69650b15b=https://jc.mate.auto-mate.business` |
+| `MATE_MOVED_SESSIONS` | switch step 1 (runbook 5.2) | `61400e73-0570-4167-88d9-d3a69650b15b=https://jc.mate.auto-mate.business` |
 
 ## Commands
 
@@ -239,7 +239,7 @@ The order matters:
 - Every caller is repointed in one step.
 
 Steps 1 and 2 are **amos RUNBOOK switch step 5** (after `--set-switched`), as sub-steps
-5a and 5b. Run them back to back.
+5.2 and 5.3. Run them back to back. (The runbook's own step 5b is the window reconcile, which comes after.)
 
 **What a caller sees in the gap between 1 and 2** (nothing is written anywhere, nothing
 is lost):
@@ -253,7 +253,7 @@ is lost):
 | cal.com (old webhook URL) | shared app forwards it to `mate-jc`, which **holds** it (control project, founder alert); replayed in step 5 |
 | Old crons | skip J&C (verified in step 1) |
 
-1. **(Runbook 5a) Shared app stops serving J&C**, then verify. Deploy from clean `main`:
+1. **(Runbook 5.2) Shared app stops serving J&C**, then verify. Deploy from clean `main`:
    ```bash
    cd $MAIN && git status --short          # must be clean
    printf %s "$JC=https://jc.mate.auto-mate.business" | vercel env add MATE_MOVED_SESSIONS production
@@ -276,7 +276,7 @@ is lost):
    means the wrong Keychain entry; anything else means the shared app still serves
    J&C: stop, roll back this step (`vercel env rm MATE_MOVED_SESSIONS production --yes`
    and redeploy), and leave the gate shut.
-2. **(Runbook 5b) Open J&C writes on `mate-jc`, immediately:**
+2. **(Runbook 5.3) Open J&C writes on `mate-jc`, immediately:**
    ```bash
    cd $JCDIR
    printf 1 | vercel env add JC_DASHBOARD_WRITES_ENABLED production
