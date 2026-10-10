@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { Lead } from '@/lib/metrics/leads';
 import { intakeTenantFor } from './intakeTenants';
 import { practiceStatus } from '@/lib/portal/practice';
+import { scanAll, type Query } from '@/lib/command/fetch';
 
 /** The exact US-NANP normalizer used by jc_consent__normalize_phone(). */
 export function normalizeJcConsentPhone(raw: string | null | undefined): string | null {
@@ -37,7 +38,6 @@ export type DoNotContactState = {
 
 export const OPT_OUT_UNAVAILABLE_NOTICE = "Opt-out status couldn't be checked, so the call list is hidden. Refresh to retry.";
 
-const OPT_OUT_PAGE_SIZE = 1000;
 const unavailableState = (): DoNotContactState => ({
   available: false, optedOut: true, source: 'unknown', recordedBy: null, recordedAt: null,
 });
@@ -47,25 +47,63 @@ async function readLiveOptedOutPhones(
   tenant: NonNullable<ReturnType<typeof intakeTenantFor>>,
   candidatePhones: ReadonlySet<string>,
 ): Promise<OptedOutRead> {
+  const scan = await scanAll<{ from_number?: unknown }>(() => client.from(tenant.conversationTable)
+    // The live latch is the only lane state Mate needs. `eq(true)` deliberately
+    // excludes null. The lane writes false on START and true on STOP/spoken
+    // opt-out; a legacy null row is therefore not an active suppression state.
+    // We intentionally read the table (not the lane view) here, so null cannot
+    // be folded into a false-positive block without changing this contract.
+    .select('from_number').eq('opted_out', true)
+    // from_number is the lane's natural key, so this ordering makes scanAll's
+    // shared pages deterministic even when the table is larger than 1,000 rows.
+    .order('from_number', { ascending: true }) as unknown as Query<{ from_number?: unknown }>);
+  if ('error' in scan || !scan.complete) {
+    const error = 'error' in scan ? scan.error : undefined;
+    console.error('[do-not-contact] opted-out read failed:', error?.code ?? '', error?.message ?? 'scan incomplete');
+    return { available: false, phones: new Set() };
+  }
   const optedOut = new Set<string>();
-  for (let page = 0; ; page++) {
-    const from = page * OPT_OUT_PAGE_SIZE;
-    const to = from + OPT_OUT_PAGE_SIZE - 1;
-    const { data, error } = await client.from(tenant.conversationTable)
-      // The live latch is the only lane state Mate needs. `eq(true)` deliberately
-      // excludes null, which is not an active suppression state in the lane.
-      .select('from_number').eq('opted_out', true).range(from, to);
-    if (error || !data) {
-      console.error('[do-not-contact] opted-out read failed:', error?.code ?? '', error?.message ?? 'no data');
-      return { available: false, phones: new Set() };
-    }
-    for (const row of data as Array<{ from_number?: unknown }>) {
-      const phone = typeof row.from_number === 'string' ? normalizeJcConsentPhone(row.from_number) : null;
-      if (phone && candidatePhones.has(phone)) optedOut.add(phone);
-    }
-    if (data.length < OPT_OUT_PAGE_SIZE) break;
+  for (const row of scan.rows) {
+    const phone = typeof row.from_number === 'string' ? normalizeJcConsentPhone(row.from_number) : null;
+    if (phone && candidatePhones.has(phone)) optedOut.add(phone);
   }
   return { available: true, phones: optedOut };
+}
+
+type PracticeRow = { id?: unknown; body?: unknown; created_at?: unknown };
+type PracticeRead = {
+  available: boolean;
+  phones: Set<string>;
+  receipts: Map<string, { recordedBy: string | null; recordedAt: string | null }>;
+};
+
+async function readPracticeLatch(client: SupabaseClient, sessionId: string): Promise<PracticeRead> {
+  const scan = await scanAll<PracticeRow>(() => client.from('lead_messages')
+    .select('id, body, created_at').eq('session_id', sessionId).eq('channel', 'call_note').eq('author', 'human')
+    // lead_messages.id is unique; all pages therefore have a stable boundary.
+    .order('id', { ascending: true }) as unknown as Query<PracticeRow>);
+  if ('error' in scan || !scan.complete) {
+    const error = 'error' in scan ? scan.error : undefined;
+    console.error('[do-not-contact] practice opt-out read failed:', error?.code ?? '', error?.message ?? 'scan incomplete');
+    return { available: false, phones: new Set(), receipts: new Map() };
+  }
+  const phones = new Set<string>();
+  const receipts = new Map<string, { recordedBy: string | null; recordedAt: string | null }>();
+  for (const row of scan.rows) {
+    if (typeof row.body !== 'string' || !row.body.includes('[Practice fake] Do not contact')) continue;
+    const recordedAt = typeof row.created_at === 'string' ? row.created_at : null;
+    const recordedBy = row.body.match(/\brecorded_by=([^\s]+)/)?.[1] ?? null;
+    for (const match of row.body.matchAll(/\bphone=([^\s]+)/g)) {
+      const phone = normalizeJcConsentPhone(match[1]);
+      if (!phone) continue;
+      phones.add(phone);
+      const previous = receipts.get(phone);
+      if (!previous || !previous.recordedAt || (recordedAt && recordedAt >= previous.recordedAt)) {
+        receipts.set(phone, { recordedBy, recordedAt });
+      }
+    }
+  }
+  return { available: true, phones, receipts };
 }
 
 /**
@@ -84,13 +122,12 @@ export async function loadOptedOutPhones(
     // the live J&C tables, while other non-J&C tenants remain untouched.
     const practice = await practiceStatus(client, sessionId);
     if (!practice.ok || !practice.isPractice) return { available: true, phones: new Set() };
+    const practiceRead = await readPracticeLatch(client, sessionId);
+    if (!practiceRead.available) return { available: false, phones: new Set() };
     const phones = new Set<string>();
     for (const lead of leads) {
       const normalized = normalizeJcConsentPhone(lead.phone);
-      if (!normalized) continue;
-      const state = await readPracticeState(client, sessionId, normalized, lead.id);
-      if (!state.available) return { available: false, phones: new Set() };
-      if (state.optedOut) phones.add(normalized);
+      if (normalized && practiceRead.phones.has(normalized)) phones.add(normalized);
     }
     return { available: true, phones };
   }
@@ -102,30 +139,6 @@ export async function loadOptedOutPhones(
 }
 
 type OptOutOptions = { leadId?: string; isPractice?: boolean };
-
-async function readPracticeState(
-  client: SupabaseClient,
-  sessionId: string,
-  phone: string,
-  leadId?: string,
-): Promise<DoNotContactState> {
-  let query = client.from('lead_messages').select('body, created_at')
-    .eq('session_id', sessionId).eq('channel', 'call_note').eq('author', 'human')
-    .order('created_at', { ascending: false }).limit(100);
-  if (leadId) query = query.eq('lead_id', leadId);
-  const { data, error } = await query;
-  if (error || !data) return unavailableState();
-  const marker = `phone=${phone}`;
-  const row = (data as Array<{ body?: unknown; created_at?: unknown }>).find(item =>
-    typeof item.body === 'string' && item.body.includes('[Practice fake] Do not contact') && item.body.includes(marker));
-  if (!row) return { available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null };
-  const body = row.body as string;
-  const actor = body.match(/recorded_by=([^\s]+)/)?.[1] ?? null;
-  return {
-    available: true, optedOut: true, source: 'practice', recordedBy: actor,
-    recordedAt: typeof row.created_at === 'string' ? row.created_at : null,
-  };
-}
 
 async function readLiveState(
   client: SupabaseClient,
@@ -142,10 +155,10 @@ async function readLiveState(
     .select('recorded_by, recorded_at, submitted_at').eq('from_number', phone)
     .eq('source', 'phone_call').order('submitted_at', { ascending: false }).limit(1).maybeSingle();
   if (error) {
-    // A live latch with no readable phone-call audit is the lane's existing
-    // STOP state (the spoken RPC cannot exist without this audit table). Keep
-    // that source visible rather than implying a Mate recording we cannot show.
-    return { available: true, optedOut: true, source: 'text_stop', recordedBy: null, recordedAt: null };
+    // The latch is authoritative, but a receipt read failure must not invent
+    // its source or a recorder. The UI still shows the suppression state and
+    // can retry the receipt on refresh.
+    return { available: true, optedOut: true, source: 'unknown', recordedBy: null, recordedAt: null };
   }
   if (event) {
     const recordedAt = typeof event.recorded_at === 'string' ? event.recorded_at
@@ -166,16 +179,23 @@ export async function readLeadOptOutState(
   options: OptOutOptions = {},
 ): Promise<DoNotContactState> {
   const normalized = normalizeJcConsentPhone(phone);
-  if (!normalized) return { available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null };
+  const tenant = intakeTenantFor(sessionId);
+  if (!normalized) return tenant ? unavailableState() : { available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null };
   let isPractice = options.isPractice;
   if (isPractice === undefined) {
     const practice = await practiceStatus(client, sessionId);
     if (!practice.ok) return unavailableState();
     isPractice = practice.isPractice;
   }
-  return isPractice
-    ? readPracticeState(client, sessionId, normalized, options.leadId)
-    : readLiveState(client, sessionId, normalized);
+  if (isPractice) {
+    const practiceRead = await readPracticeLatch(client, sessionId);
+    if (!practiceRead.available) return unavailableState();
+    const receipt = practiceRead.receipts.get(normalized);
+    return receipt
+      ? { available: true, optedOut: true, source: 'practice', ...receipt }
+      : { available: true, optedOut: false, source: null, recordedBy: null, recordedAt: null };
+  }
+  return readLiveState(client, sessionId, normalized);
 }
 
 /**

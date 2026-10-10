@@ -4,6 +4,9 @@ const { state, fetchMock } = vi.hoisted(() => ({
   state: {
     practice: true,
     inserts: [] as Array<{ table: string; values: unknown }>,
+    optedOut: false,
+    optOutReadError: false,
+    optOutReadCalls: 0,
   },
   fetchMock: vi.fn(),
 }));
@@ -73,6 +76,13 @@ function tableStub(table: string) {
       if (table === 'client_leads' && selected === 'id, phone, name') {
         return Promise.resolve({ data: [{ id: 'fake-lead-id', phone: '+18015550101', name: 'Fake Lead' }], error: null }).then(resolve);
       }
+      if (table === 'jc_sms_conversations' && selected === 'from_number') {
+        state.optOutReadCalls += 1;
+        return Promise.resolve({
+          data: state.optOutReadError ? null : state.optedOut ? [{ from_number: '+18015550101' }] : [],
+          error: state.optOutReadError ? { message: 'latch unavailable' } : null,
+        }).then(resolve);
+      }
       return Promise.resolve({ data: [], error: null }).then(resolve);
     },
   };
@@ -128,6 +138,9 @@ function post() {
 beforeEach(() => {
   state.practice = true;
   state.inserts.length = 0;
+  state.optedOut = false;
+  state.optOutReadError = false;
+  state.optOutReadCalls = 0;
   fetchMock.mockReset();
   fetchMock.mockResolvedValue({ ok: true, text: async () => JSON.stringify({ status: 'sent' }) });
   process.env.LEAD_INTAKE_WEBHOOK_URL = 'https://n8n.example.test/intake';
@@ -168,6 +181,78 @@ describe('POST /api/dash/[sessionId]/snapshot/[id]/confirm', () => {
     expect(JSON.parse(fetchMock.mock.calls[0][0] ? fetchMock.mock.calls[0][1].body : '{}')).toMatchObject({
       source: 'lead_snapshot', lead: { source: 'self_sourced' },
     });
+  });
+
+  it('marks an opted-out snapshot row failed without calling intake', async () => {
+    state.practice = false;
+    state.optedOut = true;
+    const response = await POST(
+      new Request('http://x/api/dash/normal-session/snapshot/snapshot-1/confirm', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(requestBody),
+      }) as never,
+      { params: Promise.resolve({ sessionId: 'normal-session', id: 'snapshot-1' }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.outcomes).toEqual([expect.objectContaining({
+      outcome: 'failed', message: expect.stringContaining('asked not to be contacted'),
+    })]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('fails a snapshot row closed when the opt-out read errors', async () => {
+    state.practice = false;
+    state.optOutReadError = true;
+    const response = await POST(
+      new Request('http://x/api/dash/normal-session/snapshot/snapshot-1/confirm', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(requestBody),
+      }) as never,
+      { params: Promise.resolve({ sessionId: 'normal-session', id: 'snapshot-1' }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.outcomes).toEqual([expect.objectContaining({
+      outcome: 'failed', message: expect.stringContaining("couldn't be checked"),
+    })]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('refuses a J&C number the lane normalizer rejects', async () => {
+    state.practice = false;
+    const response = await POST(
+      new Request('http://x/api/dash/normal-session/snapshot/snapshot-1/confirm', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, rows: [{ ...requestBody.rows[0], phone: '8010550001' }] }),
+      }) as never,
+      { params: Promise.resolve({ sessionId: 'normal-session', id: 'snapshot-1' }) },
+    );
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.outcomes).toEqual([expect.objectContaining({
+      outcome: 'failed', message: expect.stringContaining('valid J&C phone number'),
+    })]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reads the opt-out set once for a multi-row snapshot batch', async () => {
+    state.practice = false;
+    const response = await POST(
+      new Request('http://x/api/dash/normal-session/snapshot/snapshot-1/confirm', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...requestBody, rows: [
+          requestBody.rows[0],
+          { ...requestBody.rows[0], index: 1, phone: '+18015550102', name: 'Second Fake Lead' },
+        ] }),
+      }) as never,
+      { params: Promise.resolve({ sessionId: 'normal-session', id: 'snapshot-1' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(state.optOutReadCalls).toBe(1);
   });
 
   it('saves a self-sourced lead as human-owned without handing it to intake', async () => {

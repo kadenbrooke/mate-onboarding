@@ -111,7 +111,7 @@ export function LeadThread({ leadId, sessionId, handler, messages, leadName, age
         {contactState?.available === false
           ? <div role="alert" style={{ color: TEXT_MUTED, fontSize: 12, fontFamily: FONT_BODY }}>{OPT_OUT_UNAVAILABLE_NOTICE}</div>
           : <DoNotContactButton
-            key={leadId}
+            key={`${leadId}:${contactState?.optedOut ? 'opted-out' : 'contactable'}`}
             leadId={leadId} sessionId={sessionId} initial={contactState?.optedOut ? contactState : null}
             onRecorded={receipt => setContactState({
               available: true, optedOut: true, source: receipt.source ?? 'phone_call',

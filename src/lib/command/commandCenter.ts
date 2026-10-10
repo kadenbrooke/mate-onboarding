@@ -343,7 +343,7 @@ export function buildCommandModel(input: {
     : filterOptedOutLeads(input.openLeads, input.optedOutPhones ?? new Set());
   // Pass the latch set at the boundary where Call now is built. This keeps
   // the real wiring covered even if the upstream contactable slice changes.
-  const call = callList(input.openLeads, input.optedOutPhones ?? new Set()).map(l => ({
+  const call = callList(contactableOpenLeads).map(l => ({
     ...base(l),
     score: l.score!,
     reasons: hotReasons(l, signals.get(l.id), now),

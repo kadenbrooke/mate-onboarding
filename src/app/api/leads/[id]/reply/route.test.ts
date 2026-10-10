@@ -95,11 +95,19 @@ describe('POST /api/leads/[id]/reply', () => {
     expect(h.db.writes).toEqual([]);
   });
 
+  it('refuses a J&C lead phone the lane normalizer rejects', async () => {
+    h.db.tables.client_leads[0].phone = '8010550001';
+    const res = await call('lead-a', { session_id: TENANT_A, text: 'hello there' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/valid J&C phone number/i);
+    expect(sendSmsMock).not.toHaveBeenCalled();
+  });
+
   it('fails closed when the live opt-out read errors', async () => {
     const originalFrom = h.db.client.from;
     h.db.client = {
       from: (table: string) => table === 'jc_sms_conversations'
-        ? { select: () => ({ eq: () => ({ range: async () => ({ data: null, error: { message: 'read failed' } }) }) }) }
+        ? { select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: null, error: { message: 'read failed' } }) }) }) }) }
         : originalFrom(table),
     };
     const res = await call('lead-a', { session_id: TENANT_A, text: 'hello there' });

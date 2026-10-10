@@ -6,7 +6,7 @@ import { logMessage } from '@/lib/agent/messages';
 import { checkLeadApiAccess } from '@/lib/portal/lead-gate';
 import { intakeTenantFor } from '@/lib/leads/intakeTenants';
 import { fakePracticeMessage, practiceStatus } from '@/lib/portal/practice';
-import { isOptedOut } from '@/lib/leads/doNotContact';
+import { isOptedOut, normalizeJcConsentPhone } from '@/lib/leads/doNotContact';
 
 // Human reply from the dashboard: send to the lead, log it, and auto-take-over
 // (typing = takeover). Practice tenants never reach a provider. They log a
@@ -32,6 +32,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { data: contact } = await supabase.from('client_leads')
     .select('phone').eq('id', id).eq('session_id', lead.session_id).maybeSingle();
   if (!contact?.phone) return NextResponse.json({ error: 'lead not found or has no phone' }, { status: 404 });
+
+  if (intakeTenantFor(lead.session_id) && !normalizeJcConsentPhone(contact.phone)) {
+    return NextResponse.json({ error: 'This lead has no valid J&C phone number; sending is blocked.' }, { status: 409 });
+  }
 
   // The provider's STOP filter is not enough: spoken opt-outs and any live
   // latch read failure must stop Mate's own send path before it can take over.

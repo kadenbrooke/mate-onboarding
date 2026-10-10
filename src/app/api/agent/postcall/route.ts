@@ -129,7 +129,7 @@ export async function POST(request: Request) {
     const { data: lead } = await supabase.from('client_leads')
       .select('id, session_id, phone, name').eq('id', pc.lead_id).single();
     const { data: config, error: configError } = await supabase.from('onboarding_sessions')
-      .select('onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
+      .select('operator_phone, onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
     if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
     const { choice, notes } = classifyReply(body.text);
 
@@ -157,7 +157,23 @@ export async function POST(request: Request) {
         config?.is_practice === true ? { ok: true, practice: true } : sendSms(to, text)
       );
       const actionResult = await applyPostcallChoice(choice, { lead, config: config ?? {}, supabase, sendSms: sendForSession });
-      if (!actionResult.ok) return NextResponse.json({ error: actionResult.error }, { status: actionResult.status });
+      if (!actionResult.ok) {
+        const blockedMessage = 'Not sent: this lead asked not to be contacted';
+        const resolvedAt = new Date().toISOString();
+        await supabase.from('lead_postcall').update({
+          status: 'resolved', choice, resolved_at: resolvedAt, notes: blockedMessage,
+        }).eq('id', pc.id);
+        if (config?.is_practice === true) {
+          await logMessage(supabase, {
+            leadId: lead.id, sessionId: lead.session_id, direction: 'outbound', author: 'system', channel: 'system',
+            body: fakePracticeMessage(blockedMessage, 'office'),
+          });
+        } else if (config?.operator_phone) {
+          const operatorSend = await sendSms(config.operator_phone, blockedMessage);
+          if (!operatorSend.ok) console.warn('blocked postcall operator notice failed', { postcallId: pc.id, error: operatorSend.error });
+        }
+        return NextResponse.json({ ok: true, blocked: true, warning: actionResult.error });
+      }
       const resolvedAt = new Date().toISOString();
       await supabase.from('lead_postcall').update({ status: 'resolved', choice, resolved_at: resolvedAt }).eq('id', pc.id);
       await emitClientEvent(supabase, postcallResolvedEvent({

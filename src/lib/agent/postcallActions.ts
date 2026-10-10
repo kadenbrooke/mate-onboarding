@@ -3,10 +3,11 @@ import type { PostcallChoice } from './postcall';
 import { setHandler } from './handler';
 import { logMessage } from './messages';
 import { fakePracticeMessage } from '@/lib/portal/practice';
-import { isOptedOut } from '@/lib/leads/doNotContact';
+import { intakeTenantFor } from '@/lib/leads/intakeTenants';
+import { isOptedOut, normalizeJcConsentPhone } from '@/lib/leads/doNotContact';
 
 type Lead = { id: string; session_id: string; phone: string | null };
-type Config = { onboarding_form_url?: string | null; faq_url?: string | null; is_practice?: boolean };
+type Config = { onboarding_form_url?: string | null; faq_url?: string | null; is_practice?: boolean; operator_phone?: string | null };
 type Send = (to: string, text: string) => Promise<{ ok: boolean; practice?: boolean }>;
 export type PostcallActionResult = { ok: true } | { ok: false; status: 409; error: string };
 
@@ -18,6 +19,12 @@ export async function applyPostcallChoice(
   const { lead, config, supabase, sendSms } = deps;
   const resume = () => setHandler(supabase, { leadId: lead.id, sessionId: lead.session_id, handler: 'agent', by: 'postcall' });
   const refuseIfBlocked = async (): Promise<PostcallActionResult | null> => {
+    if (intakeTenantFor(lead.session_id) && !normalizeJcConsentPhone(lead.phone)) {
+      return {
+        ok: false, status: 409,
+        error: 'This lead has no valid J&C phone number; sending is blocked.',
+      };
+    }
     if (!await isOptedOut(supabase, lead.session_id, lead.phone, { leadId: lead.id, isPractice: config.is_practice === true })) return null;
     return {
       ok: false, status: 409,

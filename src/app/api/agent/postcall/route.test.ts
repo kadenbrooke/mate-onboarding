@@ -8,6 +8,7 @@ const inserts: [string, unknown][] = [];
 // Captures deletes as [table, eqArgs] so the ignore path is observable.
 const deletes: [string, unknown[][]][] = [];
 let deleteError: { message: string } | null = null;
+const updates: [string, unknown][] = [];
 // Captures the derived ticker rows the route emits into client_events.
 const emitted: Record<string, unknown>[] = [];
 
@@ -16,16 +17,20 @@ function tableStub(table: string) {
     eq: () => MessageQuery;
     order: () => MessageQuery;
     limit: () => MessageQuery;
+    range: () => Promise<unknown>;
     then: (resolve: (value: unknown) => unknown) => Promise<unknown>;
   };
   const messageQuery: MessageQuery = {
     eq: () => messageQuery,
     order: () => messageQuery,
     limit: () => messageQuery,
+    range: async () => ({ data: [], error: null }),
     then: resolve => Promise.resolve({ data: [], error: null }).then(resolve),
   };
   return {
-    select: () => table === 'lead_messages' ? messageQuery : table === 'jc_sms_conversations'
+    select: (columns?: string) => table === 'lead_messages' ? messageQuery : table === 'jc_sms_conversations' && columns === 'from_number'
+      ? { eq: () => ({ order: () => ({ range: async () => ({ data: [{ from_number: '+18015551234' }], error: null }) }) }) }
+      : table === 'jc_sms_conversations'
       // The quote path looks the lead's name up by from_number. Its own stub so
       // it cannot consume a maybeSingle a test queued for the postcall lookup.
       ? { eq: () => ({ maybeSingle: () => Promise.resolve({ data: { lead_name: 'Wes Bayles' }, error: null }) }) }
@@ -41,7 +46,10 @@ function tableStub(table: string) {
       emitted.push(v as Record<string, unknown>);
       return Promise.resolve({ error: null });
     },
-    update: (v: unknown) => { void v; return { eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }; },
+    update: (v: unknown) => {
+      updates.push([table, v]);
+      return { eq: () => ({ eq: () => Promise.resolve({ error: null }) }) };
+    },
     delete: () => {
       const args: unknown[][] = [];
       deletes.push([table, args]);
@@ -68,6 +76,7 @@ beforeEach(() => {
   maybeSingle.mockReset();
   inserts.length = 0;
   deletes.length = 0;
+  updates.length = 0;
   emitted.length = 0;
   deleteError = null;
   applyNoteToLead.mockClear();
@@ -110,6 +119,22 @@ describe('POST /api/agent/postcall', () => {
     expect(inserts.find(([table]) => table === 'lead_messages')?.[1]).toMatchObject({
       body: expect.stringContaining('[Practice fake sent to lead]'),
     });
+  });
+
+  it('resolves an opted-out menu as blocked and texts the operator, never the lead', async () => {
+    const sessionId = '61400e73-0570-4167-88d9-d3a69650b15b';
+    maybeSingle
+      .mockResolvedValueOnce({ data: { id: 'pc1', lead_id: 'l1', kind: 'call', jc_conversation_id: null, created_by_fire: false }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    single.mockResolvedValueOnce({ data: { id: 'l1', session_id: sessionId, phone: '+18015551234', name: 'J&C Lead' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18019414398', onboarding_form_url: null, faq_url: null, is_practice: false }, error: null });
+
+    const res = await post('action=operator_reply&k=tok', { session_id: sessionId, text: '2' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, blocked: true });
+    expect(sendSms).toHaveBeenCalledWith('+18019414398', 'Not sent: this lead asked not to be contacted');
+    expect(sendSms).not.toHaveBeenCalledWith('+18015551234', expect.anything());
+    expect(updates).toContainEqual(['lead_postcall', expect.objectContaining({ status: 'resolved', notes: 'Not sent: this lead asked not to be contacted' })]);
   });
 
   it('routes a quote-menu reply (choice 1) through the quote path', async () => {

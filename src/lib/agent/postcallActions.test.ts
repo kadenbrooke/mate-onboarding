@@ -5,15 +5,19 @@ function makeDeps(optedOut = false, readError = false, practiceFake = false) {
   const sends: Array<[string, string]> = [];
   const handlerUpdates: unknown[] = [];
   const logs: unknown[] = [];
+  const practiceQuery = {
+    eq: () => practiceQuery,
+    order: () => ({ range: async () => ({ data: [{ id: 'fake', body: '[Practice fake] Do not contact phone=+18015551234', created_at: '2026-10-09T12:00:00.000Z' }], error: null }) }),
+  };
   const supabase = {
     from: (t: string) => t === 'client_leads'
       ? { update: (v: unknown) => { handlerUpdates.push(v); return { eq: () => ({ eq: () => Promise.resolve({ error: null }) }) }; } }
       : t === 'jc_sms_conversations'
-        ? { select: () => ({ eq: () => ({ range: async () => ({ data: readError ? null : optedOut ? [{ from_number: '+18015551234' }] : [], error: readError ? { message: 'read failed' } : null }) }) }) }
+        ? { select: () => ({ eq: () => ({ order: () => ({ range: async () => ({ data: readError ? null : optedOut ? [{ from_number: '+18015551234' }] : [], error: readError ? { message: 'read failed' } : null }) }) }) }) }
         : t === 'jc_consent_events'
           ? { select: () => ({ eq: () => ({ eq: () => ({ order: () => ({ limit: () => ({ maybeSingle: async () => ({ data: null, error: null }) }) }) }) }) }) }
           : t === 'lead_messages' && practiceFake
-            ? { select: () => ({ eq: () => ({ eq: () => ({ eq: () => ({ order: () => ({ limit: () => ({ eq: async () => ({ data: [{ body: '[Practice fake] Do not contact phone=+18015551234', created_at: '2026-10-09T12:00:00.000Z' }], error: null }) }) }) }) }) }) }) }
+            ? { select: () => practiceQuery }
           : { insert: (v: unknown) => { logs.push(v); return Promise.resolve({ error: null }); } },
   };
   const sendSms = vi.fn(async (to: string, text: string) => { sends.push([to, text]); return { ok: true }; });
@@ -40,6 +44,14 @@ describe('applyPostcallChoice', () => {
     const d = makeDeps(false, true);
     const result = await applyPostcallChoice('2', { lead: jcLead, config, supabase: d.supabase as never, sendSms: d.sendSms as never });
     expect(result).toMatchObject({ status: 409 });
+    expect(d.sends).toHaveLength(0);
+  });
+  it('refuses an unnormalizable J&C phone before any menu choice sends', async () => {
+    const d = makeDeps();
+    const result = await applyPostcallChoice('2', {
+      lead: { ...jcLead, phone: '8010550001' }, config, supabase: d.supabase as never, sendSms: d.sendSms as never,
+    });
+    expect(result).toMatchObject({ status: 409, error: expect.stringContaining('valid J&C phone number') });
     expect(d.sends).toHaveLength(0);
   });
   it('uses the Mate fake latch for practice without reading the J&C table', async () => {
