@@ -110,9 +110,9 @@ Changed or fresh values:
 |---|---|
 | `GOOGLE_OAUTH_REDIRECT_URI` | `https://jc.mate.auto-mate.business/api/connect/google/callback` (also add it to the Google OAuth client's authorized redirect URIs). J&C's calendar token is copied with the data, so the cron works without reconnecting |
 | `SIGNAL_TOKEN` | fresh, Keychain `MATE_JC_SIGNAL_TOKEN` (only the e2e page uses it) |
-| `CRON_SECRET` | fresh, Keychain `MATE_JC_CRON_SECRET`. **Set only at switch step 5**; until then both crons answer 401 and write nothing |
-| `META_JC_SESSION_ID`, `JC_ONBOARDING_SESSION_ID` | `61400e73-0570-4167-88d9-d3a69650b15b`, **set only at switch step 5** |
-| `JC_DASHBOARD_WRITES_ENABLED` | **Not set during prep** (read-only). `1` only at switch step 1, after the runbook has verified the final copy and blocked the old project's J&C writes. Rollback step (a) removes it |
+| `CRON_SECRET` | fresh, Keychain `MATE_JC_CRON_SECRET`. **Set only at switch step 4**; until then both crons answer 401 and write nothing |
+| `META_JC_SESSION_ID`, `JC_ONBOARDING_SESSION_ID` | `61400e73-0570-4167-88d9-d3a69650b15b`, **set only at switch step 4** |
+| `JC_DASHBOARD_WRITES_ENABLED` | **Not set during prep** (read-only). `1` only at switch step 2 (runbook 5b), right after the shared app stops serving J&C (step 1, runbook 5a), which itself runs only once the runbook has verified the final copy and blocked the old project's J&C writes. Rollback step (a) removes it |
 
 Not needed on `mate-jc` (onboarding/demo only): `MATE_SESSION_SECRET`,
 `DEMO_TELNYX_NUMBER`, `DEMO_MAX_*`.
@@ -122,7 +122,7 @@ Not needed on `mate-jc` (onboarding/demo only): `MATE_SESSION_SECRET`,
 | Name | When | Value |
 |---|---|---|
 | `CALCOM_BOOKING_OWNERS` | prep (inert until a session is moved) | `61400e73-0570-4167-88d9-d3a69650b15b=event:<J&C event type id>` for each J&C event type, plus `…=organizer:<J&C organizer email>` as a second key. Find the ids with prep step 2 |
-| `MATE_MOVED_SESSIONS` | switch step 2 | `61400e73-0570-4167-88d9-d3a69650b15b=https://jc.mate.auto-mate.business` |
+| `MATE_MOVED_SESSIONS` | switch step 1 (runbook 5a) | `61400e73-0570-4167-88d9-d3a69650b15b=https://jc.mate.auto-mate.business` |
 
 ## Commands
 
@@ -206,7 +206,7 @@ JCDIR=~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc   # linked to m
    showing the rehearsal copy.
 
    Find which Keychain entry holds the **shared** project's `CRON_SECRET` (needed for
-   switch step 3). This calls the calendar cron the way Vercel does (GET + Bearer) for
+   switch step 1). This calls the calendar cron the way Vercel does (GET + Bearer) for
    the public demo session, which has no Google connection, so it writes nothing:
    ```bash
    DEMO=b7573135-d4ec-43bb-bf33-a1d365739784
@@ -223,15 +223,60 @@ JCDIR=~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc   # linked to m
 
 ### At the switch (runbook "Switch consumers", row 10), after the data copy
 
-**Prerequisite, owned by the amos runbook:** the old project's J&C writes are blocked
-and the final copy into J&C's project is verified. Until both are true, `mate-jc` stays
-read-only: anything it wrote earlier would be overwritten or missed by the final copy.
+**Prerequisite, owned by the amos runbook:** the old project's J&C writes are blocked,
+the final copy into J&C's project is verified, and the runbook has run `--set-switched`.
+Until then `mate-jc` stays read-only: anything it wrote earlier would be overwritten or
+missed by the final copy.
 
-The order matters: J&C's project starts taking writes only once it is the only copy;
-the old deployment stops serving J&C **before** the new crons start, so no window has
-both crons writing J&C to two projects; and every caller is repointed in one step.
+The order matters:
+- The shared app stops serving J&C **before** `mate-jc` takes writes. Otherwise, in
+  between, a J&C dashboard write on the shared app would target the blocked old project
+  and fail with nothing captured.
+- `mate-jc` opens writes **immediately after**, so the read-only gap is a couple of
+  minutes (one deploy).
+- The old crons are verified to skip J&C **before** the new crons start, so no window
+  has both crons writing J&C to two projects.
+- Every caller is repointed in one step.
 
-1. **Open J&C writes on `mate-jc`** (the runbook flips this once its prerequisite holds):
+Steps 1 and 2 are **amos RUNBOOK switch step 5** (after `--set-switched`), as sub-steps
+5a and 5b. Run them back to back.
+
+**What a caller sees in the gap between 1 and 2** (nothing is written anywhere, nothing
+is lost):
+
+| Caller | Sees |
+|---|---|
+| J&C user on the old dashboard link | 307 to `jc.mate.auto-mate.business`. Reads work there; any save answers 503 "Dashboard writes are not enabled on this deployment yet." Retry after step 2 |
+| A stale J&C tab on the old host calling a dashboard API | 410 "This dashboard has moved. Reload the page." |
+| n8n / machine caller on the old host (ingest, postcall, quote-scan, signal) | 307 to `mate-jc`, which answers 503 `writes: disabled`. n8n's error workflow reports it; the runbook's window reconcile covers anything that arrived |
+| n8n already pointed at `mate-jc` | 503 `writes: disabled` (not expected: callers are repointed in step 3) |
+| cal.com (old webhook URL) | shared app forwards it to `mate-jc`, which **holds** it (control project, founder alert); replayed in step 5 |
+| Old crons | skip J&C (verified in step 1) |
+
+1. **(Runbook 5a) Shared app stops serving J&C**, then verify. Deploy from clean `main`:
+   ```bash
+   cd $MAIN && git status --short          # must be clean
+   printf %s "$JC=https://jc.mate.auto-mate.business" | vercel env add MATE_MOVED_SESSIONS production
+   vercel deploy --prod --yes
+   ```
+   Verify (none of these writes anything). The crons are called exactly as Vercel Cron
+   does: GET with the shared `CRON_SECRET`, the Keychain entry found in prep step 6.
+   ```bash
+   SHARED_CRON=CRON_SECRET   # or whichever entry answered 200 in prep step 6
+   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://mate.auto-mate.business/dash/$JC"   # 307 -> jc.mate…
+   curl -s -o /dev/null -w '%{http_code}\n' https://mate.auto-mate.business/dash/demo                   # 200, demo unchanged
+   node $S run -e $SHARED_CRON -- sh -c 'curl -sf -H "authorization: Bearer $'"$SHARED_CRON"'" https://mate.auto-mate.business/api/ads/refresh' \
+     | jq -e '.ok == true and .skipped == "session served by another deployment" and (.platforms | length) == 0' \
+     && echo "ads cron skips J&C"
+   node $S run -e $SHARED_CRON -- sh -c 'curl -sf -H "authorization: Bearer $'"$SHARED_CRON"'" "https://mate.auto-mate.business/api/calendar/sync?sessionId='"$JC"'"' \
+     | jq -e '.sessions == [{"session_id":"'"$JC"'","status":"skipped","upserted":0,"removed":0,"detail":"served by another deployment"}]' \
+     && echo "calendar cron skips J&C"
+   ```
+   The dashboard link must 307 to `jc.mate…` and both cron lines must print. A 401
+   means the wrong Keychain entry; anything else means the shared app still serves
+   J&C: stop, roll back this step (`vercel env rm MATE_MOVED_SESSIONS production --yes`
+   and redeploy), and leave the gate shut.
+2. **(Runbook 5b) Open J&C writes on `mate-jc`, immediately:**
    ```bash
    cd $JCDIR
    printf 1 | vercel env add JC_DASHBOARD_WRITES_ENABLED production
@@ -240,29 +285,7 @@ both crons writing J&C to two projects; and every caller is repointed in one ste
    node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" -H "content-type: application/json" -d "{}" https://jc.mate.auto-mate.business/api/leads/ingest'   # 400, not 503
    ```
    The value must be exactly `1` (`printf 1`, no newline); anything else stays shut.
-2. **Shared app stops serving J&C.** Set the moved list and deploy from clean `main`:
-   ```bash
-   cd $MAIN && git status --short          # must be clean
-   printf %s "$JC=https://jc.mate.auto-mate.business" | vercel env add MATE_MOVED_SESSIONS production
-   vercel deploy --prod --yes
-   ```
-3. **Verify the old crons skip J&C.** Call them exactly as Vercel Cron does (GET with
-   the shared `CRON_SECRET`, the Keychain entry found in prep step 6) and assert the
-   skip; neither call writes anything:
-   ```bash
-   SHARED_CRON=CRON_SECRET   # or whichever entry answered 200 in prep step 6
-   node $S run -e $SHARED_CRON -- sh -c 'curl -sf -H "authorization: Bearer $'"$SHARED_CRON"'" https://mate.auto-mate.business/api/ads/refresh' \
-     | jq -e '.ok == true and .skipped == "session served by another deployment" and (.platforms | length) == 0' \
-     && echo "ads cron skips J&C"
-   node $S run -e $SHARED_CRON -- sh -c 'curl -sf -H "authorization: Bearer $'"$SHARED_CRON"'" "https://mate.auto-mate.business/api/calendar/sync?sessionId='"$JC"'"' \
-     | jq -e '.sessions == [{"session_id":"'"$JC"'","status":"skipped","upserted":0,"removed":0,"detail":"served by another deployment"}]' \
-     && echo "calendar cron skips J&C"
-   curl -s -o /dev/null -w '%{http_code} %{redirect_url}\n' "https://mate.auto-mate.business/dash/$JC"   # 307 -> jc.mate…
-   curl -s -o /dev/null -w '%{http_code}\n' https://mate.auto-mate.business/dash/demo                   # 200, demo unchanged
-   ```
-   Both lines must print. A 401 means the wrong Keychain entry; anything else that
-   does not print means the shared app is still serving J&C: stop and roll back step 2.
-4. **Repoint every J&C caller in this one step** (n8n snapshots first, per the runbook):
+3. **Repoint every J&C caller in this one step** (n8n snapshots first, per the runbook):
    - n8n: every HTTP node whose URL starts with `https://mate.auto-mate.business/api/`
      in First Responder `MyTAmqQsLDUtAyep` (`/api/agent/postcall`, `/api/agent/signal`),
      Meta Lead Ads ingest `xXfLDJ2J9t5w3xF7` (`/api/leads/ingest`), the quote-scan
@@ -273,7 +296,7 @@ both crons writing J&C to two projects; and every caller is repointed in one ste
    - cal.com: J&C's booking webhook URL → `https://jc.mate.auto-mate.business/api/webhooks/calcom`.
      Anything cal.com still sends to the old URL is forwarded or held (never lost), but
      the webhook should not depend on that.
-5. **Turn the dedicated crons on**, deploy:
+4. **Turn the dedicated crons on**, deploy:
    ```bash
    cd $JCDIR
    printf %s "$JC" | vercel env add META_JC_SESSION_ID production
@@ -281,25 +304,26 @@ both crons writing J&C to two projects; and every caller is repointed in one ste
    sh -c 'V=$(openssl rand -hex 32); printf %s "$V" | node '"$S"' set MATE_JC_CRON_SECRET && printf %s "$V" | vercel env add CRON_SECRET production --sensitive'
    vercel deploy --prod --yes
    ```
-6. **Verify the new host**:
+5. **Verify the new host**:
    ```bash
    node $S run -e MATE_JC_CRON_SECRET -- sh -c 'curl -s -H "authorization: Bearer $MATE_JC_CRON_SECRET" https://jc.mate.auto-mate.business/api/ads/refresh'   # ok, writes J&C ad_metrics to J&C's project
    node $S run -e LEADS_INGEST_TOKEN -- sh -c 'curl -s -o /dev/null -w "%{http_code} %{redirect_url}\n" -X POST -H "x-ingest-token: $LEADS_INGEST_TOKEN" -H "content-type: application/json" -d "{\"session_id\":\"'"$JC"'\",\"leads\":[]}" https://mate.auto-mate.business/api/leads/ingest'   # 307 -> jc.mate…/api/leads/ingest
    cd $MAIN && node $S run -e NEXT_PUBLIC_SUPABASE_URL -e SUPABASE_SECRET_KEY -- node scripts/replay-held-calcom.mjs   # open held bookings
    ```
    Any booking held while `mate-jc` was read-only (reason "dashboard writes are not
-   enabled on this deployment yet") is replayed now to `https://jc.mate.auto-mate.business`
-   (§ Held cal.com bookings); the list should then read "0 open held booking(s)".
-   Watch the next real lead arrive in `vercel logs` for `mate-jc`. J&C users sign in
-   once on the new domain (cookies are per domain).
+   enabled on this deployment yet": prep, or the gap between steps 1 and 2) is replayed
+   now to `https://jc.mate.auto-mate.business` (§ Held cal.com bookings); the list
+   should then read "0 open held booking(s)". Watch the next real lead arrive in
+   `vercel logs` for `mate-jc`. J&C users sign in once on the new domain (cookies are
+   per domain).
 
 ## Held cal.com bookings
 
 A held booking is one a deployment would not write: on the shared deployment, a moved
 client's booking it could not forward or attribute; on `mate-jc`, any booking not
 attributed (by `CALCOM_BOOKING_OWNERS`) to J&C's session, including when that config is
-missing or malformed, and **every** booking while its write gate is shut (prep, and
-rollback step (a) onward). Nothing is written to either project's client data. The founder gets a text
+missing or malformed, and **every** booking while its write gate is shut (prep, the
+gap between switch steps 1 and 2, and rollback step (a) onward). Nothing is written to either project's client data. The founder gets a text
 through the router (`outbound_texts`, source `mate:calcom-held:<ref>`); it names no
 lead.
 
@@ -409,7 +433,7 @@ written to J&C's project since the switch goes back to the old one.
    cd $MAIN && git status --short          # must be clean
    vercel env rm MATE_MOVED_SESSIONS production --yes && vercel deploy --prod --yes
    ```
-   (or `vercel rollback` `mate-onboarding` to the deployment before switch step 2).
+   (or `vercel rollback` `mate-onboarding` to the deployment before switch step 1).
    Then re-upload the pre-switch n8n snapshots and set the cal.com webhook back to
    `https://mate.auto-mate.business/api/webhooks/calcom`. Check:
    ```bash
