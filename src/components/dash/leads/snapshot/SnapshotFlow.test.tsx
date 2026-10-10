@@ -13,9 +13,9 @@ const extractReply = {
   snapshot_id: 'snap-1',
   unreadable: null,
   candidates: [
-    { name: 'Faux Sample', phone: '801-577-5322', address: '100 Fake Street', service: 'driveway', notes: null,
+    { name: 'Sample Person', phone: '801-555-0142', address: '42 Example Lane', service: 'driveway', notes: null,
       confidence: { name: 0.95, phone: 0.92, address: 0.9 }, withheld: [] },
-    { name: 'Faux Second', phone: '801-309-8290', address: null, service: null, notes: null,
+    { name: 'Test Contact', phone: '801-555-0143', address: null, service: null, notes: null,
       confidence: { name: 0.9, phone: 0.9, address: 0 }, withheld: [] },
   ],
   duplicates: [{ index: 1, reason: 'in-pipeline', lead_id: 'lead-9' }],
@@ -90,7 +90,7 @@ describe('SnapshotFlow', () => {
 
   it('posts consent:true and the edited rows, then shows outcomes', async () => {
     await readOnePhoto();
-    fireEvent.change(screen.getByRole('textbox', { name: 'Name for lead 1' }), { target: { value: 'Faux S.' } });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name for lead 1' }), { target: { value: 'Sample P.' } });
     fireEvent.click(screen.getByRole('checkbox', { name: /These people asked us to contact them/ }));
     fetchMock.mockImplementationOnce(() => jsonResponse({
       snapshot_id: 'snap-1', hold: false, send_after: null,
@@ -105,7 +105,7 @@ describe('SnapshotFlow', () => {
     const [, init] = fetchMock.mock.calls[1] as [string, RequestInit];
     const body = JSON.parse(String(init.body));
     expect(body.consent).toBe(true);
-    expect(body.rows[0]).toMatchObject({ index: 0, include: true, text: true, name: 'Faux S.', phone: '801-577-5322' });
+    expect(body.rows[0]).toMatchObject({ index: 0, include: true, text: true, name: 'Sample P.', phone: '801-555-0142' });
     expect(body.rows[1]).toMatchObject({ index: 1, include: false });
     expect(screen.getByRole('link', { name: /Open the conversation/ })).toHaveAttribute('href', '/dash/s1/pipeline?spotlight=lead-1');
   });

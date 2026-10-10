@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { planConfirm, verdictMessage, RECENT_CONTACT_DAYS, type ConfirmRow, type KnownNumbers } from './confirmPlan';
 
 const row = (o: Partial<ConfirmRow> & { index: number }): ConfirmRow => ({
-  include: true, name: 'Faux Sample', phone: '801-577-5322', address: null, service: null, notes: null, ...o,
+  include: true, name: 'Sample Person', phone: '801-555-0142', address: null, service: null, notes: null, ...o,
 });
 const empty = (): KnownNumbers => ({ leadKeys: new Set(), conversations: new Map() });
 const NOW = new Date('2026-09-11T18:00:00Z');
@@ -12,9 +12,9 @@ describe('planConfirm', () => {
     const [v] = planConfirm([row({ index: 0 })], empty(), NOW);
     expect(v.kind).toBe('send');
     if (v.kind !== 'send') return;
-    expect(v.e164).toBe('+18015775322');
-    expect(v.leadKey).toBe('8015775322');
-    expect(v.lead.phone).toBe('+18015775322');
+    expect(v.e164).toBe('+18015550142');
+    expect(v.leadKey).toBe('8015550142');
+    expect(v.lead.phone).toBe('+18015550142');
   });
 
   it('skips a row the human switched off', () => {
@@ -30,29 +30,29 @@ describe('planConfirm', () => {
 
   it('marks a number already in the pipeline as a duplicate', () => {
     const known = empty();
-    known.leadKeys.add('8015775322');
+    known.leadKeys.add('8015550142');
     expect(planConfirm([row({ index: 0 })], known, NOW)[0])
-      .toEqual({ kind: 'duplicate', index: 0, reason: 'in-pipeline', leadKey: '8015775322' });
+      .toEqual({ kind: 'duplicate', index: 0, reason: 'in-pipeline', leadKey: '8015550142' });
   });
 
   it('matches the pipeline on lead_key, however the phone was written', () => {
     const known = empty();
-    known.leadKeys.add('8015775322');
-    for (const written of ['(801) 577-5322', '+1 801 577 5322', '18015775322']) {
+    known.leadKeys.add('8015550142');
+    for (const written of ['(801) 555-0142', '+1 801 555 0142', '18015550142']) {
       expect(planConfirm([row({ index: 0, phone: written })], known, NOW)[0].kind).toBe('duplicate');
     }
   });
 
   it('marks an open conversation as a duplicate', () => {
     const known = empty();
-    known.conversations.set('+18015775322', { lastOutboundAt: '2026-01-01T00:00:00Z' });
+    known.conversations.set('+18015550142', { lastOutboundAt: '2026-01-01T00:00:00Z' });
     expect(planConfirm([row({ index: 0 })], known, NOW)[0])
-      .toEqual({ kind: 'duplicate', index: 0, reason: 'in-conversation', leadKey: '8015775322' });
+      .toEqual({ kind: 'duplicate', index: 0, reason: 'in-conversation', leadKey: '8015550142' });
   });
 
   it('names a recent contact specifically', () => {
     const known = empty();
-    known.conversations.set('+18015775322', { lastOutboundAt: '2026-09-10T18:00:00Z' });
+    known.conversations.set('+18015550142', { lastOutboundAt: '2026-09-10T18:00:00Z' });
     expect(planConfirm([row({ index: 0 })], known, NOW)[0])
       .toMatchObject({ kind: 'duplicate', reason: 'recent-contact' });
   });
@@ -60,13 +60,13 @@ describe('planConfirm', () => {
   it('treats exactly the window edge as recent', () => {
     const known = empty();
     const edge = new Date(NOW.getTime() - RECENT_CONTACT_DAYS * 86400000).toISOString();
-    known.conversations.set('+18015775322', { lastOutboundAt: edge });
+    known.conversations.set('+18015550142', { lastOutboundAt: edge });
     expect(planConfirm([row({ index: 0 })], known, NOW)[0]).toMatchObject({ reason: 'recent-contact' });
   });
 
   it('sends the same number only once when a photo lists it twice', () => {
     const verdicts = planConfirm(
-      [row({ index: 0 }), row({ index: 1, phone: '(801) 577-5322' })],
+      [row({ index: 0 }), row({ index: 1, phone: '(801) 555-0142' })],
       empty(), NOW,
     );
     expect(verdicts[0].kind).toBe('send');
@@ -80,9 +80,9 @@ describe('planConfirm', () => {
   });
 
   it('trims free text and blanks empties', () => {
-    const [v] = planConfirm([row({ index: 0, name: '  Sam  ', address: '   ', service: 'seal_coat', notes: null })], empty(), NOW);
+    const [v] = planConfirm([row({ index: 0, name: '  Sample Person  ', address: '   ', service: 'seal_coat', notes: null })], empty(), NOW);
     if (v.kind !== 'send') throw new Error('expected send');
-    expect(v.lead).toEqual({ name: 'Sam', phone: '+18015775322', address: null, service: 'seal_coat', notes: null });
+    expect(v.lead).toEqual({ name: 'Sample Person', phone: '+18015550142', address: null, service: 'seal_coat', notes: null });
   });
 
   it('preserves row order and index', () => {
@@ -130,7 +130,7 @@ describe('planConfirm modes', () => {
 
   it('still refuses a duplicate in save mode: a second row is the harm', () => {
     const known = empty();
-    known.leadKeys.add('8015775322');
+    known.leadKeys.add('8015550142');
     expect(planConfirm([row({ index: 0, text: false })], known, NOW)[0]).toMatchObject({ kind: 'duplicate' });
   });
 
