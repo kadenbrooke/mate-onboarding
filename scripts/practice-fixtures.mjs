@@ -35,7 +35,6 @@ export function buildPracticeLeads(asOf) {
       handler: i % 3 === 0 ? 'human' : 'agent',
       created_at: iso(asOf, 3 + i * 4),
       status_updated_at: status === 'open' ? null : iso(asOf, 1 + i),
-      is_test: false,
       job_outcome: outcome,
       job_value_cents: outcome === 'won' ? quote : null,
       lost_reason: outcome === 'lost' ? ['budget was delayed', 'chose another bid', 'project postponed', 'timing changed'][i % 4] : null,

@@ -27,4 +27,8 @@ describe('practice CRM fixtures', () => {
     expect(messages.some((m: { direction: string; author: string }) => m.direction === 'inbound' && m.author === 'lead')).toBe(true);
     expect(messages.some((m: { direction: string; body: string }) => m.direction === 'outbound' && m.body.startsWith('[Practice fake sent'))).toBe(true);
   });
+
+  it('omits generated client_leads columns from insert payloads', () => {
+    expect(leads.every(lead => !Object.hasOwn(lead, 'is_test'))).toBe(true);
+  });
 });
