@@ -25,7 +25,9 @@ export type Lead = {
   // texted_in/web_form/revived are kept only because live demo-session rows still use
   // them (out of scope to migrate -- see reference_mate_jc_data_exposure_incident).
   source: 'meta' | 'call' | 'text' | 'referral' | 'google' | 'missed_call' | 'texted_in' | 'web_form' | 'revived' | 'lead_snapshot' | 'typed' | 'self_sourced' | 'unknown';
-  referrer_name: string | null; score: number | null;
+  referrer_name: string | null;
+  referral_code?: string | null;
+  score: number | null;
   status: LeadStatus; quote_cents: number | null;
   // Who is driving the conversation: Mate's agent ('agent') or the client ('human').
   // Optional + nullable because legacy/demo rows may predate the column or omit it;

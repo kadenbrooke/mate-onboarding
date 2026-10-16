@@ -45,7 +45,7 @@ const DEDICATED_EXACT = new Set([
 
 // Per-lead and per-chat routes: the route itself resolves the row's session and
 // runs it through the tenancy-aware api-gate.
-const DEDICATED_PREFIXES = ['/api/assistant/chats/', '/api/leads/'];
+const DEDICATED_PREFIXES = ['/api/assistant/chats/', '/api/leads/', '/api/referrals/', '/referral/'];
 
 const DASH_PATH = /^\/(?:api\/)?dash\/([^/]+)(?:\/|$)/;
 

@@ -16,6 +16,7 @@ import { HotLeads } from './leadflow/HotLeads';
 import { SourceDonut } from './leadflow/SourceDonut';
 import { ServiceShareBar } from './leadflow/ServiceShareBar';
 import { AreaBars } from './leadflow/AreaBars';
+import { ReferralAttribution } from './leadflow/ReferralAttribution';
 import { TwinRings } from './pipeline/TwinRings';
 import { ReturnBySource } from './pipeline/ReturnBySource';
 import type { ReturnSummary } from '@/lib/metrics/revenue';
@@ -175,6 +176,7 @@ export function DashboardView({ session, leads, optedOutPhones = [], optedOutRea
         <SourceDonut leads={leads} />
         <ServiceShareBar leads={leads} />
         <AreaBars leads={leads} />
+        <ReferralAttribution leads={leads} />
       </div>
     </div>
   );
@@ -258,6 +260,7 @@ export function DashboardView({ session, leads, optedOutPhones = [], optedOutRea
       { id: 'm-trend', node: <TrendCard leads={leads} /> },
       { id: 'm-leadslink', node: <LinkCard href={`/dash/${session.id}/pipeline`} label="Open full pipeline table" /> },
       { id: 'm-source', node: <SourceDonut leads={leads} /> },
+      { id: 'm-referrals', node: <ReferralAttribution leads={leads} /> },
       { id: 'm-area', node: <AreaBars leads={leads} /> },
       { id: 'm-dayclock', node: dayClockCard },
       { id: 'm-value', node: <ServiceShareBar leads={leads} /> },

@@ -99,7 +99,7 @@ describe('dedicated deployment', () => {
       '/api/assistant/chats', '/api/assistant/chats/chat-1', '/api/assistant/chat', '/api/ads/refresh',
       '/api/calendar/sync', '/api/manifest', '/api/connect/google', '/api/connect/google/callback',
       '/api/qb/connect', '/api/qb/callback', '/api/agent/postcall', '/api/agent/quote-scan',
-      '/api/agent/signal', '/api/webhooks/calcom',
+      '/api/agent/signal', '/api/webhooks/calcom', '/api/referrals/sample-code', '/referral/sample-code',
     ];
     for (const p of allowed) expect((await go(p)).status, p).toBe(200);
     expect(passed.count).toBe(allowed.length);
