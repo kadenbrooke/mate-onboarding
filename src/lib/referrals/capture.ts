@@ -81,17 +81,26 @@ function sameIdentity(left: string | null, right: string | null): boolean {
   return left !== null && right !== null && left === right;
 }
 
-export async function captureReferralLead(
-  repository: ReferralCaptureRepository,
-  rawCode: unknown,
-  input: ReferralLeadInput,
-): Promise<ReferralCaptureResult> {
-  const code = normalizeReferralCode(rawCode);
-  if (!code) return { kind: 'invalid-code' };
+type ValidatedReferralInput = {
+  kind: 'valid';
+  name: string;
+  phone: string | null;
+  email: string | null;
+  city: string | null;
+  service: string | null;
+  address: string | null;
+};
 
-  const referral = await repository.findCode(code);
-  if (!referral || !isReferralCodeActive(referral)) return { kind: 'invalid-code' };
+export type ReferralInputValidation =
+  | ValidatedReferralInput
+  | { kind: 'self-referral' }
+  | { kind: 'invalid-input'; field: 'name' | 'contact' | 'phone' | 'email' };
 
+export function countsTowardReferralCodeCap(validation: ReferralInputValidation): boolean {
+  return validation.kind !== 'invalid-input';
+}
+
+export function validateReferralLeadInput(referral: ReferralCode, input: ReferralLeadInput): ReferralInputValidation {
   const name = text(input.name);
   if (!name) return { kind: 'invalid-input', field: 'name' };
 
@@ -110,6 +119,27 @@ export async function captureReferralLead(
     return { kind: 'self-referral' };
   }
 
+  return {
+    kind: 'valid', name, phone, email,
+    city: text(input.city), service: text(input.service), address: text(input.address),
+  };
+}
+
+export async function captureReferralLead(
+  repository: ReferralCaptureRepository,
+  rawCode: unknown,
+  input: ReferralLeadInput,
+): Promise<ReferralCaptureResult> {
+  const code = normalizeReferralCode(rawCode);
+  if (!code) return { kind: 'invalid-code' };
+
+  const referral = await repository.findCode(code);
+  if (!referral || !isReferralCodeActive(referral)) return { kind: 'invalid-code' };
+
+  const validation = validateReferralLeadInput(referral, input);
+  if (validation.kind !== 'valid') return validation;
+  const { name, phone, email, city, service, address } = validation;
+
   const duplicate = await repository.findDuplicateLead({ sessionId: referral.session_id, phone, email });
   if (duplicate) return { kind: 'duplicate', leadId: duplicate.id };
 
@@ -118,9 +148,9 @@ export async function captureReferralLead(
     name,
     phone,
     email,
-    city: text(input.city),
-    service: text(input.service),
-    address: text(input.address),
+    city,
+    service,
+    address,
     source: 'referral',
     referrer_name: referral.referrer_name,
     referral_code: referral.code,
@@ -133,8 +163,8 @@ export async function captureReferralLead(
     const inserted = await repository.insertLead(lead);
     return { kind: 'created', lead: { ...lead, ...inserted } };
   } catch (error) {
-    // The existing (session_id, phone) unique index is the final race-safe
-    // duplicate guard. Re-read through the repository after a concurrent
+    // A database uniqueness constraint, when present in the deployed schema,
+    // is the final race-safe duplicate guard. Re-read after a concurrent
     // capture wins instead of turning a legitimate repeat into a 500.
     if (isOperatorPhoneRejection(error)) return { kind: 'operator-phone' };
     if (isUniqueViolation(error)) {

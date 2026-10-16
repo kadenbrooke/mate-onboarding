@@ -119,7 +119,13 @@ describe('dedicated deployment route manifest', () => {
     const full = path.join(APP, file);
     expect(fs.existsSync(full), `${file} exists`).toBe(true);
     expect(reachable(file), `${file} is reachable on a dedicated deployment`).toBe(true);
-    expect(fs.readFileSync(full, 'utf8')).toMatch(new RegExp(`\\b${guard}\\(`));
+    const source = fs.readFileSync(full, 'utf8');
+    const postStart = source.indexOf('export async function POST');
+    const nextExport = postStart >= 0 ? source.indexOf('\nexport async function ', postStart + 1) : -1;
+    const guardedSource = file === 'api/referrals/[code]/route.ts' && postStart >= 0
+      ? source.slice(postStart, nextExport >= 0 ? nextExport : undefined)
+      : source;
+    expect(guardedSource).toMatch(new RegExp(`\\b${guard}\\(`));
   });
 
   it('the calendar cron helper constrains its scan by tenancy', () => {

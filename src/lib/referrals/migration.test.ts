@@ -14,4 +14,11 @@ describe('referral capture migration security', () => {
     expect(migration).toMatch(/alter table public\.referral_capture_attempts enable row level security;/i);
     expect(migration).toMatch(/revoke all on table public\.referral_capture_attempts from anon, authenticated;/i);
   });
+
+  it('claims attempt budgets under transaction-scoped locks', () => {
+    expect(migration).toMatch(/create or replace function public\.claim_referral_capture_attempt\(/i);
+    expect(migration).toMatch(/pg_advisory_xact_lock\(hashtextextended\('referral-code:'/i);
+    expect(migration).toMatch(/pg_advisory_xact_lock\(hashtextextended\('referral-ip:'/i);
+    expect(migration).toMatch(/code_counted boolean not null default true/i);
+  });
 });

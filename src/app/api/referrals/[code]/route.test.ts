@@ -11,8 +11,10 @@ describe('referral capture response privacy', () => {
       body(referralCaptureResponse({ kind: 'created', lead: { id: 'secret-lead' } as never })),
       body(referralCaptureResponse({ kind: 'duplicate', leadId: 'secret-lead' })),
       body(referralCaptureResponse({ kind: 'self-referral' })),
+      body(referralCaptureResponse({ kind: 'operator-phone' })),
     ]);
     expect(results).toEqual([
+      { status: 201, json: { ok: true } },
       { status: 201, json: { ok: true } },
       { status: 201, json: { ok: true } },
       { status: 201, json: { ok: true } },

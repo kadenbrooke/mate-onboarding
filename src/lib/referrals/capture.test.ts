@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { captureReferralLead, type ReferralCaptureRepository, type ReferralCode } from './capture';
+import {
+  captureReferralLead,
+  countsTowardReferralCodeCap,
+  validateReferralLeadInput,
+  type ReferralCaptureRepository,
+  type ReferralCode,
+} from './capture';
 
 const referral: ReferralCode = {
   code: 'PARTNER123', session_id: 'tenant-1', referrer_name: 'Sam Partner',
@@ -17,6 +23,12 @@ function repo(over: Partial<ReferralCaptureRepository> = {}): ReferralCaptureRep
 }
 
 describe('captureReferralLead', () => {
+  it('counts only validated submissions toward the code cap', () => {
+    expect(countsTowardReferralCodeCap(validateReferralLeadInput(referral, { name: 'New' }))).toBe(false);
+    expect(countsTowardReferralCodeCap(validateReferralLeadInput(referral, { name: 'New', phone: '8015550002' }))).toBe(true);
+    expect(countsTowardReferralCodeCap(validateReferralLeadInput(referral, { name: 'Sam', email: 'sam@example.com' }))).toBe(true);
+  });
+
   it('creates a referral lead with tenant and referrer attribution', async () => {
     const r = repo();
     const result = await captureReferralLead(r, ' partner123 ', {

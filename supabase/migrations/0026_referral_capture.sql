@@ -37,8 +37,12 @@ create table if not exists public.referral_capture_attempts (
   session_id    uuid not null references public.onboarding_sessions(id) on delete cascade,
   referral_code text not null,
   ip_hash       text not null,
+  code_counted  boolean not null default true,
   created_at    timestamptz not null default now()
 );
+
+alter table public.referral_capture_attempts
+  add column if not exists code_counted boolean not null default true;
 
 create index if not exists referral_attempts_code_day_idx
   on public.referral_capture_attempts (referral_code, created_at desc);
@@ -48,4 +52,55 @@ create index if not exists referral_attempts_ip_day_idx
 alter table public.referral_capture_attempts enable row level security;
 revoke all on table public.referral_capture_attempts from anon, authenticated;
 grant select, insert on table public.referral_capture_attempts to service_role;
+
+-- Atomically reserve an attempt. The advisory locks serialize requests sharing
+-- a code or IP, so a burst cannot pass the count checks concurrently. Invalid
+-- submissions set p_count_for_code=false: they still consume the IP budget but
+-- do not consume the code's accepted-submission budget.
+create or replace function public.claim_referral_capture_attempt(
+  p_session_id uuid,
+  p_referral_code text,
+  p_ip_hash text,
+  p_count_for_code boolean
+) returns text
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  day_start timestamptz := date_trunc('day', now() at time zone 'UTC') at time zone 'UTC';
+  code_count integer;
+  ip_count integer;
+begin
+  perform pg_advisory_xact_lock(hashtextextended('referral-code:' || p_referral_code, 0));
+  perform pg_advisory_xact_lock(hashtextextended('referral-ip:' || p_ip_hash, 0));
+
+  select count(*)::integer into ip_count
+    from public.referral_capture_attempts
+   where ip_hash = p_ip_hash and created_at >= day_start;
+  if ip_count >= 20 then
+    return 'ip';
+  end if;
+
+  if p_count_for_code then
+    select count(*)::integer into code_count
+      from public.referral_capture_attempts
+     where referral_code = p_referral_code
+       and code_counted
+       and created_at >= day_start;
+    if code_count >= 100 then
+      insert into public.referral_capture_attempts (session_id, referral_code, ip_hash, code_counted)
+      values (p_session_id, p_referral_code, p_ip_hash, false);
+      return 'code';
+    end if;
+  end if;
+
+  insert into public.referral_capture_attempts (session_id, referral_code, ip_hash, code_counted)
+  values (p_session_id, p_referral_code, p_ip_hash, p_count_for_code);
+  return 'ok';
+end;
+$$;
+
+revoke all on function public.claim_referral_capture_attempt(uuid, text, text, boolean) from public, anon, authenticated;
+grant execute on function public.claim_referral_capture_attempt(uuid, text, text, boolean) to service_role;
 

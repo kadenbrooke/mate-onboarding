@@ -5,15 +5,16 @@ import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { unservedSessionResponse } from '@/lib/supabase/tenant-response';
 import {
   captureReferralLead,
+  countsTowardReferralCodeCap,
   isReferralCodeActive,
   normalizeReferralCode,
+  validateReferralLeadInput,
   type ReferralCaptureRepository,
   type ReferralCode,
   type ReferralLeadInput,
   type ReferralLeadRow,
 } from '@/lib/referrals/capture';
 import { readReferralJsonBody } from '@/lib/referrals/request';
-import { checkReferralRateLimit } from '@/lib/referrals/rate-limit';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,8 +63,8 @@ export function referralCaptureResponse(result: Awaited<ReturnType<typeof captur
     // exists, whether the code owner used their own link, or which lead id won.
     case 'created':
     case 'duplicate':
-    case 'self-referral': return genericSuccess();
-    case 'operator-phone': return NextResponse.json({ error: 'That phone number cannot be used.' }, { status: 400 });
+    case 'self-referral':
+    case 'operator-phone': return genericSuccess();
     case 'invalid-code': return NextResponse.json({ error: 'That referral link is invalid or expired.' }, { status: 404 });
     case 'invalid-input': return NextResponse.json({ error: `Please check the ${result.field}.`, field: result.field }, { status: 400 });
   }
@@ -79,29 +80,21 @@ function hashIp(ip: string): string {
   return createHmac('sha256', secret).update(ip).digest('hex');
 }
 
-function startOfUtcDay(): string {
-  const day = new Date();
-  day.setUTCHours(0, 0, 0, 0);
-  return day.toISOString();
-}
-
-async function recordAttempt(service: ServiceClient, referral: ReferralCode, ipHash: string): Promise<NextResponse | null> {
-  const since = startOfUtcDay();
-  const [byCode, byIp] = await Promise.all([
-    service.from('referral_capture_attempts').select('id', { count: 'exact', head: true })
-      .eq('referral_code', referral.code).gte('created_at', since),
-    service.from('referral_capture_attempts').select('id', { count: 'exact', head: true })
-      .eq('ip_hash', ipHash).gte('created_at', since),
-  ]);
-  if (byCode.error || byIp.error) return NextResponse.json({ error: 'Referral capture is temporarily unavailable.' }, { status: 503 });
-
-  const limit = checkReferralRateLimit({ codeCountToday: byCode.count ?? 0, ipCountToday: byIp.count ?? 0 });
-  if (!limit.allowed) return NextResponse.json({ error: 'Too many attempts. Try again tomorrow.' }, { status: 429 });
-
-  const { error } = await service.from('referral_capture_attempts').insert({
-    session_id: referral.session_id, referral_code: referral.code, ip_hash: ipHash,
+async function recordAttempt(
+  service: ServiceClient,
+  referral: ReferralCode,
+  ipHash: string,
+  countForCode: boolean,
+): Promise<NextResponse | null> {
+  const { data, error } = await service.rpc('claim_referral_capture_attempt', {
+    p_session_id: referral.session_id,
+    p_referral_code: referral.code,
+    p_ip_hash: ipHash,
+    p_count_for_code: countForCode,
   });
-  if (error) return NextResponse.json({ error: 'Referral capture is temporarily unavailable.' }, { status: 503 });
+  if (error || typeof data !== 'string') return NextResponse.json({ error: 'Referral capture is temporarily unavailable.' }, { status: 503 });
+  if (data === 'code' || data === 'ip') return NextResponse.json({ error: 'Too many attempts. Try again tomorrow.' }, { status: 429 });
+  if (data !== 'ok') return NextResponse.json({ error: 'Referral capture is temporarily unavailable.' }, { status: 503 });
   return null;
 }
 
@@ -127,20 +120,37 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   const parsed = await readReferralJsonBody(request);
   if (!parsed.ok) {
+    const limited = await recordAttempt(service, referral, hashIp(requestIp(request)), false);
+    if (limited) return limited;
     return NextResponse.json(
       { error: parsed.reason === 'too-large' ? 'Request is too large.' : 'Please send a valid form.' },
       { status: parsed.reason === 'too-large' ? 413 : 400 },
     );
   }
-  if (!parsed.value || typeof parsed.value !== 'object') return referralCaptureResponse({ kind: 'invalid-input', field: 'name' });
+  if (!parsed.value || typeof parsed.value !== 'object') {
+    const limited = await recordAttempt(service, referral, hashIp(requestIp(request)), false);
+    if (limited) return limited;
+    return referralCaptureResponse({ kind: 'invalid-input', field: 'name' });
+  }
   const body = parsed.value as ReferralLeadInput;
 
   // A hidden field catches basic bots without confirming whether the code or
   // any submitted contact is valid. It intentionally returns the same success.
-  if (typeof body.website === 'string' && body.website.trim()) return genericSuccess();
+  if (typeof body.website === 'string' && body.website.trim()) {
+    const limited = await recordAttempt(service, referral, hashIp(requestIp(request)), false);
+    if (limited) return limited;
+    return genericSuccess();
+  }
 
-  const limited = await recordAttempt(service, referral, hashIp(requestIp(request)));
+  const validation = validateReferralLeadInput(referral, body);
+  const limited = await recordAttempt(
+    service,
+    referral,
+    hashIp(requestIp(request)),
+    countsTowardReferralCodeCap(validation),
+  );
   if (limited) return limited;
+  if (validation.kind === 'invalid-input') return referralCaptureResponse(validation);
 
   try {
     return referralCaptureResponse(await captureReferralLead(repository(service, referral), code, body));
