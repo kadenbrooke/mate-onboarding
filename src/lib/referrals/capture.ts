@@ -16,6 +16,7 @@ export type ReferralLeadInput = {
   name?: unknown;
   phone?: unknown;
   email?: unknown;
+  website?: unknown;
   city?: unknown;
   service?: unknown;
   address?: unknown;
@@ -42,6 +43,7 @@ export type ReferralCaptureResult =
   | { kind: 'duplicate'; leadId: string | null }
   | { kind: 'invalid-code' }
   | { kind: 'self-referral' }
+  | { kind: 'operator-phone' }
   | { kind: 'invalid-input'; field: 'name' | 'contact' | 'phone' | 'email' };
 
 export type ReferralCaptureRepository = {
@@ -134,6 +136,7 @@ export async function captureReferralLead(
     // The existing (session_id, phone) unique index is the final race-safe
     // duplicate guard. Re-read through the repository after a concurrent
     // capture wins instead of turning a legitimate repeat into a 500.
+    if (isOperatorPhoneRejection(error)) return { kind: 'operator-phone' };
     if (isUniqueViolation(error)) {
       const raced = await repository.findDuplicateLead({ sessionId: referral.session_id, phone, email });
       return { kind: 'duplicate', leadId: raced?.id ?? null };
@@ -144,5 +147,12 @@ export async function captureReferralLead(
 
 export function isUniqueViolation(error: unknown): boolean {
   return !!error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === '23505';
+}
+
+export function isOperatorPhoneRejection(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const value = error as { code?: unknown; message?: unknown };
+  return value.code === 'operator_phone'
+    || (value.code === 'PGRST116' && typeof value.message === 'string' && /no rows/i.test(value.message));
 }
 

@@ -69,5 +69,11 @@ describe('captureReferralLead', () => {
     await expect(captureReferralLead(r, referral.code, { name: 'Racy', phone: '8015550002' }))
       .resolves.toEqual({ kind: 'duplicate', leadId: 'raced-lead' });
   });
+
+  it('turns the operator trigger empty insert into a clean refusal', async () => {
+    const r = repo({ insertLead: vi.fn(async () => { throw { code: 'operator_phone' }; }) });
+    await expect(captureReferralLead(r, referral.code, { name: 'Operator', phone: '8015550002' }))
+      .resolves.toEqual({ kind: 'operator-phone' });
+  });
 });
 

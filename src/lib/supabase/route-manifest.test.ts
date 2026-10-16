@@ -54,7 +54,7 @@ const MANIFEST: Record<string, string> = {
   'api/manifest/route.ts': 'routeSession',
   // machine callers (token / signature auth) carrying a session
   'api/leads/ingest/route.ts': 'unservedSessionResponse',
-  'api/referrals/[code]/route.ts': 'refuseIfWritesDisabled',
+  'api/referrals/[code]/route.ts': 'unservedSessionResponse',
   'api/agent/postcall/route.ts': 'unservedSessionResponse',
   'api/agent/quote-scan/route.ts': 'unservedSessionResponse',
   'api/agent/signal/route.ts': 'unservedSessionResponse',

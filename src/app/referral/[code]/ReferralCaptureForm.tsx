@@ -33,6 +33,9 @@ export function ReferralCaptureForm({ code, referrerName }: { code: string; refe
   return (
     <form onSubmit={submit} style={{ display: 'grid', gap: 12, maxWidth: 440 }}>
       <p style={{ margin: 0, color: '#666' }}>Referred by {referrerName}</p>
+      <label aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+        Website<input name="website" tabIndex={-1} autoComplete="off" />
+      </label>
       <label>Name<input name="name" required autoComplete="name" /></label>
       <label>Phone<input name="phone" required autoComplete="tel" /></label>
       <label>Email (optional)<input name="email" type="email" autoComplete="email" /></label>

@@ -5,6 +5,7 @@ import { refuseIfWritesDisabled } from '@/lib/supabase/write-gate';
 import { checkDashApiAccess } from '@/lib/portal/api-gate';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { isUniqueViolation, normalizeEmail } from '@/lib/referrals/capture';
+import { readReferralJsonBody } from '@/lib/referrals/request';
 import { toE164 } from '@/lib/leads/phone';
 
 export const dynamic = 'force-dynamic';
@@ -30,14 +31,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const verdict = await checkDashApiAccess(sessionId);
   if (!verdict.ok) return NextResponse.json({ error: verdict.error }, { status: verdict.status });
 
-  let body: { referrer_name?: unknown; referrer_email?: unknown; referrer_phone?: unknown; expires_at?: unknown };
-  try {
-    const parsed: unknown = await request.json();
-    if (!parsed || typeof parsed !== 'object') return NextResponse.json({ error: 'referrer_name is required' }, { status: 400 });
-    body = parsed as typeof body;
-  } catch {
-    return NextResponse.json({ error: 'Please send a valid request.' }, { status: 400 });
-  }
+  const parsed = await readReferralJsonBody(request);
+  if (!parsed.ok) return NextResponse.json({ error: parsed.reason === 'too-large' ? 'Request is too large.' : 'Please send a valid request.' }, { status: parsed.reason === 'too-large' ? 413 : 400 });
+  if (!parsed.value || typeof parsed.value !== 'object') return NextResponse.json({ error: 'referrer_name is required' }, { status: 400 });
+  const body = parsed.value as { referrer_name?: unknown; referrer_email?: unknown; referrer_phone?: unknown; expires_at?: unknown };
 
   const referrerName = validName(body.referrer_name);
   if (!referrerName) return NextResponse.json({ error: 'referrer_name is required' }, { status: 400 });
@@ -56,6 +53,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const service = createServiceClient();
+  const { data: session, error: sessionError } = await service
+    .from('onboarding_sessions').select('id, is_demo').eq('id', sessionId).maybeSingle();
+  if (sessionError) return NextResponse.json({ error: 'Could not create referral link.' }, { status: 503 });
+  if (!session) return NextResponse.json({ error: 'session not found' }, { status: 404 });
+  if (session.is_demo) return NextResponse.json({ error: 'Referral links are not available on the demo dashboard.' }, { status: 400 });
+
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const code = generateReferralCode();
     const { data, error } = await service.from('referral_codes').insert({
@@ -74,7 +77,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         expires_at: data.expires_at,
       }, { status: 201 });
     }
-    if (!isUniqueViolation(error)) return NextResponse.json({ error: error?.message ?? 'Could not create referral link.' }, { status: 500 });
+    if (!isUniqueViolation(error)) return NextResponse.json({ error: 'Could not create referral link.' }, { status: 503 });
   }
   return NextResponse.json({ error: 'Could not create a unique referral link. Try again.' }, { status: 503 });
 }
