@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
+import { readTenancy } from '@/lib/supabase/tenancy';
 
-const { accessMock, serviceMock, dashboardProps } = vi.hoisted(() => ({
+const { accessMock, serviceMock, controlServiceMock, dashboardProps } = vi.hoisted(() => ({
   accessMock: vi.fn(),
   serviceMock: vi.fn(),
+  controlServiceMock: vi.fn(),
   dashboardProps: { value: null as Record<string, unknown> | null },
 }));
 
@@ -24,9 +26,7 @@ function query(data: unknown = [], count: number | null = 0) {
 
 vi.mock('@/lib/portal/dash-gate', () => ({ requireDashAccess: accessMock }));
 vi.mock('@/lib/supabase/service', () => {
-  const m = { createServiceClient: serviceMock };
-  // Shared mode: logins and data are the same project, so the control client is the same fake.
-  return { ...m, createControlServiceClient: m.createServiceClient };
+  return { createServiceClient: serviceMock, createControlServiceClient: controlServiceMock };
 });
 vi.mock('@/components/dash/DashboardView', () => ({
   DashboardView: (props: Record<string, unknown>) => {
@@ -69,15 +69,22 @@ const session = {
   agent_enabled: false, operator_phone: null, created_at: '2026-01-01T00:00:00Z',
 };
 
-serviceMock.mockImplementation(() => ({
+const dataClient = {
   from: (table: string) => table === 'onboarding_sessions'
     ? query(session)
-    : table === 'contacts'
-      ? query({ monthly_retainer: null })
-      : table === 'client_capabilities'
-        ? query([])
-        : query([]),
-}));
+    : table === 'client_capabilities'
+      ? query([])
+      : query([]),
+};
+
+const controlClient = {
+  from: (table: string) => table === 'contacts'
+    ? query({ monthly_retainer: 2500 })
+    : query([]),
+};
+
+serviceMock.mockReturnValue(dataClient);
+controlServiceMock.mockReturnValue(controlClient);
 
 async function renderPage(access: 'member' | 'demo' | 'internal') {
   accessMock.mockResolvedValue(access);
@@ -102,5 +109,35 @@ describe('dash page partner payload gate', () => {
     const returns = props.returns as { partner: { shareCents: number }; rows: Array<Record<string, unknown>> };
     expect(returns.partner.shareCents).toBe(7500);
     expect(returns.rows[0]).toMatchObject({ owner: 'partner', partner_collected_in_window_cents: 50000 });
+  });
+});
+
+describe('dash page CRM reads', () => {
+  it.each(['shared', 'dedicated'] as const)('reads monthly_retainer from the control project in %s mode', async mode => {
+    // The page receives a data client and a control client separately. In
+    // shared mode they point at the same Supabase project; in dedicated mode
+    // only the data client moves. This test keeps the fakes distinct so a
+    // contacts query accidentally sent to the J&C project cannot pass.
+    const vars = ['NEXT_PUBLIC_SUPABASE_URL', 'SUPABASE_DATA_URL', 'SUPABASE_DATA_SECRET_KEY', 'MATE_DATA_SESSION_IDS'];
+    const saved = Object.fromEntries(vars.map(name => [name, process.env[name]]));
+    try {
+      process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://control-project.supabase.co';
+      const set = (name: string, value: string | undefined) => {
+        if (value === undefined) delete process.env[name];
+        else process.env[name] = value;
+      };
+      set('SUPABASE_DATA_URL', mode === 'dedicated' ? 'https://client-data-project.supabase.co' : undefined);
+      set('SUPABASE_DATA_SECRET_KEY', mode === 'dedicated' ? 'data-secret-placeholder' : undefined);
+      set('MATE_DATA_SESSION_IDS', mode === 'dedicated' ? '11111111-1111-4111-8111-111111111111' : undefined);
+
+      expect(readTenancy().mode).toBe(mode);
+      const props = await renderPage('member');
+      expect(props.session).toMatchObject({ monthlyRetainerCents: 250000 });
+    } finally {
+      for (const name of vars) {
+        if (saved[name] === undefined) delete process.env[name];
+        else process.env[name] = saved[name];
+      }
+    }
   });
 });
