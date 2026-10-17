@@ -254,7 +254,10 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort, agentNa
               </td>
               <td><ContactDots lead={l} testId={`contact-dots-${l.id}`} /></td>
               <td>{l.service}</td><td>{l.city}</td>
-              <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>{l.source.replaceAll('_', ' ')}</td>
+              <td style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>
+                <span>{l.source.replaceAll('_', ' ')}</span>
+                {l.source === 'referral' && l.referrer_name && <small data-testid={`referrer-${l.id}`} style={{ display: 'block', color: TEXT_MUTED }}>via {l.referrer_name}</small>}
+              </td>
               <td>{dollars(l.quote_cents)}</td>
               <td>
                 <DriverPill
@@ -350,6 +353,7 @@ export function LeadsTable({ leads, sessionId, spotlightId, initialSort, agentNa
                 <span style={{ color: ['referral', 'revived'].includes(l.source) ? FREE_GREEN : undefined }}>
                   {l.source.replaceAll('_', ' ')}
                 </span>
+                {l.source === 'referral' && l.referrer_name && <> · via {l.referrer_name}</>}
                 {l.created_at && <>{' · '}{captured(l.created_at)}</>}
               </div>
               {/* Driver pill on its own line so it stays tappable without crowding the meta row */}

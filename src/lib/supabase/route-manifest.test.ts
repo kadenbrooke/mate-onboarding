@@ -32,6 +32,7 @@ const MANIFEST: Record<string, string> = {
   // dashboard APIs
   'api/dash/[sessionId]/events/route.ts': 'checkDashAccess',
   'api/dash/[sessionId]/leads/manual/route.ts': 'checkDashApiAccess',
+  'api/dash/[sessionId]/referrals/route.ts': 'checkDashApiAccess',
   'api/dash/[sessionId]/snapshot/route.ts': 'checkDashApiAccess',
   'api/dash/[sessionId]/snapshot/[id]/route.ts': 'checkDashApiAccess',
   'api/dash/[sessionId]/snapshot/[id]/confirm/route.ts': 'checkDashApiAccess',
@@ -53,6 +54,7 @@ const MANIFEST: Record<string, string> = {
   'api/manifest/route.ts': 'routeSession',
   // machine callers (token / signature auth) carrying a session
   'api/leads/ingest/route.ts': 'unservedSessionResponse',
+  'api/referrals/[code]/route.ts': 'unservedSessionResponse',
   'api/agent/postcall/route.ts': 'unservedSessionResponse',
   'api/agent/quote-scan/route.ts': 'unservedSessionResponse',
   'api/agent/signal/route.ts': 'unservedSessionResponse',
@@ -60,6 +62,8 @@ const MANIFEST: Record<string, string> = {
   // crons
   'api/ads/refresh/route.ts': 'routeSession',
   'api/calendar/sync/route.ts': 'syncAllCalendars',
+  // public referral page: it only reads the tenant data client
+  'referral/[code]/page.tsx': 'createServiceClient',
 };
 
 function routeFiles(dir = APP): string[] {
@@ -115,7 +119,13 @@ describe('dedicated deployment route manifest', () => {
     const full = path.join(APP, file);
     expect(fs.existsSync(full), `${file} exists`).toBe(true);
     expect(reachable(file), `${file} is reachable on a dedicated deployment`).toBe(true);
-    expect(fs.readFileSync(full, 'utf8')).toMatch(new RegExp(`\\b${guard}\\(`));
+    const source = fs.readFileSync(full, 'utf8');
+    const postStart = source.indexOf('export async function POST');
+    const nextExport = postStart >= 0 ? source.indexOf('\nexport async function ', postStart + 1) : -1;
+    const guardedSource = file === 'api/referrals/[code]/route.ts' && postStart >= 0
+      ? source.slice(postStart, nextExport >= 0 ? nextExport : undefined)
+      : source;
+    expect(guardedSource).toMatch(new RegExp(`\\b${guard}\\(`));
   });
 
   it('the calendar cron helper constrains its scan by tenancy', () => {
@@ -143,6 +153,7 @@ describe('dedicated deployment route manifest', () => {
     'auth/signout/route.ts',
     'api/dash/[sessionId]/events/route.ts',
     'api/manifest/route.ts',
+    'referral/[code]/page.tsx',
   ]);
   const WRITE_OP = /\.(insert|update|upsert|delete|rpc|upload|remove)\(/;
   const WRITE_HELPERS = /\b(emitClientEvent|logMessage|setHandler|applyNoteToLead|applyQuoteOutcome|applyPostcallChoice|runQuoteMenuScan|syncSessionCalendar|syncAllCalendars|holdBooking|requestTokenExchange|recordSpokenOptOut)\b/;
