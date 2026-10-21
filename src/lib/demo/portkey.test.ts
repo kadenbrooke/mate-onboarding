@@ -98,6 +98,19 @@ describe("chatComplete over Portkey", () => {
     expect(headers["x-amos-gateway-key"]).toBeUndefined()
   })
 
+  it("sends PORTKEY_GATEWAY_KEY on the streaming Portkey request", async () => {
+    process.env.PORTKEY_GATEWAY_KEY = "gateway-test-key"
+    const spy = mockOk("hello back")
+
+    await portkeyChatStream({
+      taskClass: "assistant",
+      messages: [{ role: "user", content: "hi" }],
+    })
+
+    const headers = (spy.mock.calls[0][1] as RequestInit).headers as Record<string, string>
+    expect(headers["x-amos-gateway-key"]).toBe("gateway-test-key")
+  })
+
   it("does not send PORTKEY_GATEWAY_KEY on the provider-native bypass", async () => {
     const models = TASK_MODELS as unknown as { assistant: string }
     const originalModel = models.assistant

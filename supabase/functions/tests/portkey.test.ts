@@ -26,7 +26,22 @@ function clearEnv() {
   Deno.env.delete("PORTKEY_GATEWAY_KEY")
 }
 
+function snapshotEnv(): Record<string, string | undefined> {
+  return {
+    GEMINI_API_KEY: Deno.env.get("GEMINI_API_KEY"),
+    PORTKEY_GATEWAY_KEY: Deno.env.get("PORTKEY_GATEWAY_KEY"),
+  }
+}
+
+function restoreEnv(previous: Record<string, string | undefined>) {
+  for (const [key, value] of Object.entries(previous)) {
+    if (value === undefined) Deno.env.delete(key)
+    else Deno.env.set(key, value)
+  }
+}
+
 Deno.test("generateReply sends PORTKEY_GATEWAY_KEY when configured", async () => {
+  const previous = snapshotEnv()
   clearEnv()
   Deno.env.set("GEMINI_API_KEY", "test-google-key")
   Deno.env.set("PORTKEY_GATEWAY_KEY", "gateway-test-key")
@@ -36,11 +51,12 @@ Deno.test("generateReply sends PORTKEY_GATEWAY_KEY when configured", async () =>
     assertEquals(stub.headers["x-amos-gateway-key"], "gateway-test-key")
   } finally {
     stub.restore()
-    clearEnv()
+    restoreEnv(previous)
   }
 })
 
 Deno.test("generateReply omits PORTKEY_GATEWAY_KEY when unset or blank", async () => {
+  const previous = snapshotEnv()
   clearEnv()
   Deno.env.set("GEMINI_API_KEY", "test-google-key")
   const stub = installFetchStub()
@@ -53,6 +69,6 @@ Deno.test("generateReply omits PORTKEY_GATEWAY_KEY when unset or blank", async (
     }
   } finally {
     stub.restore()
-    clearEnv()
+    restoreEnv(previous)
   }
 })

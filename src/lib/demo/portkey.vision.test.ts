@@ -8,6 +8,7 @@ import { visionComplete, VISION_FALLBACK_MODEL, TASK_MODELS } from './portkey';
 
 const img = { mime: 'image/jpeg', bytes: new Uint8Array([0xff, 0xd8, 0xff]) };
 let fetchMock: ReturnType<typeof vi.fn>;
+let previousGatewayKey: string | undefined;
 
 function reply(status: number, body: unknown) {
   return Promise.resolve({
@@ -21,12 +22,18 @@ const modelOf = (call: unknown[]) => JSON.parse(String((call[1] as RequestInit).
 const providerOf = (call: unknown[]) => ((call[1] as RequestInit).headers as Record<string, string>)['x-portkey-provider'];
 
 beforeEach(() => {
+  previousGatewayKey = process.env.PORTKEY_GATEWAY_KEY;
+  delete process.env.PORTKEY_GATEWAY_KEY;
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
   process.env.GEMINI_API_KEY = 'g';
   process.env.OPENAI_API_KEY = 'o';
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  if (previousGatewayKey === undefined) delete process.env.PORTKEY_GATEWAY_KEY;
+  else process.env.PORTKEY_GATEWAY_KEY = previousGatewayKey;
+});
 
 describe('visionComplete fallback', () => {
   it('uses the primary model when it answers', async () => {
@@ -35,6 +42,14 @@ describe('visionComplete fallback', () => {
     expect(r).toMatchObject({ ok: true, text: '{"candidates":[]}', model: TASK_MODELS.vision });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(providerOf(fetchMock.mock.calls[0])).toBe('google');
+  });
+
+  it('sends PORTKEY_GATEWAY_KEY on the vision gateway request', async () => {
+    process.env.PORTKEY_GATEWAY_KEY = 'gateway-test-key';
+    fetchMock.mockImplementationOnce(() => reply(200, okBody('x')));
+    await visionComplete({ prompt: 'p', images: [img] });
+    const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+    expect(headers['x-amos-gateway-key']).toBe('gateway-test-key');
   });
 
   it('falls back to OpenAI on a 429 from the primary', async () => {
