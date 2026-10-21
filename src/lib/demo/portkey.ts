@@ -72,6 +72,11 @@ function portkeyBaseUrl(): string {
   return process.env.PORTKEY_BASE_URL ?? DEFAULT_PORTKEY_BASE_URL
 }
 
+function portkeyGatewayKeyHeader(): Record<string, string> {
+  const key = process.env.PORTKEY_GATEWAY_KEY?.trim()
+  return key ? { "x-amos-gateway-key": key } : {}
+}
+
 function parseModelId(modelId: string): { provider: Provider; model: string } {
   const slash = modelId.indexOf("/")
   const creator = slash === -1 ? "" : modelId.slice(0, slash)
@@ -150,6 +155,7 @@ export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
   if (!(bypass && provider === "openai")) {
     headers["x-portkey-provider"] = provider
     headers["x-portkey-metadata"] = JSON.stringify({ app: "mate-onboarding" })
+    Object.assign(headers, portkeyGatewayKeyHeader())
   }
 
   try {
@@ -204,6 +210,7 @@ export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response>
   if (!(bypass && provider === "openai")) {
     headers["x-portkey-provider"] = provider
     headers["x-portkey-metadata"] = JSON.stringify({ app: "mate-onboarding", surface: "assistant" })
+    Object.assign(headers, portkeyGatewayKeyHeader())
   }
 
   return fetch(`${baseUrl}/v1/chat/completions`, {
@@ -324,6 +331,7 @@ async function visionOnce(
       ...(opts.clientId ? { clientId: opts.clientId } : {}),
     }),
   }
+  Object.assign(headers, portkeyGatewayKeyHeader())
 
   let res: Response
   try {

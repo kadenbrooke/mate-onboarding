@@ -57,6 +57,7 @@ export async function generateReply(system: string, msgs: Msg[]): Promise<string
   const model = slash === -1 ? REPLY_MODEL : REPLY_MODEL.slice(slash + 1)
   const key = providerKey(provider)
   const base = Deno.env.get("PORTKEY_BASE_URL") ?? DEFAULT_PORTKEY_BASE_URL
+  const gatewayKey = Deno.env.get("PORTKEY_GATEWAY_KEY")?.trim()
 
   const messages: Msg[] = [{ role: "system", content: system }, ...msgs]
 
@@ -71,14 +72,17 @@ export async function generateReply(system: string, msgs: Msg[]): Promise<string
   }
 
   try {
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${key}`,
+      "x-portkey-provider": provider,
+      "x-portkey-metadata": JSON.stringify({ app: "mate-onboarding", surface: "fr-demo" }),
+    }
+    if (gatewayKey) headers["x-amos-gateway-key"] = gatewayKey
+
     const res = await fetch(`${base}/v1/chat/completions`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${key}`,
-        "x-portkey-provider": provider,
-        "x-portkey-metadata": JSON.stringify({ app: "mate-onboarding", surface: "fr-demo" }),
-      },
+      headers,
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000),
     })

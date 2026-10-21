@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { modelForClass, TASK_MODELS, MIN_MAX_TOKENS, chatComplete } from "./portkey"
+import { modelForClass, TASK_MODELS, MIN_MAX_TOKENS, chatComplete, portkeyChatStream } from "./portkey"
 
 describe("modelForClass / TASK_MODELS", () => {
   it("maps both task classes to a cheap model in creator/model form", () => {
@@ -34,6 +34,7 @@ describe("chatComplete over Portkey", () => {
     process.env.GEMINI_API_KEY = "test-google-key"
     delete process.env.LLM_PORTKEY_BYPASS
     delete process.env.PORTKEY_BASE_URL
+    delete process.env.PORTKEY_GATEWAY_KEY
   })
   afterEach(() => {
     process.env = { ...OLD }
@@ -64,10 +65,71 @@ describe("chatComplete over Portkey", () => {
     expect(headers["x-portkey-provider"]).toBe("google")
     expect(headers.Authorization).toBe("Bearer test-google-key")
     expect(headers["x-portkey-metadata"]).toContain("mate-onboarding")
+    expect(headers["x-amos-gateway-key"]).toBeUndefined()
     // Bare model name forwarded upstream (creator/ prefix stripped).
     const payload = JSON.parse(String((init as RequestInit).body))
     expect(payload.model).not.toContain("/")
     expect(payload.messages[0]).toEqual({ role: "system", content: "you are a bot" })
+  })
+
+  it("sends PORTKEY_GATEWAY_KEY to the Portkey gateway", async () => {
+    process.env.PORTKEY_GATEWAY_KEY = "gateway-test-key"
+    const spy = mockOk("hello back")
+
+    await chatComplete({
+      taskClass: "reply",
+      messages: [{ role: "user", content: "hi" }],
+    })
+
+    const headers = (spy.mock.calls[0][1] as RequestInit).headers as Record<string, string>
+    expect(headers["x-amos-gateway-key"]).toBe("gateway-test-key")
+  })
+
+  it("omits PORTKEY_GATEWAY_KEY when it is blank", async () => {
+    process.env.PORTKEY_GATEWAY_KEY = "   "
+    const spy = mockOk("hello back")
+
+    await chatComplete({
+      taskClass: "reply",
+      messages: [{ role: "user", content: "hi" }],
+    })
+
+    const headers = (spy.mock.calls[0][1] as RequestInit).headers as Record<string, string>
+    expect(headers["x-amos-gateway-key"]).toBeUndefined()
+  })
+
+  it("sends PORTKEY_GATEWAY_KEY on the streaming Portkey request", async () => {
+    process.env.PORTKEY_GATEWAY_KEY = "gateway-test-key"
+    const spy = mockOk("hello back")
+
+    await portkeyChatStream({
+      taskClass: "assistant",
+      messages: [{ role: "user", content: "hi" }],
+    })
+
+    const headers = (spy.mock.calls[0][1] as RequestInit).headers as Record<string, string>
+    expect(headers["x-amos-gateway-key"]).toBe("gateway-test-key")
+  })
+
+  it("does not send PORTKEY_GATEWAY_KEY on the provider-native bypass", async () => {
+    const models = TASK_MODELS as unknown as { assistant: string }
+    const originalModel = models.assistant
+    models.assistant = "openai/gpt-4o-mini"
+    process.env.LLM_PORTKEY_BYPASS = "1"
+    process.env.PORTKEY_GATEWAY_KEY = "gateway-test-key"
+    process.env.OPENAI_API_KEY = "test-openai-key"
+    const spy = mockOk("hello back")
+
+    try {
+      await portkeyChatStream({ taskClass: "assistant", messages: [{ role: "user", content: "hi" }] })
+
+      const [url, init] = spy.mock.calls[0]
+      const headers = (init as RequestInit).headers as Record<string, string>
+      expect(String(url)).toBe("https://api.openai.com/v1/chat/completions")
+      expect(headers["x-amos-gateway-key"]).toBeUndefined()
+    } finally {
+      models.assistant = originalModel
+    }
   })
 
   it("clamps max_tokens UP to the per-class floor so a swap can't truncate to empty", async () => {
