@@ -3,10 +3,10 @@ import { toE164, isPhoneCode } from "../_shared/normalize.ts"
 
 Deno.test("toE164: caller-ID and form entry collapse to the same join key", () => {
   // The Telnyx webhook value and the number typed on the form MUST match.
-  assertEquals(toE164("8014583118"), "+18014583118")
-  assertEquals(toE164("+18014583118"), "+18014583118")
-  assertEquals(toE164("(801) 458-3118"), "+18014583118")
-  assertEquals(toE164("1 801 458 3118"), "+18014583118")
+  assertEquals(toE164("8015551234"), "+18015551234")
+  assertEquals(toE164("+18015551234"), "+18015551234")
+  assertEquals(toE164("(801) 555-1234"), "+18015551234")
+  assertEquals(toE164("1 801 555 1234"), "+18015551234")
 })
 
 Deno.test("toE164: rejects junk", () => {

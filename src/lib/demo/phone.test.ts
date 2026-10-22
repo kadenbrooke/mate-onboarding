@@ -3,15 +3,15 @@ import { toE164, isValidDemoPhone, genPhoneCode, isPhoneCode } from "./phone"
 
 describe("toE164", () => {
   it("adds +1 to a bare 10-digit US number", () => {
-    expect(toE164("8014583118")).toBe("+18014583118")
+    expect(toE164("8015551234")).toBe("+18015551234")
   })
   it("adds + to an 11-digit number starting with 1", () => {
-    expect(toE164("18014583118")).toBe("+18014583118")
+    expect(toE164("18015551234")).toBe("+18015551234")
   })
   it("strips formatting then normalizes", () => {
-    expect(toE164("(801) 458-3118")).toBe("+18014583118")
-    expect(toE164("801.458.3118")).toBe("+18014583118")
-    expect(toE164("+1 801 458 3118")).toBe("+18014583118")
+    expect(toE164("(801) 555-1234")).toBe("+18015551234")
+    expect(toE164("801.555.1234")).toBe("+18015551234")
+    expect(toE164("+1 801 555 1234")).toBe("+18015551234")
   })
   it("preserves an already-E.164 non-US number", () => {
     expect(toE164("+447911123456")).toBe("+447911123456")
@@ -25,8 +25,8 @@ describe("toE164", () => {
 
 describe("isValidDemoPhone", () => {
   it("accepts normalizable numbers", () => {
-    expect(isValidDemoPhone("8014583118")).toBe(true)
-    expect(isValidDemoPhone("+18014583118")).toBe(true)
+    expect(isValidDemoPhone("8015551234")).toBe(true)
+    expect(isValidDemoPhone("+18015551234")).toBe(true)
   })
   it("rejects junk", () => {
     expect(isValidDemoPhone("")).toBe(false)
