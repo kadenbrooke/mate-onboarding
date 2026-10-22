@@ -8,7 +8,7 @@ const DEMO_HOST = "https://demo-test.invalid"
 const PLAYER = { game_id: "game-1", player_id: "player-1", seat: 2 }
 
 function clearEnv() {
-  for (const key of [
+  const keys = [
     "BOTC_SUPABASE_URL",
     "BOTC_SERVICE_KEY",
     "SUPABASE_URL",
@@ -17,7 +17,16 @@ function clearEnv() {
     "DENO_DEPLOYMENT_ID",
     "DEMO_ENV",
     "TELNYX_PUBLIC_KEY",
-  ]) Deno.env.delete(key)
+  ]
+  const previous = new Map(keys.map((key) => [key, Deno.env.get(key)]))
+  for (const key of keys) Deno.env.delete(key)
+  return () => {
+    for (const key of keys) {
+      const value = previous.get(key)
+      if (value === undefined) Deno.env.delete(key)
+      else Deno.env.set(key, value)
+    }
+  }
 }
 
 function request(from: string, body: string) {
@@ -30,8 +39,9 @@ function request(from: string, body: string) {
 
 function stubFetch(playerResponse: Response) {
   const calls: string[] = []
+  const smsInboxBodies: Record<string, unknown>[] = []
   const original = globalThis.fetch
-  globalThis.fetch = async (input: Request | URL | string): Promise<Response> => {
+  globalThis.fetch = async (input: Request | URL | string, init?: RequestInit): Promise<Response> => {
     const url = input instanceof Request ? input.url : String(input)
     calls.push(url)
     const headers = { "content-type": "application/json" }
@@ -39,6 +49,8 @@ function stubFetch(playerResponse: Response) {
       return playerResponse
     }
     if (url.startsWith(BOTC_HOST) && url.includes("/sms_inbox")) {
+      const rawBody = input instanceof Request ? await input.clone().text() : String(init?.body ?? "")
+      smsInboxBodies.push(JSON.parse(rawBody))
       return new Response("[]", { status: 201, headers })
     }
     if (url.startsWith(DEMO_HOST) && url.includes("/rpc/")) {
@@ -46,7 +58,7 @@ function stubFetch(playerResponse: Response) {
     }
     return new Response("[]", { status: 200, headers })
   }
-  return { calls, restore: () => (globalThis.fetch = original) }
+  return { calls, smsInboxBodies, restore: () => (globalThis.fetch = original) }
 }
 
 function setupDemo() {
@@ -60,17 +72,20 @@ function setupBotc() {
 }
 
 Deno.test("botcClient is disabled unless both BOTC envs are set", () => {
-  clearEnv()
-  assertEquals(botcClient(), null)
-  Deno.env.set("BOTC_SUPABASE_URL", BOTC_HOST)
-  assertEquals(botcClient(), null)
-  Deno.env.set("BOTC_SERVICE_KEY", "botc-test-key")
-  assert(botcClient() !== null)
-  clearEnv()
+  const restoreEnv = clearEnv()
+  try {
+    assertEquals(botcClient(), null)
+    Deno.env.set("BOTC_SUPABASE_URL", BOTC_HOST)
+    assertEquals(botcClient(), null)
+    Deno.env.set("BOTC_SERVICE_KEY", "botc-test-key")
+    assert(botcClient() !== null)
+  } finally {
+    restoreEnv()
+  }
 })
 
 Deno.test("handler with BOTC envs unset reaches the normal demo code path", async () => {
-  clearEnv()
+  const restoreEnv = clearEnv()
   setupDemo()
   const fetchStub = stubFetch(new Response("[]", { status: 200 }))
   try {
@@ -80,39 +95,53 @@ Deno.test("handler with BOTC envs unset reaches the normal demo code path", asyn
     assertEquals(fetchStub.calls.some((url) => url.startsWith(BOTC_HOST)), false)
   } finally {
     fetchStub.restore()
-    clearEnv()
+    restoreEnv()
   }
 })
 
 Deno.test("active BOTC player is diverted before the six-digit demo path", async () => {
-  clearEnv(); setupDemo(); setupBotc()
+  const restoreEnv = clearEnv(); setupDemo(); setupBotc()
   const fetchStub = stubFetch(new Response(JSON.stringify([PLAYER]), { status: 200, headers: { "content-type": "application/json" } }))
   try {
-    const response = await handler(request("+18014583118", " 123456 "))
+    const response = await handler(request("+18015551234", " 123456 "))
     assertEquals(response.status, 200)
     assertEquals(await response.text(), "ok")
     assert(fetchStub.calls.some((url) => url.startsWith(BOTC_HOST) && url.includes("/rpc/active_game_player")))
     assert(fetchStub.calls.some((url) => url.startsWith(BOTC_HOST) && url.includes("/sms_inbox")))
+    assertEquals(fetchStub.smsInboxBodies.length, 1)
+    assertEquals(fetchStub.smsInboxBodies[0], { game_id: "game-1", from_phone: "+18015551234", body: "123456" })
     assertEquals(fetchStub.calls.some((url) => url.startsWith(DEMO_HOST)), false)
   } finally {
-    fetchStub.restore(); clearEnv()
+    fetchStub.restore(); restoreEnv()
   }
 })
 
 Deno.test("BOTC lookup miss falls through to the normal demo path", async () => {
-  clearEnv(); setupDemo(); setupBotc()
+  const restoreEnv = clearEnv(); setupDemo(); setupBotc()
   const fetchStub = stubFetch(new Response("[]", { status: 200, headers: { "content-type": "application/json" } }))
   try {
     const response = await handler(request("+18015551234", "123456"))
     assertEquals(response.status, 200)
     assert(fetchStub.calls.some((url) => url.startsWith(DEMO_HOST) && url.includes("/rpc/demo_counter_bump")))
   } finally {
-    fetchStub.restore(); clearEnv()
+    fetchStub.restore(); restoreEnv()
+  }
+})
+
+Deno.test("BOTC lookup server error falls through to the normal demo path", async () => {
+  const restoreEnv = clearEnv(); setupDemo(); setupBotc()
+  const fetchStub = stubFetch(new Response("lookup failed", { status: 500 }))
+  try {
+    const response = await handler(request("+18015551234", "123456"))
+    assertEquals(response.status, 200)
+    assert(fetchStub.calls.some((url) => url.startsWith(DEMO_HOST) && url.includes("/rpc/demo_counter_bump")))
+  } finally {
+    fetchStub.restore(); restoreEnv()
   }
 })
 
 Deno.test("BOTC inbox failure returns 500 so Telnyx retries", async () => {
-  clearEnv(); setupDemo(); setupBotc()
+  const restoreEnv = clearEnv(); setupDemo(); setupBotc()
   const original = globalThis.fetch
   globalThis.fetch = async (input: Request | URL | string): Promise<Response> => {
     const url = input instanceof Request ? input.url : String(input)
@@ -123,9 +152,9 @@ Deno.test("BOTC inbox failure returns 500 so Telnyx retries", async () => {
     return new Response("false", { status: 200, headers: { "content-type": "application/json" } })
   }
   try {
-    assertEquals((await handler(request("+18014583118", "hello"))).status, 500)
+    assertEquals((await handler(request("+18015551234", "hello"))).status, 500)
   } finally {
-    globalThis.fetch = original; clearEnv()
+    globalThis.fetch = original; restoreEnv()
   }
 })
 

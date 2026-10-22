@@ -110,7 +110,7 @@ describe('repeat submissions merge instead of failing', () => {
   // three days before Meta re-delivered the same phone.
   const quotedLead: Row = {
     id: 'row-1',
-    phone: '+18014583118',
+    phone: '+18015551234',
     name: null,
     city: null,
     email: null,
@@ -130,8 +130,8 @@ describe('repeat submissions merge instead of failing', () => {
       {
         session_id: SESSION,
         source: 'meta',
-        name: 'Kaden Brooke',
-        phone: '+18014583118',
+        name: 'Test Lead',
+        phone: '+18015551234',
         created_at: '2026-08-20T21:45:41.000Z',
       },
     ]);
@@ -142,7 +142,7 @@ describe('repeat submissions merge instead of failing', () => {
     expect(calls.updates).toHaveLength(1);
 
     // The whole point: the patch touches the blank field and NOTHING else.
-    expect(calls.updates[0]!.patch).toEqual({ name: 'Kaden Brooke' });
+    expect(calls.updates[0]!.patch).toEqual({ name: 'Test Lead' });
     const patched = calls.updates[0]!.patch;
     expect(patched).not.toHaveProperty('quote_cents');
     expect(patched).not.toHaveProperty('source');
@@ -163,7 +163,7 @@ describe('repeat submissions merge instead of failing', () => {
         name: 'Different Name',
         city: 'Provo',
         email: 'second@example.com',
-        phone: '+18014583118',
+        phone: '+18015551234',
         created_at: '2026-08-20T21:45:41.000Z',
       },
     ]);
@@ -173,10 +173,10 @@ describe('repeat submissions merge instead of failing', () => {
   });
 
   it('counts a repeat that teaches us nothing as a successful ingest, not a drop', async () => {
-    state.existing = [{ ...quotedLead, name: 'Kaden Brooke' }];
+    state.existing = [{ ...quotedLead, name: 'Test Lead' }];
 
     const res = await send([
-      { session_id: SESSION, source: 'meta', name: 'Kaden Brooke', phone: '+18014583118' },
+      { session_id: SESSION, source: 'meta', name: 'Test Lead', phone: '+18015551234' },
     ]);
 
     expect(res.status).toBe(200);
