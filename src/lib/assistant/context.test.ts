@@ -11,6 +11,10 @@ const mk = (o: Partial<Lead>): Lead => ({
 });
 
 describe('buildAssistantContext', () => {
+  it('asks for plain text, because the chat renders replies as-is', () => {
+    expect(buildAssistantContext([], null)).toContain('no markdown');
+  });
+
   it('names the business and states it is their assistant', () => {
     const ctx = buildAssistantContext([], 'J&C Asphalt');
     expect(ctx).toContain('J&C Asphalt');

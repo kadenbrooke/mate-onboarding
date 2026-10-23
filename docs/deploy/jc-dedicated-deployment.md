@@ -97,7 +97,7 @@ Same as `mate-onboarding` (login project and shared services):
 | `META_JC_AD_ACCOUNT`, `META_JC_PAGE_TOKEN` | Keychain, same names |
 | `CAL_JC_API_KEY`, `CALCOM_WEBHOOK_SECRET` | Keychain, same names. `CALCOM_WEBHOOK_SECRET` must equal the shared value: forwarded and replayed bookings are verified with it |
 | `TELNYX_API_KEY` | Keychain, same name |
-| `GEMINI_API_KEY`, `OPENAI_API_KEY` | Keychain, same names |
+| `GEMINI_API_KEY`, `GEMINI_API_KEY_CARSON`, `OPENAI_API_KEY` | Keychain, same names. J&C's AI calls use `GEMINI_API_KEY_CARSON` (`src/lib/demo/geminiKey.ts`) and fail closed without it |
 | `LEAD_INTAKE_WEBHOOK_URL`, `LEAD_INTAKE_SECRET` | Keychain, same names |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Keychain, same names |
 | `PORTKEY_BASE_URL`, `MATE_TELNYX_NUMBER` | Not in the Keychain. Copy from `mate-onboarding` in the Vercel dashboard (founder) |
@@ -172,7 +172,7 @@ JCDIR=~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc   # linked to m
    printf %s "$JC=event:<id>,$JC=organizer:<organizer email>" | vercel env add CALCOM_BOOKING_OWNERS production
    for N in NEXT_PUBLIC_SUPABASE_URL NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY SUPABASE_SECRET_KEY \
             LEADS_INGEST_TOKEN META_JC_AD_ACCOUNT META_JC_PAGE_TOKEN CAL_JC_API_KEY \
-            CALCOM_WEBHOOK_SECRET TELNYX_API_KEY GEMINI_API_KEY OPENAI_API_KEY \
+            CALCOM_WEBHOOK_SECRET TELNYX_API_KEY GEMINI_API_KEY GEMINI_API_KEY_CARSON OPENAI_API_KEY \
             LEAD_INTAKE_WEBHOOK_URL LEAD_INTAKE_SECRET GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do
      node $S run -e "$N" -- sh -c "printf %s \"\$$N\" | vercel env add $N production --sensitive"
    done

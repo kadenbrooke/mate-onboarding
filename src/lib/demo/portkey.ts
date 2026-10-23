@@ -14,15 +14,29 @@
 // scrape->profile extraction and 1-2 sentence SMS qualify replies are both small
 // tasks, so both task classes map to a cheap Gemini Flash tier.
 //
-// IMPORTANT: use a NON-reasoning model here. gemini-3-flash-preview is a reasoning
-// model — at the low max_tokens these small tasks use, it spends the whole output
-// budget on reasoning tokens and returns EMPTY content (finish_reason:"length",
+// IMPORTANT: watch hidden reasoning tokens. gemini-3-flash-preview is a reasoning
+// model: at the low max_tokens these small tasks used, it spent the whole output
+// budget on reasoning tokens and returned EMPTY content (finish_reason:"length",
 // completion_tokens:0). That silently broke extraction (every persona fell back to
-// "this business") and would blank the SMS replies. gemini-2.5-flash is a cheap
-// non-reasoning model on the same GEMINI_API_KEY and returns clean output.
+// "this business") and would blank the SMS replies.
+//
+// extract + assistant moved from gemini-2.5-flash to gemini-3.6-flash on
+// 2026-10-22: Google closed 2.5 Flash to new AI Studio projects (a client's own
+// key, e.g. GEMINI_API_KEY_CARSON, is refused it) and it is retiring. 3.6 Flash
+// also reasons (300-800 hidden tokens per answer at its default effort), so
+// TASK_PARAMS asks for reasoning_effort "minimal" (measured 0 reasoning tokens,
+// same extraction scores as 2.5, faster) and the floors below leave room for a
+// full-effort answer in case a gateway or model ignores that field.
 //
 // SPOF mitigation: LLM_PORTKEY_BYPASS=1 routes provider-native (skip the gateway),
 // mirroring amos-ui's bypass flag for a KVM2 outage.
+//
+// Per-tenant keys: every entry point takes the AUTHORIZED session id and the
+// google key comes from resolveGeminiKey (./geminiKey). null = no tenant (the
+// prospect demo funnel), which uses the shared GEMINI_API_KEY. Routing through
+// Portkey is unchanged; only the Authorization key differs.
+
+import { resolveGeminiKey } from "./geminiKey"
 
 const DEFAULT_PORTKEY_BASE_URL = "https://portkey.auto-mate.business"
 
@@ -33,13 +47,14 @@ type Provider = "google" | "openai" | "anthropic"
 // upstream. Kept intentionally tiny (two classes) — this app only needs cheap
 // extraction and cheap SMS replies.
 export const TASK_MODELS = {
-  // scrape -> company profile extraction (classify/extract): cheap, non-reasoning.
-  extract: "google/gemini-2.5-flash",
+  // scrape -> company profile + call-note extraction (classify/extract): cheap,
+  // run at minimal reasoning (TASK_PARAMS).
+  extract: "google/gemini-3.6-flash",
   // First Responder SMS reply (light reasoning, 1-2 sentences): cheap, non-reasoning.
   reply: "google/gemini-2.5-flash",
   // Dashboard assistant chat: longer answers about the client's data. Cheap,
-  // non-reasoning (same reasoning-model empty-output trap applies).
-  assistant: "google/gemini-2.5-flash",
+  // run at minimal reasoning (TASK_PARAMS).
+  assistant: "google/gemini-3.6-flash",
   // Lead Snapshot: read a photographed note into lead fields. This is the
   // `long-doc-vision` class from amos's .claude/model-routing/registry.json,
   // pinned by the Lead Snapshot spec. piiSafe: true is BINDING here, because a
@@ -50,14 +65,27 @@ export const TASK_MODELS = {
 
 export type TaskClass = keyof typeof TASK_MODELS
 
+// Extra request params per task class, sent on every chat call for that class.
+// reasoning_effort "minimal" is Gemini 3.x's lowest level over the OpenAI-
+// compatible API ("none" is ignored by 3.6 Flash). Temperature is deliberately
+// left at the model default: Google advises against lowering it on Gemini 3.
+// Revisit these when a class moves to another model or provider.
+export const TASK_PARAMS: Partial<Record<TaskClass, Record<string, unknown>>> = {
+  extract: { reasoning_effort: "minimal" },
+  assistant: { reasoning_effort: "minimal" },
+}
+
 // max_tokens floors per task class. Belt-and-suspenders: a model swap (or a
 // caller passing too small a budget) must never silently truncate to empty
 // content. Extraction returns a multi-field JSON object (needs room); an SMS
 // reply is 1-2 sentences. A caller's maxTokens is clamped UP to these floors.
 export const MIN_MAX_TOKENS: Record<TaskClass, number> = {
-  extract: 1024,
+  // Room for a full-effort 3.6 Flash answer (up to ~800 reasoning tokens
+  // measured) plus the JSON, if minimal effort is ever not honored.
+  extract: 2048,
   reply: 256,
-  assistant: 1500,
+  // Same headroom over a multi-paragraph answer.
+  assistant: 2500,
   // Generous on purpose. A multi-lead photo returns an array of objects, and
   // the empty-output trap in the header note bites hardest when the budget is
   // tight. 2500 matches what amos-ui gives its own image ingest.
@@ -87,14 +115,18 @@ function parseModelId(modelId: string): { provider: Provider; model: string } {
   return { provider: creator, model }
 }
 
-function providerKey(provider: Provider): string {
+type ProviderKey = { ok: true; key: string } | { ok: false; detail: string }
+
+function providerKey(provider: Provider, sessionId: string | null): ProviderKey {
   switch (provider) {
-    case "google":
-      return process.env.GEMINI_API_KEY ?? ""
+    case "google": {
+      const g = resolveGeminiKey(sessionId)
+      return g.ok ? { ok: true, key: g.key } : { ok: false, detail: `${g.envName} is not set` }
+    }
     case "openai":
-      return process.env.OPENAI_API_KEY ?? ""
+      return { ok: true, key: process.env.OPENAI_API_KEY ?? "" }
     case "anthropic":
-      return process.env.ANTHROPIC_API_KEY ?? ""
+      return { ok: true, key: process.env.ANTHROPIC_API_KEY ?? "" }
   }
 }
 
@@ -108,6 +140,8 @@ export interface ChatCompleteOpts {
   messages: ChatMessage[]
   system?: string
   maxTokens?: number
+  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  sessionId: string | null
 }
 
 /**
@@ -120,7 +154,11 @@ export interface ChatCompleteOpts {
 export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
   const modelId = modelForClass(opts.taskClass)
   const { provider, model } = parseModelId(modelId)
-  const key = providerKey(provider)
+  const resolved = providerKey(provider, opts.sessionId)
+  // Fail closed: a tenant whose own key is missing gets the same "" as any
+  // other failure, never a call on the shared key (geminiKey logs the name).
+  if (!resolved.ok) return ""
+  const key = resolved.key
 
   const messages: ChatMessage[] = opts.system
     ? [{ role: "system", content: opts.system }, ...opts.messages]
@@ -135,6 +173,7 @@ export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
     model,
     messages,
     max_tokens: maxTokens,
+    ...TASK_PARAMS[opts.taskClass],
   })
 
   const bypass = process.env.LLM_PORTKEY_BYPASS === "1"
@@ -180,6 +219,8 @@ export interface ChatStreamOpts {
   system?: string
   maxTokens?: number
   taskClass?: TaskClass
+  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  sessionId: string | null
 }
 
 /**
@@ -191,7 +232,11 @@ export interface ChatStreamOpts {
 export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response> {
   const cls = opts.taskClass ?? "assistant"
   const { provider, model } = parseModelId(modelForClass(cls))
-  const key = providerKey(provider)
+  const resolved = providerKey(provider, opts.sessionId)
+  // Fail closed as a plain non-ok Response, so the caller's existing !res.ok
+  // path answers "unavailable" and nothing goes upstream on the shared key.
+  if (!resolved.ok) return new Response(null, { status: 503, statusText: resolved.detail })
+  const key = resolved.key
 
   const messages: ChatMessage[] = opts.system
     ? [{ role: "system", content: opts.system }, ...opts.messages]
@@ -216,7 +261,7 @@ export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response>
   return fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, stream: true }),
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, ...TASK_PARAMS[cls], stream: true }),
     signal: AbortSignal.timeout(60000),
   })
 }
@@ -279,6 +324,8 @@ export async function visionComplete(opts: {
   system?: string
   maxTokens?: number
   clientId?: string
+  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  sessionId: string | null
 }): Promise<VisionResult & { model?: string }> {
   if (opts.images.length === 0) {
     return { ok: false, kind: "config", detail: "no images supplied" }
@@ -293,7 +340,14 @@ export async function visionComplete(opts: {
 
 async function visionOnce(
   modelId: string,
-  opts: { prompt: string; images: VisionImage[]; system?: string; maxTokens?: number; clientId?: string },
+  opts: {
+    prompt: string
+    images: VisionImage[]
+    system?: string
+    maxTokens?: number
+    clientId?: string
+    sessionId: string | null
+  },
 ): Promise<VisionResult> {
   let provider: Provider
   let model: string
@@ -303,7 +357,11 @@ async function visionOnce(
     return { ok: false, kind: "config", detail: e instanceof Error ? e.message : String(e) }
   }
 
-  const key = providerKey(provider)
+  // A tenant missing its own key is a "config" failure, which shouldFallBack
+  // never retries on another provider: fail closed, nothing is sent.
+  const resolved = providerKey(provider, opts.sessionId)
+  if (!resolved.ok) return { ok: false, kind: "config", detail: resolved.detail }
+  const key = resolved.key
   if (!key) return { ok: false, kind: "config", detail: `no API key for provider ${provider}` }
 
   const floor = MIN_MAX_TOKENS.vision

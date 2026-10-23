@@ -65,7 +65,9 @@ export async function POST(request: NextRequest) {
     await supabase.from('assistant_chats').update({ updated_at: new Date().toISOString() }).eq('id', chat_id);
   }
 
-  const upstream = await portkeyChatStream({ system, messages, taskClass: 'assistant' });
+  // session_id passed assertAssistantAccess and owns chat_id (both above), so
+  // it is the authorized tenant and picks that tenant's Gemini key.
+  const upstream = await portkeyChatStream({ system, messages, taskClass: 'assistant', sessionId: session_id });
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json({ error: 'assistant unavailable' }, { status: 502 });
   }

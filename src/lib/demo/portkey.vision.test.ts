@@ -38,7 +38,7 @@ afterEach(() => {
 describe('visionComplete fallback', () => {
   it('uses the primary model when it answers', async () => {
     fetchMock.mockImplementationOnce(() => reply(200, okBody('{"candidates":[]}')));
-    const r = await visionComplete({ prompt: 'p', images: [img] });
+    const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: true, text: '{"candidates":[]}', model: TASK_MODELS.vision });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(providerOf(fetchMock.mock.calls[0])).toBe('google');
@@ -47,7 +47,7 @@ describe('visionComplete fallback', () => {
   it('sends PORTKEY_GATEWAY_KEY on the vision gateway request', async () => {
     process.env.PORTKEY_GATEWAY_KEY = 'gateway-test-key';
     fetchMock.mockImplementationOnce(() => reply(200, okBody('x')));
-    await visionComplete({ prompt: 'p', images: [img] });
+    await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     const headers = (fetchMock.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
     expect(headers['x-amos-gateway-key']).toBe('gateway-test-key');
   });
@@ -56,7 +56,7 @@ describe('visionComplete fallback', () => {
     fetchMock
       .mockImplementationOnce(() => reply(429, { error: { message: 'prepayment credits are depleted' } }))
       .mockImplementationOnce(() => reply(200, okBody('{"candidates":[{"name":"A"}]}')));
-    const r = await visionComplete({ prompt: 'p', images: [img] });
+    const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: true, model: VISION_FALLBACK_MODEL });
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(providerOf(fetchMock.mock.calls[1])).toBe('openai');
@@ -67,25 +67,25 @@ describe('visionComplete fallback', () => {
     fetchMock
       .mockImplementationOnce(() => reply(503, 'gateway down'))
       .mockImplementationOnce(() => reply(200, okBody('x')));
-    expect((await visionComplete({ prompt: 'p', images: [img] })).ok).toBe(true);
+    expect((await visionComplete({ prompt: 'p', images: [img], sessionId: null })).ok).toBe(true);
 
     fetchMock.mockReset();
     fetchMock
       .mockImplementationOnce(() => Promise.reject(new Error('ECONNRESET')))
       .mockImplementationOnce(() => reply(200, okBody('x')));
-    expect((await visionComplete({ prompt: 'p', images: [img] })).ok).toBe(true);
+    expect((await visionComplete({ prompt: 'p', images: [img], sessionId: null })).ok).toBe(true);
   });
 
   it('does NOT fall back on a 400: a bad request is our bug, not the provider', async () => {
     fetchMock.mockImplementationOnce(() => reply(400, 'bad image'));
-    const r = await visionComplete({ prompt: 'p', images: [img] });
+    const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: false, kind: 'http' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT fall back on an empty answer', async () => {
     fetchMock.mockImplementationOnce(() => reply(200, okBody('')));
-    const r = await visionComplete({ prompt: 'p', images: [img] });
+    const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: false, kind: 'empty' });
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
@@ -94,14 +94,14 @@ describe('visionComplete fallback', () => {
     fetchMock
       .mockImplementationOnce(() => reply(429, 'depleted'))
       .mockImplementationOnce(() => reply(502, 'also down'));
-    const r = await visionComplete({ prompt: 'p', images: [img] });
+    const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: false, kind: 'http', model: VISION_FALLBACK_MODEL });
     expect(r.ok === false && r.detail.startsWith('502')).toBe(true);
   });
 
   it('sends the image as a data URL with the sniffed mime', async () => {
     fetchMock.mockImplementationOnce(() => reply(200, okBody('x')));
-    await visionComplete({ prompt: 'p', images: [img] });
+    await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     const body = JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body));
     expect(body.messages[0].content[1].image_url.url.startsWith('data:image/jpeg;base64,')).toBe(true);
   });

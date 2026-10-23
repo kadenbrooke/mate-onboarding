@@ -67,6 +67,11 @@ until every item below is done. Env vars are in `.env.example` under the demo se
    cover Gemini's HIDDEN reasoning tokens PLUS the visible SMS. A tight budget (e.g.
    300) gets fully consumed by reasoning and the reply truncates mid-sentence
    (`finish_reason:"length"`). The client also requests `reasoning_effort:"none"`.
+   The edge functions serve the prospect demo only, so they always use this shared
+   key. The dashboard's own AI calls (assistant chat, Lead Snapshot, call-note
+   extraction) pick a per-client key by session in `src/lib/demo/geminiKey.ts`
+   (J&C: `GEMINI_API_KEY_CARSON` on Vercel). A mapped client whose variable is
+   unset fails closed; it never falls back to `GEMINI_API_KEY`.
 4. **Voicemail flow tokens (Flow A):** `DEMO_TRANSCRIBE_TOKEN` (auth for the
    transcribe callback; fails CLOSED when unset in prod) and `DEMO_TEXTBACK_DELAY_
    SECONDS` (default 30, the no-VM text-back buffer). See "Voicemail + text-back

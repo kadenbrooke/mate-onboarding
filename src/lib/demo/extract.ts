@@ -119,6 +119,8 @@ export async function extractCompanyDataViaPortkey(
 
   const raw = await chatComplete({
     taskClass: "extract",
+    // Prospect demo funnel: no tenant yet, so the shared key.
+    sessionId: null,
     messages: [{ role: "user", content: `${EXTRACT_PROMPT}\n\nWebsite text:\n${text}` }],
     maxTokens: 500,
   })

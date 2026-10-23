@@ -145,6 +145,45 @@ describe('POST /api/assistant/chat', () => {
     expect(portkeyChatStream).not.toHaveBeenCalled();
   });
 
+  // The Gemini key is picked from sessionId (lib/demo/geminiKey). TENANT_A is
+  // J&C's session id, which is mapped to its own key.
+  describe('Gemini key tenant', () => {
+    const sessionArg = () =>
+      (vi.mocked(portkeyChatStream).mock.calls[0] as unknown as [{ sessionId: string | null }])[0].sessionId;
+
+    it('is the authorized session for a member', async () => {
+      h.user = USERS.memberA;
+      await send(TENANT_A, 'chat-a');
+      expect(sessionArg()).toBe(TENANT_A);
+    });
+
+    it('is the authorized session for an internal user', async () => {
+      h.user = USERS.internal;
+      await send(TENANT_B, 'chat-b');
+      expect(sessionArg()).toBe(TENANT_B);
+    });
+
+    it('is the demo session (shared key) on the public demo', async () => {
+      await send(DEMO, 'chat-demo');
+      expect(sessionArg()).toBe(DEMO);
+    });
+
+    it('a member of another tenant never reaches the model on the mapped tenant', async () => {
+      h.user = USERS.memberB;
+      await send(TENANT_A, 'chat-a');
+      expect(portkeyChatStream).not.toHaveBeenCalled();
+    });
+
+    it('ignores any tenant-looking field in the body', async () => {
+      h.user = USERS.memberB;
+      await POST(req({
+        session_id: TENANT_B, chat_id: 'chat-b', content: 'hi',
+        sessionId: TENANT_A, tenant: TENANT_A, keyEnv: 'GEMINI_API_KEY_CARSON',
+      }) as never);
+      expect(sessionArg()).toBe(TENANT_B);
+    });
+  });
+
   it('returns 404 when the chat_id does not exist', async () => {
     const res = await send(DEMO, 'ghost-chat');
     expect(res.status).toBe(404);
