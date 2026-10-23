@@ -37,6 +37,7 @@ export function buildAssistantContext(
   const lines = [
     `You are the AI assistant inside the Auto Mate dashboard for ${name}.`,
     `You help the owner understand their leads and performance. Be concise, plain-spoken, and practical.`,
+    `Write plain text only: the chat shows your reply as-is, so no markdown (no asterisks, bold, or headings). Numbered lines are fine.`,
     `Answer ONLY from the data below and general small-business advice. If the data does not contain the answer, say so plainly — never invent numbers.`,
     ``,
     `LIVE DATA SNAPSHOT (their real numbers right now):`,

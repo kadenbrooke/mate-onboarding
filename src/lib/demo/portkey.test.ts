@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest"
-import { modelForClass, TASK_MODELS, MIN_MAX_TOKENS, chatComplete, portkeyChatStream } from "./portkey"
+import { modelForClass, TASK_MODELS, TASK_PARAMS, MIN_MAX_TOKENS, chatComplete, portkeyChatStream } from "./portkey"
 
 describe("modelForClass / TASK_MODELS", () => {
   it("maps both task classes to a cheap model in creator/model form", () => {
@@ -17,11 +17,27 @@ describe("modelForClass / TASK_MODELS", () => {
     expect(TASK_MODELS.extract).not.toContain("gemini-3-flash-preview")
     expect(TASK_MODELS.reply).not.toContain("gemini-3-flash-preview")
   })
+  // gemini-2.5-flash is refused to new AI Studio projects, which is every
+  // client's own key (GEMINI_API_KEY_CARSON first). The tenant-keyed classes
+  // must run a model those keys can use.
+  it("runs the tenant-keyed text classes on gemini-3.6-flash, never 2.5", () => {
+    expect(TASK_MODELS.extract).toBe("google/gemini-3.6-flash")
+    expect(TASK_MODELS.assistant).toBe("google/gemini-3.6-flash")
+  })
+  it("asks the 3.x classes for minimal reasoning and leaves vision at the model default", () => {
+    expect(TASK_PARAMS.extract).toEqual({ reasoning_effort: "minimal" })
+    expect(TASK_PARAMS.assistant).toEqual({ reasoning_effort: "minimal" })
+    expect(TASK_PARAMS.vision).toBeUndefined()
+  })
 })
 
 describe("MIN_MAX_TOKENS floors", () => {
   it("gives extraction enough room for a multi-field JSON object", () => {
     expect(MIN_MAX_TOKENS.extract).toBeGreaterThanOrEqual(1024)
+  })
+  it("leaves room for ~800 hidden reasoning tokens on the 3.x classes", () => {
+    expect(MIN_MAX_TOKENS.extract).toBeGreaterThanOrEqual(2048)
+    expect(MIN_MAX_TOKENS.assistant).toBeGreaterThanOrEqual(2500)
   })
   it("gives an SMS reply a safe floor", () => {
     expect(MIN_MAX_TOKENS.reply).toBeGreaterThanOrEqual(256)
@@ -138,10 +154,29 @@ describe("chatComplete over Portkey", () => {
 
   it("clamps max_tokens UP to the per-class floor so a swap can't truncate to empty", async () => {
     const spy = mockOk("ok")
-    // caller passes a too-small budget; must be clamped up to the extract floor (1024)
+    // caller passes a too-small budget; must be clamped up to the extract floor (2048)
     await chatComplete({ sessionId: null, taskClass: "extract", maxTokens: 50, messages: [{ role: "user", content: "hi" }] })
     const payload = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
     expect(payload.max_tokens).toBe(MIN_MAX_TOKENS.extract)
+  })
+
+  it("sends the class's TASK_PARAMS on chatComplete and on the stream", async () => {
+    const spy = mockOk("ok")
+    await chatComplete({ sessionId: null, taskClass: "extract", messages: [{ role: "user", content: "hi" }] })
+    await portkeyChatStream({ sessionId: null, taskClass: "assistant", messages: [{ role: "user", content: "hi" }] })
+    const extractBody = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
+    const streamBody = JSON.parse(String((spy.mock.calls[1][1] as RequestInit).body))
+    expect(extractBody.reasoning_effort).toBe("minimal")
+    expect(extractBody.model).toBe("gemini-3.6-flash")
+    expect(streamBody.reasoning_effort).toBe("minimal")
+    expect(streamBody.stream).toBe(true)
+  })
+
+  it("sends no extra params for a class without TASK_PARAMS", async () => {
+    const spy = mockOk("ok")
+    await chatComplete({ sessionId: null, taskClass: "reply", messages: [{ role: "user", content: "hi" }] })
+    const payload = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
+    expect(payload.reasoning_effort).toBeUndefined()
   })
 
   it("keeps a caller's max_tokens when it already exceeds the floor", async () => {
