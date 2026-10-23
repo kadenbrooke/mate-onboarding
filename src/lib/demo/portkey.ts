@@ -23,6 +23,13 @@
 //
 // SPOF mitigation: LLM_PORTKEY_BYPASS=1 routes provider-native (skip the gateway),
 // mirroring amos-ui's bypass flag for a KVM2 outage.
+//
+// Per-tenant keys: every entry point takes the AUTHORIZED session id and the
+// google key comes from resolveGeminiKey (./geminiKey). null = no tenant (the
+// prospect demo funnel), which uses the shared GEMINI_API_KEY. Routing through
+// Portkey is unchanged; only the Authorization key differs.
+
+import { resolveGeminiKey } from "./geminiKey"
 
 const DEFAULT_PORTKEY_BASE_URL = "https://portkey.auto-mate.business"
 
@@ -87,14 +94,18 @@ function parseModelId(modelId: string): { provider: Provider; model: string } {
   return { provider: creator, model }
 }
 
-function providerKey(provider: Provider): string {
+type ProviderKey = { ok: true; key: string } | { ok: false; detail: string }
+
+function providerKey(provider: Provider, sessionId: string | null): ProviderKey {
   switch (provider) {
-    case "google":
-      return process.env.GEMINI_API_KEY ?? ""
+    case "google": {
+      const g = resolveGeminiKey(sessionId)
+      return g.ok ? { ok: true, key: g.key } : { ok: false, detail: `${g.envName} is not set` }
+    }
     case "openai":
-      return process.env.OPENAI_API_KEY ?? ""
+      return { ok: true, key: process.env.OPENAI_API_KEY ?? "" }
     case "anthropic":
-      return process.env.ANTHROPIC_API_KEY ?? ""
+      return { ok: true, key: process.env.ANTHROPIC_API_KEY ?? "" }
   }
 }
 
@@ -108,6 +119,8 @@ export interface ChatCompleteOpts {
   messages: ChatMessage[]
   system?: string
   maxTokens?: number
+  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  sessionId: string | null
 }
 
 /**
@@ -120,7 +133,11 @@ export interface ChatCompleteOpts {
 export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
   const modelId = modelForClass(opts.taskClass)
   const { provider, model } = parseModelId(modelId)
-  const key = providerKey(provider)
+  const resolved = providerKey(provider, opts.sessionId)
+  // Fail closed: a tenant whose own key is missing gets the same "" as any
+  // other failure, never a call on the shared key (geminiKey logs the name).
+  if (!resolved.ok) return ""
+  const key = resolved.key
 
   const messages: ChatMessage[] = opts.system
     ? [{ role: "system", content: opts.system }, ...opts.messages]
@@ -180,6 +197,8 @@ export interface ChatStreamOpts {
   system?: string
   maxTokens?: number
   taskClass?: TaskClass
+  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  sessionId: string | null
 }
 
 /**
@@ -191,7 +210,11 @@ export interface ChatStreamOpts {
 export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response> {
   const cls = opts.taskClass ?? "assistant"
   const { provider, model } = parseModelId(modelForClass(cls))
-  const key = providerKey(provider)
+  const resolved = providerKey(provider, opts.sessionId)
+  // Fail closed as a plain non-ok Response, so the caller's existing !res.ok
+  // path answers "unavailable" and nothing goes upstream on the shared key.
+  if (!resolved.ok) return new Response(null, { status: 503, statusText: resolved.detail })
+  const key = resolved.key
 
   const messages: ChatMessage[] = opts.system
     ? [{ role: "system", content: opts.system }, ...opts.messages]
@@ -279,6 +302,8 @@ export async function visionComplete(opts: {
   system?: string
   maxTokens?: number
   clientId?: string
+  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  sessionId: string | null
 }): Promise<VisionResult & { model?: string }> {
   if (opts.images.length === 0) {
     return { ok: false, kind: "config", detail: "no images supplied" }
@@ -293,7 +318,14 @@ export async function visionComplete(opts: {
 
 async function visionOnce(
   modelId: string,
-  opts: { prompt: string; images: VisionImage[]; system?: string; maxTokens?: number; clientId?: string },
+  opts: {
+    prompt: string
+    images: VisionImage[]
+    system?: string
+    maxTokens?: number
+    clientId?: string
+    sessionId: string | null
+  },
 ): Promise<VisionResult> {
   let provider: Provider
   let model: string
@@ -303,7 +335,11 @@ async function visionOnce(
     return { ok: false, kind: "config", detail: e instanceof Error ? e.message : String(e) }
   }
 
-  const key = providerKey(provider)
+  // A tenant missing its own key is a "config" failure, which shouldFallBack
+  // never retries on another provider: fail closed, nothing is sent.
+  const resolved = providerKey(provider, opts.sessionId)
+  if (!resolved.ok) return { ok: false, kind: "config", detail: resolved.detail }
+  const key = resolved.key
   if (!key) return { ok: false, kind: "config", detail: `no API key for provider ${provider}` }
 
   const floor = MIN_MAX_TOKENS.vision

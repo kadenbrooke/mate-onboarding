@@ -53,6 +53,7 @@ describe("chatComplete over Portkey", () => {
   it("posts to Portkey /v1/chat/completions with provider + metadata headers", async () => {
     const spy = mockOk("hello back")
     const out = await chatComplete({
+      sessionId: null,
       taskClass: "reply",
       system: "you are a bot",
       messages: [{ role: "user", content: "hi" }],
@@ -77,6 +78,7 @@ describe("chatComplete over Portkey", () => {
     const spy = mockOk("hello back")
 
     await chatComplete({
+      sessionId: null,
       taskClass: "reply",
       messages: [{ role: "user", content: "hi" }],
     })
@@ -90,6 +92,7 @@ describe("chatComplete over Portkey", () => {
     const spy = mockOk("hello back")
 
     await chatComplete({
+      sessionId: null,
       taskClass: "reply",
       messages: [{ role: "user", content: "hi" }],
     })
@@ -103,6 +106,7 @@ describe("chatComplete over Portkey", () => {
     const spy = mockOk("hello back")
 
     await portkeyChatStream({
+      sessionId: null,
       taskClass: "assistant",
       messages: [{ role: "user", content: "hi" }],
     })
@@ -121,7 +125,7 @@ describe("chatComplete over Portkey", () => {
     const spy = mockOk("hello back")
 
     try {
-      await portkeyChatStream({ taskClass: "assistant", messages: [{ role: "user", content: "hi" }] })
+      await portkeyChatStream({ sessionId: null, taskClass: "assistant", messages: [{ role: "user", content: "hi" }] })
 
       const [url, init] = spy.mock.calls[0]
       const headers = (init as RequestInit).headers as Record<string, string>
@@ -135,14 +139,14 @@ describe("chatComplete over Portkey", () => {
   it("clamps max_tokens UP to the per-class floor so a swap can't truncate to empty", async () => {
     const spy = mockOk("ok")
     // caller passes a too-small budget; must be clamped up to the extract floor (1024)
-    await chatComplete({ taskClass: "extract", maxTokens: 50, messages: [{ role: "user", content: "hi" }] })
+    await chatComplete({ sessionId: null, taskClass: "extract", maxTokens: 50, messages: [{ role: "user", content: "hi" }] })
     const payload = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
     expect(payload.max_tokens).toBe(MIN_MAX_TOKENS.extract)
   })
 
   it("keeps a caller's max_tokens when it already exceeds the floor", async () => {
     const spy = mockOk("ok")
-    await chatComplete({ taskClass: "reply", maxTokens: 999, messages: [{ role: "user", content: "hi" }] })
+    await chatComplete({ sessionId: null, taskClass: "reply", maxTokens: 999, messages: [{ role: "user", content: "hi" }] })
     const payload = JSON.parse(String((spy.mock.calls[0][1] as RequestInit).body))
     expect(payload.max_tokens).toBe(999)
   })
@@ -150,19 +154,19 @@ describe("chatComplete over Portkey", () => {
   it("honors PORTKEY_BASE_URL override", async () => {
     process.env.PORTKEY_BASE_URL = "http://localhost:8787"
     const spy = mockOk("x")
-    await chatComplete({ taskClass: "extract", messages: [{ role: "user", content: "hi" }] })
+    await chatComplete({ sessionId: null, taskClass: "extract", messages: [{ role: "user", content: "hi" }] })
     expect(String(spy.mock.calls[0][0])).toBe("http://localhost:8787/v1/chat/completions")
   })
 
   it("returns empty string on a non-OK response (caller falls back, never throws)", async () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response("boom", { status: 500 }))
-    const out = await chatComplete({ taskClass: "reply", messages: [{ role: "user", content: "hi" }] })
+    const out = await chatComplete({ sessionId: null, taskClass: "reply", messages: [{ role: "user", content: "hi" }] })
     expect(out).toBe("")
   })
 
   it("returns empty string when fetch throws", async () => {
     vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("network"))
-    const out = await chatComplete({ taskClass: "reply", messages: [{ role: "user", content: "hi" }] })
+    const out = await chatComplete({ sessionId: null, taskClass: "reply", messages: [{ role: "user", content: "hi" }] })
     expect(out).toBe("")
   })
 })

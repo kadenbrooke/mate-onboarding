@@ -191,6 +191,8 @@ export async function POST(
     system,
     images,
     clientId: (session.contact_id as string) ?? undefined,
+    // The gated session row, so the tenant's own Gemini key pays for the read.
+    sessionId: session.id as string,
   });
 
   if (!vision.ok) {
@@ -200,10 +202,10 @@ export async function POST(
       .eq('id', snapshotId);
 
     // Say which kind of problem it was, because the two need different actions
-    // from the person holding the phone. A gateway or quota failure is ours to
-    // fix and retrying in a second will not help; an empty read is theirs.
+    // from the person holding the phone. A gateway, quota or key-config failure
+    // is ours to fix and retrying in a second will not help; an empty read is theirs.
     const message =
-      vision.kind === 'network' || vision.kind === 'http'
+      vision.kind === 'network' || vision.kind === 'http' || vision.kind === 'config'
         ? 'The reader is unavailable right now. Your photo was saved, try again in a few minutes.'
         : 'Could not read that photo. Try again with more light, or type the lead in by hand.';
     return NextResponse.json({ snapshot_id: snapshotId, error: message }, { status: 502 });

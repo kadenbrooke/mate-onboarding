@@ -85,11 +85,13 @@ export function fillableFields(
   return patch;
 }
 
-/** Ask the model for the fields in a note. Returns {} on any failure. */
-export async function extractNoteFields(note: string): Promise<NoteFields> {
+/** Ask the model for the fields in a note. Returns {} on any failure.
+ *  sessionId is the lead's tenant and picks its Gemini key. */
+export async function extractNoteFields(note: string, sessionId: string | null): Promise<NoteFields> {
   if (!note.trim()) return {};
   const raw = await chatComplete({
     taskClass: 'extract',
+    sessionId,
     system: SYSTEM,
     messages: [{ role: 'user', content: note.trim().slice(0, 2000) }],
   });
@@ -105,7 +107,7 @@ export async function applyNoteToLead(
   args: { leadId: string; sessionId: string; note: string },
 ): Promise<{ patched: string[] }> {
   try {
-    const extracted = await extractNoteFields(args.note);
+    const extracted = await extractNoteFields(args.note, args.sessionId);
     if (Object.values(extracted).every(v => v == null)) return { patched: [] };
 
     const { data: current } = await supabase
