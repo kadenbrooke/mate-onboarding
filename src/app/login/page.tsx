@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GoogleLogo } from "@phosphor-icons/react";
+import { PasswordInput } from "@/components/PasswordInput";
 import { createClient } from "@/lib/supabase/client";
 import { safeNextPath } from "@/lib/portal/safe-next";
 
@@ -100,8 +101,9 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2.5 text-sm text-[#ede6e6] placeholder-[#666] focus:outline-none focus:border-[#e14d1a]"
           />
-          <input
-            type="password"
+          <PasswordInput
+            name="password"
+            autoComplete="current-password"
             required
             placeholder="password"
             value={password}

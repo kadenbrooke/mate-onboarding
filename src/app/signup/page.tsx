@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { GoogleLogo } from "@phosphor-icons/react";
+import { PasswordInput } from "@/components/PasswordInput";
 import { createClient } from "@/lib/supabase/client";
 
 export default function SignupPage() {
@@ -91,8 +92,9 @@ export default function SignupPage() {
             onChange={(e) => setEmail(e.target.value)}
             className="w-full bg-[#1a1a1a] border border-[#333] rounded-lg px-3 py-2.5 text-sm text-[#ede6e6] placeholder-[#666] focus:outline-none focus:border-[#e14d1a]"
           />
-          <input
-            type="password"
+          <PasswordInput
+            name="password"
+            autoComplete="new-password"
             required
             minLength={8}
             placeholder="password (8+ characters)"
