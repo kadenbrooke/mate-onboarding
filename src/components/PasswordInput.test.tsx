@@ -33,6 +33,13 @@ describe('PasswordInput', () => {
     expect(field()).toHaveAttribute('name', 'password');
   });
 
+  it('keeps focus in the field on mouse and touch presses of the eye', () => {
+    render(<PasswordInput name="password" autoComplete="current-password" />);
+    const button = screen.getByRole('button', { name: 'Show password' });
+    expect(fireEvent.pointerDown(button, { pointerType: 'touch' })).toBe(false);
+    expect(fireEvent.mouseDown(button)).toBe(false);
+  });
+
   it('does not submit the form when the eye is clicked', () => {
     const onSubmit = vi.fn((e: React.FormEvent) => e.preventDefault());
     render(

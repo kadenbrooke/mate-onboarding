@@ -60,6 +60,8 @@ export function PasswordInput({ className = "", ...props }: PasswordInputProps) 
         type="button"
         onClick={toggle}
         // Keep focus (and the caret) in the field when tapped or clicked.
+        // Pointer covers touch, which can focus the button without a mouse event.
+        onPointerDown={(e) => e.preventDefault()}
         onMouseDown={(e) => e.preventDefault()}
         aria-label={shown ? "Hide password" : "Show password"}
         aria-pressed={shown}
