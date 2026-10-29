@@ -15,6 +15,12 @@
   font-feature-settings: "ss04";
 }
 
+/* PasswordInput draws its own show/hide eye; hide the browser's built-in reveal
+   button so there are never two. */
+input::-ms-reveal {
+  display: none;
+}
+
 /* Per-tenant brand theme tokens. Default to the dark shell; the onboarding
    flow overrides these on :root at runtime (brandToCssVars) once a client's
    brand is captured, so the whole surface recolors instead of just accent bits. */
