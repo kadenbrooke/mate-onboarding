@@ -101,7 +101,7 @@ Same as `mate-onboarding` (login project and shared services):
 | `LEAD_INTAKE_WEBHOOK_URL`, `LEAD_INTAKE_SECRET` | Keychain, same names |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Keychain, same names |
 | `PORTKEY_BASE_URL`, `MATE_TELNYX_NUMBER` | Not in the Keychain. Copy from `mate-onboarding` in the Vercel dashboard (founder) |
-| `MATE_AGENT_TOKEN` | Keychain, same name. Must equal the shared value: n8n sends it as the `x-agent-token` header (Header Auth credential "Mate Agent Token"), so a postcall that n8n still sends to the old host lands through the 307 with its headers. `AGENT_WEBHOOK_TOKEN` (the old `?k=` query token) is retired and must not be set |
+| `MATE_AGENT_TOKEN` | Keychain, same name. Must equal the shared value: n8n sends it as the `x-agent-token` header (Header Auth credential "Mate Agent Token"), so a postcall that n8n still sends to the old host lands through the 307 with its headers. `AGENT_WEBHOOK_TOKEN` (the old `?k=` query token) is retired and must not be set. While both exist (key rotation overlap), `MATE_AGENT_TOKEN` must be a fresh random value that differs from `AGENT_WEBHOOK_TOKEN`: equal values turn the legacy `?k=` path off |
 | `QBO_*` (7 vars) | Only if J&C uses the Money zone. Copy in the dashboard; `QBO_REDIRECT_URI` becomes the new host (add it in the Intuit app). Without them the Money zone shows locked |
 
 Changed or fresh values:
