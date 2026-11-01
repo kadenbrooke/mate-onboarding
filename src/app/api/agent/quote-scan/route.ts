@@ -7,6 +7,7 @@ import { runQuoteMenuScan } from '@/lib/agent/quoteOutcome';
 import { isWithinSendWindow, type QuietHours } from '@/lib/agent/quietHours';
 import { logMessage } from '@/lib/agent/messages';
 import { fakePracticeMessage } from '@/lib/portal/practice';
+import { agentAuthed } from '@/lib/agent/agentAuth';
 
 export const runtime = 'nodejs';
 
@@ -14,18 +15,13 @@ export const runtime = 'nodejs';
 // (n8n Schedule Trigger -> this route). Opens a menu once a quote appointment has
 // ended, and re-sends due choice-4 re-asks. Auth = the same shared token as the
 // post-call route. Stub-safe: with no J&C session configured it opens nothing.
-function authed(params: URLSearchParams): boolean {
-  const tok = process.env.AGENT_WEBHOOK_TOKEN;
-  return !!tok && params.get('k') === tok;
-}
 
 // J&C sending window (America/Denver, business hours, no Sundays). cal.com owns
 // appointment reminders; this window only gates the operator menu to Jeffrey.
 const JC_QUIET_HOURS: QuietHours = { tz: 'America/Denver', start: '08:00', end: '20:00', skip_days: [0] };
 
 export async function POST(request: Request) {
-  const params = new URL(request.url).searchParams;
-  if (!authed(params)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  if (!agentAuthed(request)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const writesOff = refuseIfWritesDisabled();
   if (writesOff) return writesOff;
 

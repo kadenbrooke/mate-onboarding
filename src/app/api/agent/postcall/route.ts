@@ -12,18 +12,14 @@ import { emitClientEvent } from '@/lib/agent/clientEvents';
 import { postcallOpenedEvent, postcallResolvedEvent, quoteOutcomeEvent } from '@/lib/metrics/eventSources';
 import { fakePracticeMessage } from '@/lib/portal/practice';
 import { agentDisplayNameForSession } from '@/lib/agent/displayName';
+import { agentAuthed } from '@/lib/agent/agentAuth';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-// Auth: shared query token, same model as the Telnyx TeXML routes (unsigned webhooks).
-function authed(params: URLSearchParams): boolean {
-  const tok = process.env.AGENT_WEBHOOK_TOKEN;
-  return !!tok && params.get('k') === tok;
-}
-
 export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
-  if (!authed(params)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+  // Auth: x-agent-token header from n8n (legacy ?k= only during the key rotation).
+  if (!agentAuthed(request)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
   const writesOff = refuseIfWritesDisabled();
   if (writesOff) return writesOff;
   const action = params.get('action');

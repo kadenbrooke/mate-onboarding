@@ -1,0 +1,28 @@
+import { timingSafeEqual } from 'crypto';
+
+// Auth for the n8n -> Mate agent routes (postcall, quote-scan).
+//
+// Primary: header `x-agent-token` equal to MATE_AGENT_TOKEN. n8n sends it from a
+// Header Auth credential, so the token never sits in a URL (n8n exports, access
+// logs, request logs).
+//
+// Legacy, for the key rotation only: query `k` equal to AGENT_WEBHOOK_TOKEN.
+// Removing AGENT_WEBHOOK_TOKEN from the deployment turns the query path off with no
+// code change. The header token is never accepted as `k`, even if the two env
+// values were set equal by mistake.
+export const AGENT_TOKEN_HEADER = 'x-agent-token';
+
+function same(given: string | null, expected: string | undefined): boolean {
+  if (!given || !expected) return false;
+  const a = Buffer.from(given);
+  const b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+export function agentAuthed(request: Request): boolean {
+  const headerToken = process.env.MATE_AGENT_TOKEN;
+  if (same(request.headers.get(AGENT_TOKEN_HEADER), headerToken)) return true;
+  const legacy = process.env.AGENT_WEBHOOK_TOKEN;
+  if (!legacy || legacy === headerToken) return false;
+  return same(new URL(request.url).searchParams.get('k'), legacy);
+}
