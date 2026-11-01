@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { sendSms, insertedMessages } = vi.hoisted(() => ({
   sendSms: vi.fn(async () => ({ ok: true })),
@@ -71,5 +71,28 @@ describe('POST /api/agent/quote-scan', () => {
       direction: 'outbound',
       body: expect.stringContaining('[Practice fake sent to office]'),
     }));
+  });
+
+  describe('x-agent-token header auth', () => {
+    beforeEach(() => { process.env.MATE_AGENT_TOKEN = '<quote-scan-header-token>'; });
+    afterEach(() => { delete process.env.MATE_AGENT_TOKEN; });
+    const scan = (qs: string, headers: Record<string, string> = {}) =>
+      POST(new Request(`http://x/api/agent/quote-scan${qs}`, { method: 'POST', headers }));
+
+    it('runs the scan with the header token and no query token', async () => {
+      const response = await scan('', { 'x-agent-token': '<quote-scan-header-token>' });
+      expect(response.status).toBe(200);
+      expect(insertedMessages).toContainEqual(expect.objectContaining({ lead_id: 'practice-lead-1' }));
+      expect(sendSms).not.toHaveBeenCalled();
+    });
+
+    it('401s a wrong header, the header token as ?k=, and ?k= once the legacy token is retired', async () => {
+      expect((await scan('', { 'x-agent-token': '<quote-scan-header-tokeX>' })).status).toBe(401);
+      expect((await scan('?k=<quote-scan-header-token>')).status).toBe(401);
+      const legacy = process.env.AGENT_WEBHOOK_TOKEN;
+      delete process.env.AGENT_WEBHOOK_TOKEN;
+      expect((await scan(`?k=${legacy}`)).status).toBe(401);
+      expect(insertedMessages).toHaveLength(0);
+    });
   });
 });

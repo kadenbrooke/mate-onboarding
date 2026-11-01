@@ -31,6 +31,13 @@ describe('agentAuthed', () => {
     expect(agentAuthed(req('action=fire'))).toBe(false);
   });
 
+  it('refuses tokens of a different length, shorter or longer', () => {
+    expect(agentAuthed(req('', { [AGENT_TOKEN_HEADER]: HEADER_TOKEN.slice(0, -1) }))).toBe(false);
+    expect(agentAuthed(req('', { [AGENT_TOKEN_HEADER]: `${HEADER_TOKEN}x` }))).toBe(false);
+    expect(agentAuthed(req('', { [AGENT_TOKEN_HEADER]: 'x' }))).toBe(false);
+    expect(agentAuthed(req(`k=${LEGACY_TOKEN.slice(1)}`))).toBe(false);
+  });
+
   it('never accepts the header token in the URL', () => {
     expect(agentAuthed(req(`action=fire&k=${HEADER_TOKEN}`))).toBe(false);
   });

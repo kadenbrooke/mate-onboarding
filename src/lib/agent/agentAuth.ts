@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 
 // Auth for the n8n -> Mate agent routes (postcall, quote-scan).
 //
@@ -12,11 +12,14 @@ import { timingSafeEqual } from 'crypto';
 // values were set equal by mistake.
 export const AGENT_TOKEN_HEADER = 'x-agent-token';
 
+// Compare fixed-length SHA-256 digests in constant time, so neither the content nor
+// the length of the expected token leaks through timing. An unset token or an empty
+// given value never authorizes.
+const digest = (v: string) => createHash('sha256').update(v, 'utf8').digest();
+
 function same(given: string | null, expected: string | undefined): boolean {
   if (!given || !expected) return false;
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
+  return timingSafeEqual(digest(given), digest(expected));
 }
 
 export function agentAuthed(request: Request): boolean {

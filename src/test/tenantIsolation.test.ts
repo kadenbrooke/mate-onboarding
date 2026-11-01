@@ -328,6 +328,32 @@ describe('shared deployment with the client moved out', () => {
     untouched();
   });
 
+  it('a moved session\'s header-authed postcall 307 carries no token, and the replay with the same header authenticates', async () => {
+    process.env.MATE_AGENT_TOKEN = '<agent-header-token>';
+    delete process.env.AGENT_WEBHOOK_TOKEN; // header only, as after the key rotation
+    const body = { session_id: OWN, text: 'probe' };
+    const headers = { 'content-type': 'application/json', 'x-agent-token': '<agent-header-token>' };
+    const res = await postcall(new Request('https://deploy.example.com/api/agent/postcall?action=probe', {
+      method: 'POST', headers, body: JSON.stringify(body),
+    }));
+    expect(res.status).toBe(307);
+    const location = res.headers.get('location') as string;
+    expect(location).toBe(`${NEW_ORIGIN}/api/agent/postcall?action=probe`);
+    untouched();
+
+    // What a fetch/axios client does on 307: same method and body, its own request
+    // headers again (x-agent-token is not Authorization/Cookie, so it is kept).
+    delete process.env.MATE_MOVED_SESSIONS; // now "on" the dedicated deployment
+    useDedicated();
+    const replay = (h2: Record<string, string>) => postcall(new Request(location, { method: 'POST', headers: h2, body: JSON.stringify(body) }));
+    const landed = await replay(headers);
+    expect(landed.status).toBe(400); // authenticated, reached the action switch
+    expect(await landed.json()).toEqual({ error: 'unknown action' });
+    // A client that dropped the header on redirect would be refused, not served.
+    expect((await replay({ 'content-type': 'application/json' })).status).toBe(401);
+    delete process.env.MATE_AGENT_TOKEN;
+  });
+
   it('crons stand down for the moved session and keep running for the rest', async () => {
     process.env.META_JC_SESSION_ID = OWN;
     const res = await adsRefresh(cronReq());
