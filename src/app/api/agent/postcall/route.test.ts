@@ -103,6 +103,23 @@ describe('POST /api/agent/postcall', () => {
   it('401s without the token', async () => {
     expect((await post('action=fire', { session_id: 's1', caller: '+1' })).status).toBe(401);
   });
+  it('accepts the x-agent-token header; an unknown action stops before any side effect', async () => {
+    process.env.MATE_AGENT_TOKEN = '<header-tok>';
+    try {
+      const res = await POST(new Request(url('action=probe'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-agent-token': '<header-tok>' },
+        body: '{}',
+      }) as never);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: 'unknown action' });
+      expect(sendSms).not.toHaveBeenCalled();
+      expect(inserts).toHaveLength(0);
+      expect((await post('action=probe&k=<header-tok>', {})).status).toBe(401);
+    } finally {
+      delete process.env.MATE_AGENT_TOKEN;
+    }
+  });
   it('fire sends the menu to the operator', async () => {
     maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18015551234' }, error: null });
     single.mockResolvedValueOnce({ data: { operator_phone: '+18019414398', onboarding_form_url: null, faq_url: null }, error: null });

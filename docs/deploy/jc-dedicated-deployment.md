@@ -101,7 +101,7 @@ Same as `mate-onboarding` (login project and shared services):
 | `LEAD_INTAKE_WEBHOOK_URL`, `LEAD_INTAKE_SECRET` | Keychain, same names |
 | `GOOGLE_OAUTH_CLIENT_ID`, `GOOGLE_OAUTH_CLIENT_SECRET` | Keychain, same names |
 | `PORTKEY_BASE_URL`, `MATE_TELNYX_NUMBER` | Not in the Keychain. Copy from `mate-onboarding` in the Vercel dashboard (founder) |
-| `AGENT_WEBHOOK_TOKEN` | Not in the Keychain. **Preferred:** copy the shared value (dashboard) so a postcall that n8n still sends to the old host lands through the 307. If it can't be read (Sensitive), use a fresh value (Keychain `MATE_JC_AGENT_WEBHOOK_TOKEN`) and accept that a missed n8n node fails loudly (401 at the new host, n8n error workflow alerts) instead of landing |
+| `MATE_AGENT_TOKEN` | Keychain, same name. Must equal the shared value: n8n sends it as the `x-agent-token` header (Header Auth credential "Mate Agent Token"), so a postcall that n8n still sends to the old host lands through the 307 with its headers. `AGENT_WEBHOOK_TOKEN` (the old `?k=` query token) is retired and must not be set. While both exist (key rotation overlap), `MATE_AGENT_TOKEN` must be a fresh random value that differs from `AGENT_WEBHOOK_TOKEN`: equal values turn the legacy `?k=` path off |
 | `QBO_*` (7 vars) | Only if J&C uses the Money zone. Copy in the dashboard; `QBO_REDIRECT_URI` becomes the new host (add it in the Intuit app). Without them the Money zone shows locked |
 
 Changed or fresh values:
@@ -178,7 +178,7 @@ JCDIR=~/kaden/projects/mate-onboarding/.worktrees/deploy-mate-jc   # linked to m
    done
    printf %s https://jc.mate.auto-mate.business/api/connect/google/callback | vercel env add GOOGLE_OAUTH_REDIRECT_URI production
    sh -c 'V=$(openssl rand -hex 32); printf %s "$V" | node '"$S"' set MATE_JC_SIGNAL_TOKEN && printf %s "$V" | vercel env add SIGNAL_TOKEN production --sensitive'
-   # AGENT_WEBHOOK_TOKEN, PORTKEY_BASE_URL, MATE_TELNYX_NUMBER (and QBO_* if used): founder, dashboard (see table).
+   # MATE_AGENT_TOKEN: Keychain, same name. PORTKEY_BASE_URL, MATE_TELNYX_NUMBER (and QBO_* if used): founder, dashboard (see table).
    vercel env ls production   # names only; check against the tables above
    ```
 5. Deploy and attach the domain:
@@ -291,8 +291,9 @@ is lost):
      Meta Lead Ads ingest `xXfLDJ2J9t5w3xF7` (`/api/leads/ingest`), the quote-scan
      schedule (`/api/agent/quote-scan`) and the inactive website form `wmFg5Mdrt60fSNTY`
      (rebuild from `web-intake/build-workflow.mjs`) → `https://jc.mate.auto-mate.business`.
-     If `AGENT_WEBHOOK_TOKEN` / `SIGNAL_TOKEN` on `mate-jc` are fresh values, change the
-     `k=` query in the same edit.
+     The agent routes authenticate with the `x-agent-token` header from the n8n
+     credential, so only the host changes. If `SIGNAL_TOKEN` on `mate-jc` is a fresh
+     value, change the signal `k=` query in the same edit.
    - cal.com: J&C's booking webhook URL → `https://jc.mate.auto-mate.business/api/webhooks/calcom`.
      Anything cal.com still sends to the old URL is forwarded or held (never lost), but
      the webhook should not depend on that.
@@ -460,7 +461,7 @@ written to J&C's project since the switch goes back to the old one.
   `mate-jc`, confirm the rail writes J&C's rows to J&C's project, or the Money zone
   reads nothing. `mate-jc`'s QBO
   connect is refused while its write gate is shut.
-- `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL`, `AGENT_WEBHOOK_TOKEN` and (if used) `QBO_*`
+- `MATE_TELNYX_NUMBER`, `PORTKEY_BASE_URL` and (if used) `QBO_*`
   need copying by hand; they are not in the Keychain.
 - The alert retry relies on cal.com retrying a non-2xx webhook. If it does not, the
   booking is still held (never lost) but its alert may be missing; `alert=NONE` in
