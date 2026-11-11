@@ -128,6 +128,40 @@ describe('POST /api/agent/postcall', () => {
     expect(sendSms).toHaveBeenCalledWith('+18019414398', expect.stringContaining('What next?'));
   });
 
+  it('fire sends the menu to operator_to when the workflow names who took the call', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18015551234' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18015550111', onboarding_form_url: null, faq_url: null }, error: null });
+    const res = await post('action=fire&k=tok', { session_id: 's1', caller: '+18015551234', operator_to: '+18015550222' });
+    expect(res.status).toBe(200);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(sendSms).toHaveBeenCalledWith('+18015550222', expect.stringContaining('What next?'));
+  });
+
+  it.each([['not-a-phone'], ['8015550222'], [''], [42]])('fire ignores a malformed operator_to (%s) and texts operator_phone', async (operatorTo) => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18015551234' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18015550111', onboarding_form_url: null, faq_url: null }, error: null });
+    const res = await post('action=fire&k=tok', { session_id: 's1', caller: '+18015551234', operator_to: operatorTo });
+    expect(res.status).toBe(200);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(sendSms).toHaveBeenCalledWith('+18015550111', expect.stringContaining('What next?'));
+  });
+
+  it('fire with operator_to still sends the menu when operator_phone is unset', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18015551234' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: null, onboarding_form_url: null, faq_url: null }, error: null });
+    const res = await post('action=fire&k=tok', { session_id: 's1', caller: '+18015551234', operator_to: '+18015550222' });
+    expect(res.status).toBe(200);
+    expect(sendSms).toHaveBeenCalledWith('+18015550222', expect.stringContaining('What next?'));
+  });
+
+  it('fire with neither operator_to nor operator_phone is still a 409', async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 's1', phone: '+18015551234' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: null, onboarding_form_url: null, faq_url: null }, error: null });
+    const res = await post('action=fire&k=tok', { session_id: 's1', caller: '+18015551234' });
+    expect(res.status).toBe(409);
+    expect(sendSms).not.toHaveBeenCalled();
+  });
+
   it('fire records a fake practice menu without calling the provider', async () => {
     maybeSingle.mockResolvedValueOnce({ data: { id: 'l1', session_id: 'practice', phone: '+18015550101', name: 'Practice Lead' }, error: null });
     single.mockResolvedValueOnce({ data: { operator_phone: '+18015550199', is_practice: true, onboarding_form_url: null, faq_url: null }, error: null });
@@ -149,6 +183,35 @@ describe('POST /api/agent/postcall', () => {
     expect(inserts.find(([table]) => table === 'lead_messages')?.[1]).toMatchObject({
       body: expect.stringContaining('[Practice fake sent to lead]'),
     });
+  });
+
+  it('sends the blocked notice to whoever answered (from), not operator_phone', async () => {
+    const sessionId = '61400e73-0570-4167-88d9-d3a69650b15b';
+    maybeSingle
+      .mockResolvedValueOnce({ data: { id: 'pc1', lead_id: 'l1', kind: 'call', jc_conversation_id: null, created_by_fire: false }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    single.mockResolvedValueOnce({ data: { id: 'l1', session_id: sessionId, phone: '+18015551234', name: 'J&C Lead' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18015550111', onboarding_form_url: null, faq_url: null, is_practice: false }, error: null });
+
+    const res = await post('action=operator_reply&k=tok', { session_id: sessionId, from: '+18015550222', text: '2' });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true, blocked: true });
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(sendSms).toHaveBeenCalledWith('+18015550222', 'Not sent: this lead asked not to be contacted');
+  });
+
+  it('a malformed from falls back to operator_phone for the blocked notice', async () => {
+    const sessionId = '61400e73-0570-4167-88d9-d3a69650b15b';
+    maybeSingle
+      .mockResolvedValueOnce({ data: { id: 'pc1', lead_id: 'l1', kind: 'call', jc_conversation_id: null, created_by_fire: false }, error: null })
+      .mockResolvedValueOnce({ data: null, error: null });
+    single.mockResolvedValueOnce({ data: { id: 'l1', session_id: sessionId, phone: '+18015551234', name: 'J&C Lead' }, error: null });
+    single.mockResolvedValueOnce({ data: { operator_phone: '+18015550111', onboarding_form_url: null, faq_url: null, is_practice: false }, error: null });
+
+    const res = await post('action=operator_reply&k=tok', { session_id: sessionId, from: 'garbage', text: '2' });
+    expect(res.status).toBe(200);
+    expect(sendSms).toHaveBeenCalledTimes(1);
+    expect(sendSms).toHaveBeenCalledWith('+18015550111', 'Not sent: this lead asked not to be contacted');
   });
 
   it('resolves an opted-out menu as blocked and texts the operator, never the lead', async () => {
