@@ -4,6 +4,7 @@ import { readTenancy, routeSession } from "@/lib/supabase/tenancy"
 import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
 import { practiceStatus } from "@/lib/portal/practice"
+import { publicRedirect } from "@/lib/public-url"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
@@ -40,9 +41,7 @@ function backToOnboard(req: NextRequest, status: string): NextResponse {
     : sessionId && routeSession(sessionId).served
       ? `/dash/${sessionId}`
       : "/postlogin"
-  const url = new URL(path, req.nextUrl.origin)
-  url.searchParams.set("google", status)
-  return NextResponse.redirect(url)
+  return publicRedirect(`${path}?${new URLSearchParams({ google: status })}`, req)
 }
 
 export async function GET(req: NextRequest) {

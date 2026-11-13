@@ -23,12 +23,13 @@ import { practiceStatus } from '@/lib/portal/practice';
 import { qboEnvironment } from '@/lib/qbo/config';
 import { verifyState, qbStateSecret, QB_STATE_COOKIE } from '@/lib/qbo/state';
 import { requestTokenExchange } from '@/lib/qbo/rail';
+import { publicRedirect } from '@/lib/public-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function backToDash(req: NextRequest, sessionId: string, status: string): NextResponse {
-  const res = NextResponse.redirect(new URL(`/dash/${sessionId}?qb=${status}`, req.url));
+  const res = publicRedirect(`/dash/${sessionId}?qb=${status}`, req);
   // Consume the one-shot nonce cookie regardless of outcome.
   res.cookies.set(QB_STATE_COOKIE, '', { path: '/', maxAge: 0 });
   return res;
@@ -48,7 +49,7 @@ export async function GET(req: NextRequest) {
   const state = secret && stateParam ? verifyState(stateParam, secret) : null;
   if (!state) {
     // No trustworthy session to route back to; go to login.
-    return NextResponse.redirect(new URL('/login?error=qb_state', req.url));
+    return publicRedirect('/login?error=qb_state', req);
   }
 
   // Nonce cookie must match the state's nonce (CSRF double-submit).

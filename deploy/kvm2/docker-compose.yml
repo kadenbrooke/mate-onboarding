@@ -1,0 +1,72 @@
+# Mate on KVM2 at https://mate.auto-mate.business, while the Vercel team is paused (Hobby fair-use
+# block until 2026-12-11). Its own compose project, behind the Traefik that already runs there
+# (compose project "root" in /root/docker-compose.yml). This file does not touch Traefik or any
+# other service; it only joins Traefik's network and uses its entrypoint and certificate resolver:
+#   network       root_default     (Traefik's network, created by the "root" project)
+#   entrypoint    websecure        (:443; the web entrypoint on :80 already redirects to it)
+#   cert resolver mytlschallenge   (Let's Encrypt TLS challenge; the host's A record must point here)
+# Layout on KVM2 (docs/deploy/kvm2.md):
+#   /opt/mate/app.env              runtime settings and keys (owner root, mode 600, never in git)
+#   /opt/mate/releases/<rev>/      a `git archive` of one commit; this file is deploy/kvm2/ in it
+#   /opt/mate/current -> releases/<rev>
+# Start or update, from the release directory (--env-file feeds the two NEXT_PUBLIC_SUPABASE_*
+# build args below; env_file feeds the container):
+#   MATE_REV=<rev> docker compose --env-file /opt/mate/app.env -f deploy/kvm2/docker-compose.yml up -d --build
+# MATE_HOST picks the hostname; it defaults to mate.auto-mate.business. Only the temporary test
+# deploy sets it (MATE_HOST=mate-test.automateutah.com). It is both the Traefik rule and the origin
+# every redirect is pinned to (NEXT_PUBLIC_MATE_URL, src/lib/public-url.ts), so a change of host
+# needs a rebuild, never only a restart.
+# Roll back to an image that is still on the box (no rebuild):
+#   MATE_REV=<old rev> docker compose --env-file /opt/mate/app.env -f deploy/kvm2/docker-compose.yml up -d --no-build
+name: mate
+
+services:
+  mate:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_MATE_URL: https://${MATE_HOST:-mate.auto-mate.business}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?run compose with --env-file /opt/mate/app.env}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY:?run compose with --env-file /opt/mate/app.env}
+    image: mate:${MATE_REV:-local}
+    container_name: mate
+    restart: unless-stopped
+    env_file:
+      # Compose refuses to start without the file. MATE_ENV_FILE overrides it only for a local test.
+      - ${MATE_ENV_FILE:-/opt/mate/app.env}
+    environment:
+      NODE_ENV: production       # the image sets it too; fixed here so app.env can never unset it (the
+                                 # pinned redirects fail closed only in production)
+    cpus: 1.0
+    mem_limit: 768m
+    pids_limit: 256
+    read_only: true
+    # The only writable paths: Next's cache (image optimizer, fetch cache) and /tmp, both in memory
+    # and owned by the node user (1000).
+    tmpfs:
+      - /app/.next/cache:uid=1000,gid=1000,mode=0700,size=128m
+      - /tmp:uid=1000,gid=1000,mode=0700,size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    networks:
+      - root_default
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: root_default
+      traefik.http.routers.mate.rule: Host(`${MATE_HOST:-mate.auto-mate.business}`)
+      traefik.http.routers.mate.entrypoints: websecure
+      traefik.http.routers.mate.tls.certresolver: mytlschallenge
+      traefik.http.routers.mate.service: mate
+      traefik.http.services.mate.loadbalancer.server.port: "3000"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  root_default:
+    external: true

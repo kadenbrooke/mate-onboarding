@@ -1,0 +1,16 @@
+# Only what `next build` needs goes into the image build context.
+.git
+.github
+.worktrees
+node_modules
+.next
+out
+coverage
+.vercel
+.env*
+docs
+supabase
+deploy
+*.md
+.dockerignore
+Dockerfile

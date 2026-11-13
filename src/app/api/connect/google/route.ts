@@ -3,6 +3,7 @@ import { createServiceClient } from "@/lib/supabase/service"
 import { unservedSessionResponse } from "@/lib/supabase/tenant-response"
 import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { practiceStatus } from "@/lib/portal/practice"
+import { publicRedirect } from "@/lib/public-url"
 
 /**
  * GET /api/connect/google?sessionId=... : start the Google OAuth flow.
@@ -51,14 +52,14 @@ export async function GET(req: NextRequest) {
     if (unserved) return unserved
     // Read-only deployment (lib/supabase/write-gate): the token could not be stored.
     if (!dataWritesEnabled()) {
-      return NextResponse.redirect(new URL(`/dash/${sessionId}?google=writes_disabled`, req.url))
+      return publicRedirect(`/dash/${sessionId}?google=writes_disabled`, req)
     }
     const practice = await practiceStatus(createServiceClient(), sessionId)
     if (!practice.ok) {
-      return NextResponse.redirect(new URL(`/dash/${sessionId}?google=unavailable`, req.url))
+      return publicRedirect(`/dash/${sessionId}?google=unavailable`, req)
     }
     if (practice.isPractice) {
-      return NextResponse.redirect(new URL(`/dash/${sessionId}?google=practice`, req.url))
+      return publicRedirect(`/dash/${sessionId}?google=practice`, req)
     }
   }
 

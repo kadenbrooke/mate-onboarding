@@ -7,6 +7,7 @@ import { resolveSessionId } from '@/lib/portal/demo';
 import { isUniqueViolation, normalizeEmail } from '@/lib/referrals/capture';
 import { readReferralJsonBody } from '@/lib/referrals/request';
 import { toE164 } from '@/lib/leads/phone';
+import { publicOrigin, publicUrl } from '@/lib/public-url';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +53,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     expiresAt = new Date(body.expires_at).toISOString();
   }
 
+  // The link is built on the pinned public origin; refuse before writing a code
+  // that could only be handed back as a localhost link.
+  if (!publicOrigin(request)) return NextResponse.json({ error: 'Could not create referral link.' }, { status: 500 });
+
   const service = createServiceClient();
   const { data: session, error: sessionError } = await service
     .from('onboarding_sessions').select('id, is_demo').eq('id', sessionId).maybeSingle();
@@ -72,7 +77,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     if (!error && data) {
       return NextResponse.json({
         code: data.code,
-        link: new URL(`/referral/${data.code}`, request.url).toString(),
+        link: publicUrl(`/referral/${data.code}`, request)?.toString() ?? null,
         referrer_name: data.referrer_name,
         expires_at: data.expires_at,
       }, { status: 201 });

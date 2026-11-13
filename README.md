@@ -48,6 +48,9 @@ npm test                     # vitest run — unit tests in src/**/*.test.ts
 ## Deploy
 Own Vercel project (client-facing; not amos). Set the same env vars there.
 
+While the Vercel team is paused (until 2026-12-11), Mate can run on KVM2 behind Traefik: see
+[docs/deploy/kvm2.md](docs/deploy/kvm2.md) (Docker image, app.env from the secret helper, n8n crons, DNS switch, rollback).
+
 ## Demo go-live (Instant First Responder Demo)
 
 The demo spans the Next app (`/api/demo/start`, public + unauthed) and three Supabase

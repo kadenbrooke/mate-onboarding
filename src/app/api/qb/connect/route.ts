@@ -24,6 +24,7 @@ import { qboOAuthConfig } from '@/lib/qbo/config';
 import { resolveEndpoints } from '@/lib/qbo/discovery';
 import { buildAuthorizeUrl } from '@/lib/qbo/oauth';
 import { signState, newNonce, qbStateSecret, QB_STATE_COOKIE } from '@/lib/qbo/state';
+import { publicRedirect } from '@/lib/public-url';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -33,21 +34,21 @@ export async function GET(req: NextRequest) {
   const sessionId = resolveSessionId(rawSessionId);
   // Read-only deployment (lib/supabase/write-gate): the connection could not be stored.
   if (!dataWritesEnabled()) {
-    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=writes_disabled`, req.url));
+    return publicRedirect(`/dash/${rawSessionId}?qb=writes_disabled`, req);
   }
 
   // Redirects (login) or 404s on deny; returns the access mode on allow.
   const access = await requireDashAccess(sessionId);
   // The public demo dashboard has no real books to connect.
   if (access === 'demo') {
-    return NextResponse.redirect(new URL(`/dash/${rawSessionId}`, req.url));
+    return publicRedirect(`/dash/${rawSessionId}`, req);
   }
   const practice = await practiceStatus(createServiceClient(), sessionId);
   if (!practice.ok) {
-    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=unavailable`, req.url));
+    return publicRedirect(`/dash/${rawSessionId}?qb=unavailable`, req);
   }
   if (practice.isPractice) {
-    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=practice`, req.url));
+    return publicRedirect(`/dash/${rawSessionId}?qb=practice`, req);
   }
 
   // OAuth app config (clientId + redirectUri; secret is not needed here and
@@ -57,7 +58,7 @@ export async function GET(req: NextRequest) {
     cfg = qboOAuthConfig(false);
   } catch {
     // Not configured yet -> send them back to the dash rather than crash.
-    return NextResponse.redirect(new URL(`/dash/${rawSessionId}?qb=unconfigured`, req.url));
+    return publicRedirect(`/dash/${rawSessionId}?qb=unconfigured`, req);
   }
 
   const endpoints = await resolveEndpoints(cfg.environment);

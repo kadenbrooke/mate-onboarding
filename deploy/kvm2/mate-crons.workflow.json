@@ -1,0 +1,103 @@
+{
+  "name": "Mate crons on KVM2 (calendar sync 12:00 UTC, ads refresh 13:00 UTC)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 12 * * *"
+            }
+          ]
+        }
+      },
+      "id": "0f6c5e2a-3d1b-4c55-9a51-6b7e2f0c1201",
+      "name": "Daily 12:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://mate.auto-mate.business/api/calendar/sync",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "0f6c5e2a-3d1b-4c55-9a51-6b7e2f0c1202",
+      "name": "Calendar sync",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET-ON-IMPORT",
+          "name": "Mate cron secret"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 13 * * *"
+            }
+          ]
+        }
+      },
+      "id": "0f6c5e2a-3d1b-4c55-9a51-6b7e2f0c1203",
+      "name": "Daily 13:00 UTC",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 200]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://mate.auto-mate.business/api/ads/refresh",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "0f6c5e2a-3d1b-4c55-9a51-6b7e2f0c1204",
+      "name": "Ads refresh",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 200],
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "SET-ON-IMPORT",
+          "name": "Mate cron secret"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Daily 12:00 UTC": {
+      "main": [[{ "node": "Calendar sync", "type": "main", "index": 0 }]]
+    },
+    "Daily 13:00 UTC": {
+      "main": [[{ "node": "Ads refresh", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "UTC"
+  },
+  "pinData": {},
+  "active": false
+}
