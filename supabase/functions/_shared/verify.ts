@@ -22,9 +22,11 @@ export function isProd(): boolean {
   return false
 }
 
-function b64ToBytes(b64: string): Uint8Array {
+// Return type left to inference: newer TS types this Uint8Array<ArrayBuffer>,
+// which crypto.subtle requires; an explicit `: Uint8Array` widens it and fails.
+function b64ToBytes(b64: string) {
   const bin = atob(b64)
-  const out = new Uint8Array(bin.length)
+  const out = new Uint8Array(new ArrayBuffer(bin.length))
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
   return out
 }

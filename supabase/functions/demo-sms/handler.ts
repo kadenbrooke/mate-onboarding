@@ -36,6 +36,7 @@ import { authenticateWebhook } from "../_shared/webhook-auth.ts"
 import { generateReply, type Msg } from "../_shared/portkey.ts"
 import { bumpCounter } from "../_shared/counter.ts"
 import { botcClient, findActiveBotcPlayer, botcInboxInsert } from "../_shared/botc.ts"
+import { PDW_OPT_OUT_KEYWORDS, pdwDivert, pdwDivertUrl, pdwKeyword } from "../_shared/pdw.ts"
 
 const BUSINESS = "fr_demo"
 // Messaging API v2 signs webhooks with Ed25519 reliably, so signature is the
@@ -64,6 +65,8 @@ const codeAttemptCap = () => intEnv("DEMO_CODE_MAX_ATTEMPTS_PER_NUMBER_PER_DAY",
 interface Parsed {
   from: string | null
   text: string
+  // True only for a Telnyx JSON `message.received` event (gates the PDW divert).
+  inbound: boolean
 }
 
 /** Parse a Telnyx inbound-message webhook (JSON) OR a form-encoded TeXML post. */
@@ -74,14 +77,15 @@ function parseInbound(rawBody: string, contentType: string): Parsed {
       const p = json?.data?.payload ?? json?.payload ?? {}
       const from = p?.from?.phone_number ?? p?.from ?? null
       const text = typeof p?.text === "string" ? p.text : ""
-      return { from: typeof from === "string" ? from : null, text }
+      const inbound = json?.data?.event_type === "message.received"
+      return { from: typeof from === "string" ? from : null, text, inbound }
     } catch {
-      return { from: null, text: "" }
+      return { from: null, text: "", inbound: false }
     }
   }
   // Fallback: form-encoded (TeXML-style From/Body), useful for tests/manual posts.
   const form = new URLSearchParams(rawBody)
-  return { from: form.get("From"), text: form.get("Body") ?? "" }
+  return { from: form.get("From"), text: form.get("Body") ?? "", inbound: false }
 }
 
 /**
@@ -105,19 +109,41 @@ async function sendGuarded(
 }
 
 export async function handler(req: Request): Promise<Response> {
-  const rawBody = await req.text()
+  // Keep the exact bytes for the PDW divert; the decode matches req.text().
+  const rawBytes = await req.arrayBuffer()
+  const rawBody = new TextDecoder().decode(rawBytes)
   const authed = await authenticateWebhook(req, rawBody, SMS_TOKEN_ENV)
   if (!authed) return new Response("unauthorized", { status: 401 })
 
-  const { from: rawFrom, text: body } = parseInbound(
+  const { from: rawFrom, text: body, inbound } = parseInbound(
     rawBody,
     req.headers.get("content-type") ?? ""
   )
   const from = toE164(rawFrom ?? "")
   if (!from) return new Response("ok", { status: 200 })
 
-  const supabase = adminClient()
   const trimmed = body.trim()
+
+  // --- PDW CRM consent divert (env-gated; see _shared/pdw.ts). ---
+  // An inbound text that is exactly one consent keyword (YES/START/UNSTOP/HELP,
+  // or an opt-out word like STOP) is forwarded, raw body + Telnyx signature
+  // headers unchanged, to PDW_SMS_DIVERT_URL. A 200 handled:true answer means the
+  // PDW CRM took it: ACK Telnyx and stop. Anything else falls through (fail-OPEN).
+  // ORDER vs the BOTC divert, split by keyword kind so neither breaks the other:
+  //   - Opt-out words go to PDW FIRST. Telnyx blocks every later text from this
+  //     number to an opted-out sender, game texts included, so the CRM must
+  //     record the opt-out even if the sender is also a seated BOTC player. A
+  //     non-alert-list player gets handled:false and still reaches the game.
+  //   - YES/START/UNSTOP/HELP go to PDW only AFTER the BOTC divert: a seated
+  //     player's "yes" is a game answer, and the game must never wait on n8n.
+  const pdwUrl = inbound ? pdwDivertUrl() : null
+  const pdwWord = pdwUrl ? pdwKeyword(trimmed) : null
+  const pdwOptOut = pdwWord !== null && PDW_OPT_OUT_KEYWORDS.has(pdwWord)
+  if (pdwUrl && pdwOptOut && (await pdwDivert(pdwUrl, rawBytes, req.headers))) {
+    return new Response("ok", { status: 200 })
+  }
+
+  const supabase = adminClient()
 
   // --- BOTC game-mode divert (env-gated). ---
   // MUST run BEFORE the 6-digit code path: a player texting "123456" as a game
@@ -137,6 +163,11 @@ export async function handler(req: Request): Promise<Response> {
       if (!stored) return new Response("botc inbox insert failed", { status: 500 })
       return new Response("ok", { status: 200 })
     }
+  }
+
+  // PDW opt-in/HELP keywords, after the BOTC divert (see the order note above).
+  if (pdwUrl && pdwWord && !pdwOptOut && (await pdwDivert(pdwUrl, rawBytes, req.headers))) {
+    return new Response("ok", { status: 200 })
   }
 
   // --- Path A: 6-digit code fallback (no-caller-ID binding). ---
