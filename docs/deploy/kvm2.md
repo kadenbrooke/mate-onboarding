@@ -7,6 +7,20 @@ below that changes DNS, writes keys to KVM2, touches n8n or takes traffic is fou
 The Swingin clock moved the same way on 2026-11-12 (`~/kaden/sdco-survey`,
 `GO-LIVE-RUNBOOK.md` "Clock on KVM2"); this follows that pattern.
 
+**Test deploy, 2026-11-13 (~12:20 to 12:36 MST), release 1320414fb135 at
+`https://mate-test.automateutah.com`** (temporary Porkbun record 603477961, `A 72.60.226.53`).
+`app.env` written with `--session-secret generate` (test only; the production choice is open,
+see below): 32 names, mode 600, lengths equal to the helper's, 0 placeholders. Build at
+`nice -n 19 ionice -c3`: 157 s, lowest MemAvailable 2909 MB (3785 MB before), image 1.03 GB.
+Container healthy, 0 restarts, ~156 MiB of 768 MiB; read-only root confirmed, `/tmp` writable.
+Every smoke check below passed: `/` 307 to `/login?next=%2F`, `/login` 200, `/demo` 200,
+`/dash/demo` 200 (Supabase reachable), auth callback / sign-out / QuickBooks / Google callbacks
+all on the pinned host with and without a forged `X-Forwarded-Host`, middleware redirects
+relative (`/login?next=...`), both cron routes 401 without the secret, `next/image` 200 (sharp),
+Let's Encrypt certificate to 2027-02-11, no errors in the logs. Not exercised: a real sign-in
+(Supabase only redirects to `mate.auto-mate.business`), a cron run with the real secret (it
+writes production data), the n8n workflow. Nothing else on KVM2, DNS, Supabase or n8n changed.
+
 ## What is on this branch
 
 - `Dockerfile`: `next build` / `next start` on `node:22.23.3-alpine` (the CI Node major), npm
