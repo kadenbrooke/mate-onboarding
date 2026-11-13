@@ -7,7 +7,15 @@ node_modules
 out
 coverage
 .vercel
+# Keys never enter the build context, at any depth.
 .env*
+**/.env*
+app.env
+**/app.env
+*.pem
+**/*.pem
+*.key
+**/*.key
 docs
 supabase
 deploy

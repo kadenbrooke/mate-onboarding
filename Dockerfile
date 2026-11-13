@@ -7,7 +7,9 @@
 # publishable key is public by design (every browser gets it). Every other setting (Supabase
 # secret key, cron secret, OAuth and Telnyx keys) comes from the env file at run time and never
 # enters the image.
-ARG NODE_IMAGE=node:22.23.3-alpine
+# Pinned by digest (the multi-arch index of node:22.23.3-alpine, published 2026-09-23), so a
+# re-pushed tag can never change what is built. Override NODE_IMAGE only to test another base.
+ARG NODE_IMAGE=node:22.23.3-alpine@sha256:0a7108bf6c7bf5de370ffb1a3ed6be93d405b43ff159f681a8d18c0e2bc2e402
 
 FROM ${NODE_IMAGE} AS base
 ENV NEXT_TELEMETRY_DISABLED=1

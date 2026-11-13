@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { safeRelativePath } from '@/lib/portal/safe-next';
 
 // The origin every redirect (and every absolute link a route hands back) points at.
 //
@@ -34,23 +35,23 @@ export function publicOrigin(request: Request): string | null {
   return null;
 }
 
-// A same-site path: one leading "/", then not a second "/" or "\" (the URL parser
-// reads "//x" and "/\x" as the host x), and no control characters (it drops tab,
-// CR and LF, so "/\t/x" becomes "//x").
-const RELATIVE_PATH = /^\/(?![/\\])[^\p{Cc}]*$/u;
-
-/** `path` on the public origin, or null when there is no origin or `path` is not a same-site path. */
+/**
+ * `path` on the public origin, or null when there is no origin or `path` is not
+ * a same-site path (src/lib/portal/safe-next.ts: no absolute URL, "//host",
+ * "/\host", control character or encoded form of those, and no unsafe nested
+ * ?next= / return-to value in its query).
+ */
 export function publicUrl(path: string, request: Request): URL | null {
   const origin = publicOrigin(request);
-  if (!origin || !RELATIVE_PATH.test(path)) return null;
-  const target = new URL(path, origin);
+  const safe = safeRelativePath(path);
+  if (!origin || safe === null) return null;
+  const target = new URL(safe, origin);
   return target.origin === origin ? target : null;
 }
 
 /**
  * A redirect to `path` on the public origin. A 500 with no Location when the
- * origin is not configured, or when `path` is not a same-site path (an absolute
- * URL, "//host", "/\host", no leading "/").
+ * origin is not configured, or when `path` is not a same-site path (publicUrl).
  */
 export function publicRedirect(path: string, request: Request, status?: number): NextResponse {
   const target = publicUrl(path, request);

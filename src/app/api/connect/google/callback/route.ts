@@ -5,6 +5,7 @@ import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
 import { practiceStatus } from "@/lib/portal/practice"
 import { publicRedirect } from "@/lib/public-url"
+import { pathSegment } from "@/lib/portal/safe-next"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
@@ -39,7 +40,7 @@ function backToOnboard(req: NextRequest, status: string): NextResponse {
   const path = !dedicated
     ? "/onboard"
     : sessionId && routeSession(sessionId).served
-      ? `/dash/${sessionId}`
+      ? `/dash/${pathSegment(sessionId)}`
       : "/postlogin"
   return publicRedirect(`${path}?${new URLSearchParams({ google: status })}`, req)
 }

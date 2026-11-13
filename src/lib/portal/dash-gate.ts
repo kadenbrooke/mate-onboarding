@@ -7,6 +7,8 @@ import { createControlServiceClient, createServiceClient } from "@/lib/supabase/
 import { readTenancy, routeSession } from "@/lib/supabase/tenancy";
 import { resolveDashAccess, type DashAccess } from "./dash-access";
 import { resolveSessionId } from "./demo";
+import { pathSegment, safeRelativePath } from "./safe-next";
+
 
 /**
  * Resolve the caller's access to a dash session WITHOUT acting on it.
@@ -78,7 +80,11 @@ export async function requireDashAccess(rawSessionId: string): Promise<DashAcces
   const access = await checkDashAccess(rawSessionId);
 
   if (access === "not-found") notFound();
-  if (access === "login") redirect(`/login?next=${encodeURIComponent(`/dash/${sessionId}`)}`);
+  if (access === "login") {
+    // The ?next= written here is checked like the one the login page reads.
+    const next = safeRelativePath(`/dash/${pathSegment(sessionId)}`);
+    redirect(next ? `/login?next=${encodeURIComponent(next)}` : "/login");
+  }
   if (access === "forbidden") redirect("/login?error=unauthorized");
   return access;
 }

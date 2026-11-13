@@ -23,7 +23,7 @@ writes production data), the n8n workflow. Nothing else on KVM2, DNS, Supabase o
 
 ## What is on this branch
 
-- `Dockerfile`: `next build` / `next start` on `node:22.23.3-alpine` (the CI Node major), npm
+- `Dockerfile`: `next build` / `next start` on `node:22.23.3-alpine` pinned by digest (the CI Node major), npm
   from `package-lock.json`, runs as `node`, `NODE_ENV=production`. `sharp` is a runtime
   dependency, so `next/image` works. `NEXT_PUBLIC_MATE_URL`, `NEXT_PUBLIC_SUPABASE_URL` and
   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` are build args (Next inlines them); no server key
@@ -55,6 +55,12 @@ writes production data), the n8n workflow. Nothing else on KVM2, DNS, Supabase o
   before this they sent people to `localhost:3000`. Off Vercel in production, a missing or
   non-https value answers 500 instead of redirecting. On Vercel (`VERCEL=1`) without the
   variable it keeps the old behavior (the deployment's own URL), so preview deploys still sign in.
+- `src/lib/portal/safe-next.ts` (`safeRelativePath`): every `?next=` is checked where it is written
+  (the proxy's sign-in gate, the dash gate) and where it is read (the login page), and every
+  pinned redirect path goes through it too. Only a same-site path survives: no absolute URL,
+  `//host`, `/\host`, control character, or percent-encoded form of those (up to three rounds),
+  and no unsafe nested `next` / `returnTo` / `redirect` value. Session ids from the query or the
+  signed QuickBooks state are encoded as one path segment, so they cannot add `?next=...`.
 - `deploy/kvm2/mate-crons.workflow.json`: the two Vercel crons (`vercel.json`) as one n8n
   workflow, inactive, same routes, same UTC times, `GET` with an `Authorization` header from an
   n8n Header Auth credential named "Mate cron secret". No secret in the file.

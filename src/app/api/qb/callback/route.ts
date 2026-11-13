@@ -24,12 +24,13 @@ import { qboEnvironment } from '@/lib/qbo/config';
 import { verifyState, qbStateSecret, QB_STATE_COOKIE } from '@/lib/qbo/state';
 import { requestTokenExchange } from '@/lib/qbo/rail';
 import { publicRedirect } from '@/lib/public-url';
+import { pathSegment } from '@/lib/portal/safe-next';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 function backToDash(req: NextRequest, sessionId: string, status: string): NextResponse {
-  const res = publicRedirect(`/dash/${sessionId}?qb=${status}`, req);
+  const res = publicRedirect(`/dash/${pathSegment(sessionId)}?qb=${status}`, req);
   // Consume the one-shot nonce cookie regardless of outcome.
   res.cookies.set(QB_STATE_COOKIE, '', { path: '/', maxAge: 0 });
   return res;

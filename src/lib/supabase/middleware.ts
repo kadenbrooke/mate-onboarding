@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { safeRelativePath } from "@/lib/portal/safe-next";
 
 // Session refresh + auth gate. Membership (portal_access for this client) is
 // enforced in the app layout, which can run the authorated DB query. Here we
@@ -52,7 +53,11 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublic) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
-    url.search = `?next=${encodeURIComponent(path + request.nextUrl.search)}`;
+    // The ?next= written here is checked like the one the login page reads: a
+    // request path that is not a plain same-site path (e.g. "//evil.example")
+    // goes to /login with no next.
+    const next = safeRelativePath(path + request.nextUrl.search);
+    url.search = next ? `?next=${encodeURIComponent(next)}` : "";
     return NextResponse.redirect(url);
   }
 

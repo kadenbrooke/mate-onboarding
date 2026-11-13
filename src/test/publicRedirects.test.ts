@@ -173,3 +173,77 @@ describe('production off Vercel with no NEXT_PUBLIC_MATE_URL fails closed', () =
     expect(response.status).toBe(500);
   });
 });
+
+// A caller-controlled session id must not smuggle a second hop (/login?next=...)
+// into a pinned redirect: the id is one encoded path segment, and publicUrl
+// refuses any path whose query carries an unsafe next / return-to value.
+describe('no second-hop open redirect through a session id', () => {
+  const EVIL_IDS = [
+    'x/../../login?next=https://evil.example#',
+    '../login?next=//evil.example',
+    '..%2F..%2Flogin%3Fnext%3Dhttps%3A%2F%2Fevil.example',
+    '../../login?next=/%5Cevil.example&',
+    '..',
+  ];
+  // Either a redirect that stays on the pinned /dash path, or (an id that still
+  // decodes to a backslash or a host) a 500 with no Location. Never a hop away.
+  const assertStaysOnDash = (response: Response) => {
+    const location = response.headers.get('location');
+    if (response.status === 500) {
+      expect(location).toBeNull();
+      return;
+    }
+    expect(location).not.toBeNull();
+    const url = new URL(location!);
+    expect(url.origin).toBe(PINNED);
+    expect(url.pathname.startsWith('/dash/')).toBe(true);
+    expect(url.searchParams.has('next')).toBe(false);
+    expect(location).not.toContain('evil.example/');
+  };
+
+  it('the plain injections still redirect (to the encoded /dash path), not 500', async () => {
+    h.writesEnabled = false;
+    for (const id of EVIL_IDS.slice(0, 2)) {
+      const response = await qbConnect(req(`/api/qb/connect?sessionId=${encodeURIComponent(id)}`));
+      expect(response.status).toBe(307);
+      expect(response.headers.get('location')).toBe(`${PINNED}/dash/${encodeURIComponent(id)}?qb=writes_disabled`);
+    }
+  });
+
+  it.each(EVIL_IDS)('QuickBooks connect, sessionId %s', async (id) => {
+    h.writesEnabled = false;
+    const response = await qbConnect(req(`/api/qb/connect?sessionId=${encodeURIComponent(id)}`));
+    assertStaysOnDash(response);
+  });
+
+  it.each(EVIL_IDS)('QuickBooks connect, practice path, sessionId %s', async (id) => {
+    const response = await qbConnect(req(`/api/qb/connect?sessionId=${encodeURIComponent(id)}`));
+    assertStaysOnDash(response);
+  });
+
+  it.each(EVIL_IDS)('Google connect, sessionId %s', async (id) => {
+    h.writesEnabled = false;
+    const response = await googleConnect(req(`/api/connect/google?sessionId=${encodeURIComponent(id)}`));
+    assertStaysOnDash(response);
+  });
+
+  it.each(EVIL_IDS)('QuickBooks callback, signed state carrying %s', async (id) => {
+    h.verifiedState = { sessionId: id, nonce: 'nonce' };
+    const response = await qbCallback(req('/api/qb/callback?code=c&state=s&realmId=r', { headers: { cookie: 'qb_oauth_nonce=nonce' } }));
+    assertStaysOnDash(response);
+  });
+
+  it.each([
+    '/login?next=https://evil.example',
+    '/login?next=//evil.example',
+    '/login?next=/%5Cevil.example',
+    '/login?next=%2F%2Fevil.example',
+    '/dash/x/../../login?next=https%3A%2F%2Fevil.example',
+    '/x?returnTo=https://evil.example',
+  ])('publicRedirect refuses %s: a 500 and no Location', async (path) => {
+    const { publicRedirect } = await import('@/lib/public-url');
+    const response = publicRedirect(path, req('/x'));
+    expect(response.status).toBe(500);
+    expect(response.headers.get('location')).toBeNull();
+  });
+});

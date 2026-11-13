@@ -3,6 +3,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { ALL_NAMES, SECRET_NAMES, SESSION_SECRET, appEnv } from './write-app-env.mjs';
 
 const COMPOSE = readFileSync(new URL('./docker-compose.yml', import.meta.url), 'utf8');
 const WORKFLOW = JSON.parse(readFileSync(new URL('./mate-crons.workflow.json', import.meta.url), 'utf8'));
@@ -76,4 +77,26 @@ test('the n8n workflow runs the same two crons as vercel.json, at the same UTC t
 test('the workflow file carries no secret: no header values, no Bearer token', () => {
   const text = JSON.stringify(WORKFLOW);
   assert.doesNotMatch(text, /Bearer|headerParameters|sendHeaders|x-ingest-token/i);
+});
+
+test('VERCEL is never set in the production container (it would re-enable request.url redirects)', () => {
+  const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
+  // Not in the image: no ENV / ARG names it.
+  assert.doesNotMatch(dockerfile, /^\s*(ENV|ARG)\b[^\n]*\bVERCEL/m);
+  assert.doesNotMatch(dockerfile.match(/FROM \$\{NODE_IMAGE\} AS run[\s\S]*$/)[0], /VERCEL/);
+  // Not in compose: neither the environment block nor the build args.
+  assert.doesNotMatch(COMPOSE, /^\s*-?\s*VERCEL\w*\s*[:=]/m);
+  // Not in app.env (the env_file): write-app-env writes no VERCEL* name.
+  assert.equal(ALL_NAMES.filter((n) => n.startsWith('VERCEL')).length, 0);
+  const env = appEnv(Object.fromEntries([...Object.values(SECRET_NAMES), SESSION_SECRET.from].map((n) => [n, 'x']))).text;
+  assert.doesNotMatch(env, /^VERCEL/m);
+});
+
+test('the base image is pinned by digest and the build context excludes keys', () => {
+  const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
+  assert.match(dockerfile, /^ARG NODE_IMAGE=node:22\.23\.3-alpine@sha256:[0-9a-f]{64}$/m);
+  const ignore = readFileSync(new URL('../../.dockerignore', import.meta.url), 'utf8').split('\n');
+  for (const pattern of ['.env*', '**/.env*', 'app.env', '**/app.env', '*.pem', '**/*.pem', '*.key', '**/*.key']) {
+    assert.ok(ignore.includes(pattern), pattern);
+  }
 });

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { safeNextPath } from "./safe-next";
+import { pathSegment, safeNextPath, safeRelativePath } from "./safe-next";
 
 const ORIGIN = "https://mate.auto-mate.business";
 
@@ -45,5 +45,57 @@ describe("safeNextPath", () => {
 
   it("rejects a javascript: URL", () => {
     expect(safeNextPath("javascript:alert(1)", ORIGIN)).toBeNull();
+  });
+});
+
+describe("safeNextPath: encoded and nested forms", () => {
+  it.each([
+    ["an encoded protocol-relative URL", "/%2F%2Fevil.com"],
+    ["a mixed-case encoded protocol-relative URL", "/%2f%2Fevil.com"],
+    ["an encoded backslash", "/%5Cevil.com"],
+    ["a double-encoded protocol-relative URL", "/%252F%252Fevil.com"],
+    ["a triple-encoded backslash", "/%25255Cevil.com"],
+    ["an encoded tab", "/%09/evil.com"],
+    ["an encoded newline", "/x%0A"],
+    ["a malformed escape", "/x%E0%A4%A"],
+    ["a nested absolute next", "/login?next=https://evil.com"],
+    ["a nested encoded absolute next", "/login?next=https%3A%2F%2Fevil.com"],
+    ["a nested protocol-relative next", "/login?next=//evil.com"],
+    ["a nested backslash next", "/login?next=/%5Cevil.com"],
+    ["a nested returnTo", "/x?returnTo=https://evil.com"],
+    ["a nested redirect_to", "/x?redirect_to=//evil.com"],
+    ["a doubly nested next", "/login?next=%2Flogin%3Fnext%3Dhttps%3A%2F%2Fevil.com"],
+    ["an over-long value", `/${"a".repeat(2048)}`],
+  ])("rejects %s", (_, value) => {
+    expect(safeNextPath(value, ORIGIN)).toBeNull();
+  });
+
+  it("keeps a safe nested next and normalizes dot segments", () => {
+    expect(safeNextPath("/login?next=%2Fdash%2Fabc", ORIGIN)).toBe("/login?next=%2Fdash%2Fabc");
+    expect(safeNextPath("/dash/../codes", ORIGIN)).toBe("/codes");
+  });
+});
+
+describe("safeRelativePath / pathSegment", () => {
+  it("refuses non-strings", () => {
+    expect(safeRelativePath(undefined)).toBeNull();
+    expect(safeRelativePath(["/x"])).toBeNull();
+  });
+
+  it("keeps the hash and the query", () => {
+    expect(safeRelativePath("/dash/abc?qb=connected#money")).toBe("/dash/abc?qb=connected#money");
+  });
+
+  it("encodes a session id into one segment that cannot add a path, query or fragment", () => {
+    const evil = "x/../../login?next=https://evil.com#";
+    const path = `/dash/${pathSegment(evil)}?qb=practice`;
+    const url = new URL(safeRelativePath(path)!, ORIGIN);
+    expect(url.origin).toBe(ORIGIN);
+    expect(url.pathname.startsWith("/dash/")).toBe(true);
+    expect([...url.searchParams.keys()]).toEqual(["qb"]);
+    expect(pathSegment("..")).toBe("_");
+    expect(pathSegment(".")).toBe("_");
+    expect(pathSegment("")).toBe("_");
+    expect(pathSegment("61400e73-0570-4167-88d9-d3a69650b15b")).toBe("61400e73-0570-4167-88d9-d3a69650b15b");
   });
 });
