@@ -15,6 +15,10 @@ import { agentDisplayNameForSession } from '@/lib/agent/displayName';
 import { agentAuthed } from '@/lib/agent/agentAuth';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+// A US E.164 number. Gates the caller-supplied recipients below: anything else
+// falls back to the session's operator_phone, which is today's behaviour.
+const E164_US = /^\+1\d{10}$/;
+const asOperatorPhone = (v: unknown): string | null => (typeof v === 'string' && E164_US.test(v) ? v : null);
 
 export async function POST(request: Request) {
   const params = new URL(request.url).searchParams;
@@ -23,7 +27,7 @@ export async function POST(request: Request) {
   const writesOff = refuseIfWritesDisabled();
   if (writesOff) return writesOff;
   const action = params.get('action');
-  let body: { session_id?: string; caller?: string; from?: string; text?: string };
+  let body: { session_id?: string; caller?: string; from?: string; text?: string; operator_to?: string };
   try { body = await request.json(); } catch { return NextResponse.json({ error: 'bad json' }, { status: 400 }); }
   if (body.session_id) {
     const unserved = unservedSessionResponse(request, body.session_id);
@@ -55,7 +59,11 @@ export async function POST(request: Request) {
     const { data: config, error: configError } = await supabase.from('onboarding_sessions')
       .select('operator_phone, onboarding_form_url, faq_url, is_practice').eq('id', body.session_id).single();
     if (configError) return NextResponse.json({ error: configError.message }, { status: 500 });
-    if (!config?.operator_phone && config?.is_practice !== true) {
+    // The person who took the call gets the menu. The voice workflow names them in
+    // `operator_to` when that is not the session operator (J&C: calls ring the office
+    // lead, the owner stays operator_phone). Missing or malformed -> operator_phone.
+    const menuTo = asOperatorPhone(body.operator_to) ?? config?.operator_phone;
+    if (!menuTo && config?.is_practice !== true) {
       return NextResponse.json({ error: 'no operator_phone configured' }, { status: 409 });
     }
     // `.select().single()` only so the new row's id can key the ticker event.
@@ -71,7 +79,7 @@ export async function POST(request: Request) {
         body: fakePracticeMessage(menu, 'office'),
       });
     } else {
-      await sendSms(config.operator_phone, menu);
+      await sendSms(menuTo as string, menu);
     }
     if (opened) {
       await emitClientEvent(supabase, postcallOpenedEvent({
@@ -172,6 +180,9 @@ export async function POST(request: Request) {
           warning = `Operator notice could not be sent: ${message}`;
           console.error('[postcall] blocked operator notice failed:', message, { postcallId: pc.id });
         };
+        // The notice goes back to whoever answered the menu (n8n forwards only
+        // operator replies, with `from`); operator_phone when `from` is absent.
+        const noticeTo = asOperatorPhone(body.from) ?? config?.operator_phone;
         const resolvedAt = new Date().toISOString();
         if (actionResult.reason !== 'opt_out_unavailable') {
           await supabase.from('lead_postcall').update({
@@ -184,9 +195,9 @@ export async function POST(request: Request) {
             body: fakePracticeMessage(blockedMessage, 'office'),
           });
           if (operatorLog.error) setWarning(operatorLog.error);
-        } else if (config?.operator_phone) {
+        } else if (noticeTo) {
           try {
-            const operatorSend = await sendSms(config.operator_phone, blockedMessage);
+            const operatorSend = await sendSms(noticeTo, blockedMessage);
             if (!operatorSend.ok) setWarning(operatorSend.error ?? 'provider rejected the message');
           } catch (error) {
             setWarning(error instanceof Error ? error.message : 'provider request failed');
