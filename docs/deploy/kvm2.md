@@ -1,11 +1,24 @@
 # Mate on KVM2 (while Vercel is paused)
 
-Status: **built and tested at a temporary host, not live.** The Vercel team was paused on
-2026-11-11 (Hobby fair-use block until 2026-12-11), so `mate.auto-mate.business` (J&C's CRM)
-is down. The founder approved moving Mate onto KVM2 under the same hostname. Every step
-below that changes DNS, writes keys to KVM2, touches n8n or takes traffic is founder-gated.
-The Swingin clock moved the same way on 2026-11-12 (`~/kaden/sdco-survey`,
-`GO-LIVE-RUNBOOK.md` "Clock on KVM2"); this follows that pattern.
+Status: **live on KVM2 at `https://mate.auto-mate.business` since 2026-11-13 ~13:32 MST.** The
+Vercel team was paused on 2026-11-11 (Hobby fair-use block until 2026-12-11), so
+`mate.auto-mate.business` (J&C's CRM) was down until then. The founder approved moving Mate onto
+KVM2 under the same hostname. Every step below that changes DNS, writes keys to KVM2, touches n8n
+or takes traffic is founder-gated. The Swingin clock moved the same way on 2026-11-12
+(`~/kaden/sdco-survey`, `GO-LIVE-RUNBOOK.md` "Clock on KVM2"); this follows that pattern.
+
+**Go-live, 2026-11-13 (~13:25 to 13:45 MST), release b0f143f7dc92** (code equal to 95a34fd; a new
+rev so the test image `mate:95a34fd05daf`, built for the test host, was not overwritten).
+`MATE_SESSION_SECRET`: option 2 below (founder's choice: a new value, stored in the helper), so
+`WRITE_ARGS` was empty. `app.env`: 32 names, mode 600, 0 placeholders, `CRON_SECRET` length equal
+to the helper's `MATE_ADS_CRON_SECRET`. Build at `nice -n 19 ionice -c3`: 64 s, lowest
+MemAvailable 2682 MB (3843 MB before). Porkbun record 564718323 edited to `72.60.226.53`; the
+Porkbun nameserver, 1.1.1.1 and 8.8.8.8 answered it within a minute. The first certificate attempt
+failed (see "Order on the night", step 2); after a container recreate Traefik got a Let's Encrypt
+certificate to 2027-02-11. Every smoke check passed on the real host. n8n: credential
+"Mate cron secret" (`bqZhSZ2E8SDQ2nPX`) and workflow "Mate crons on KVM2" (`fYYgF300TOCyZh3z`),
+both routes answered 200 with the real secret (calendar sync upserted 1038 rows; ads refresh: Meta
+ok with 0 rows, Google skipped as not configured), then activated. Test record 603477961 deleted.
 
 **Test deploy, 2026-11-13 (~12:20 to 12:36 MST), release 1320414fb135 at
 `https://mate-test.automateutah.com`** (temporary Porkbun record 603477961, `A 72.60.226.53`).
@@ -86,7 +99,10 @@ Layout on KVM2:
 image mate:<rev>               one per release; older ones stay for rollback
 ```
 
-## MATE_SESSION_SECRET (founder decision, open)
+## MATE_SESSION_SECRET (decided 2026-11-13: option 2, now in the helper)
+
+Every later app.env rewrite uses the default `--session-secret helper` (`WRITE_ARGS` empty). Do not
+use `generate` again: it would replace the stored value on KVM2 only. The options as they stood:
 
 It signs the `mate_session` cookie (`src/lib/session-cookie.ts`) and is the fallback for
 `QBO_STATE_SECRET`. Vercel's copy is not in the helper and Vercel will not show it. Options:
@@ -192,10 +208,17 @@ refresh (13:00 UTC) stop until this is on. Do NOT run it against the test host.
    ```
 2. In n8n: Workflows, Import from file, `deploy/kvm2/mate-crons.workflow.json`. Open both HTTP
    nodes and pick the "Mate cron secret" credential (the file holds a placeholder id). Save.
+   Over REST instead (what the go-live did): read the file, set both nodes'
+   `credentials.httpHeaderAuth.id` to the id from step 1, and `POST /api/v1/workflows` with only
+   `name`, `nodes`, `connections` and `settings` (`active` is read-only there). The API key cannot
+   list credentials (403), so check the UI before creating a second "Mate cron secret".
 3. Test once by hand from n8n ("Test workflow" on each trigger) after the DNS switch: each HTTP
    node returns 200 with per-platform / per-session results. A 401 means the credential does not
-   match `CRON_SECRET` in app.env (both come from `MATE_ADS_CRON_SECRET`).
-4. Activate.
+   match `CRON_SECRET` in app.env (both come from `MATE_ADS_CRON_SECRET`). The public API has no
+   manual-run call; from the Mac, the same request with the same value works:
+   `node $S run -e MATE_ADS_CRON_SECRET -- node --input-type=module -e 'const r = await fetch("https://mate.auto-mate.business/api/calendar/sync", { headers: { authorization: "Bearer " + process.env.MATE_ADS_CRON_SECRET } }); console.log(r.status)'`
+   (and `/api/ads/refresh`). Both write production data (idempotent upserts).
+4. Activate (`POST /api/v1/workflows/<id>/activate`).
 
 ## DNS switch (go-live, founder-gated)
 
@@ -215,10 +238,17 @@ Order on the night:
 1. Bring it up with `MATE_HOST` unset (the steps above). Traefik cannot get the certificate yet:
    DNS still points at Vercel.
 2. Edit the record. Within ~10 minutes `dig +short A mate.auto-mate.business` answers
-   `72.60.226.53`; the first HTTPS request makes Traefik get the Let's Encrypt certificate.
+   `72.60.226.53`. Traefik asks Let's Encrypt for the certificate when the router appears (at
+   `up -d` in step 1, so that attempt fails against Vercel's IP), not on the first request, and
+   does not retry by itself. Once dig answers KVM2, recreate the container so the router appears
+   again, then check the issuer (expect Let's Encrypt, not `TRAEFIK DEFAULT CERT`):
+   ```sh
+   ssh $KVM2 "cd /opt/mate/current; MATE_REV=$REV docker compose --env-file /opt/mate/app.env -f deploy/kvm2/docker-compose.yml up -d --no-build --force-recreate"
+   ```
 3. Smoke checks against `https://mate.auto-mate.business`, then the n8n crons.
-4. Supabase Auth: nothing to change. The Site URL and Redirect URLs already name
-   `mate.auto-mate.business`; the host does not change.
+4. Supabase Auth: nothing to change. The Redirect URLs already hold
+   `https://mate.auto-mate.business/**` (the Site URL is `http://localhost:3000`, shared with other
+   apps; Mate passes its own redirect); the host does not change.
 5. Google and Intuit: nothing to change; the redirect URIs keep the same host.
 6. Take the test host down (below).
 
@@ -248,6 +278,11 @@ ssh $KVM2 "set -e; cd /opt/mate/releases/$PREV; MATE_REV=$PREV docker compose --
 # Supabase does). Deactivate the n8n crons first.
 ssh $KVM2 'cd /opt/mate/current && docker compose --env-file /opt/mate/app.env -f deploy/kvm2/docker-compose.yml down'
 ```
+
+The images `mate:95a34fd05daf` and `mate:1320414fb135` were built for the test host (their
+redirects go to `mate-test.automateutah.com`, which no longer resolves), so they are not a rollback
+for the real host. To go back to an earlier commit, run "Bring it up" again for that commit (a new
+rev; same app.env).
 
 While Vercel is paused there is no other host to fail over to, so "down" means Mate is off. To
 point DNS back at Vercel anyway, edit record 564718323 back to `76.76.21.21`.
