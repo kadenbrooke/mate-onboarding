@@ -186,6 +186,35 @@ The transcribe callback URL is constructed IN the TeXML `demo-voice` emits (from
 `SUPABASE_URL` or `DEMO_FUNCTIONS_BASE` + `DEMO_TRANSCRIBE_TOKEN`). No Telnyx
 dashboard change is needed to wire it.
 
+### demo-sms: PDW CRM consent divert (env `PDW_SMS_DIVERT_URL`)
+The Auto Mate number also carries the PDW CRM text-alert consent: an alert recipient
+texts YES to turn alerts on and STOP to turn them off. With `PDW_SMS_DIVERT_URL` set,
+an inbound `message.received` whose whole text (trimmed, any case, trailing
+punctuation ignored) is YES, START, UNSTOP, STOP, STOPALL, UNSUBSCRIBE, CANCEL, END,
+QUIT or HELP is forwarded, after demo-sms's own auth, as the unchanged raw body plus
+the `telnyx-signature-ed25519` and `telnyx-timestamp` headers. A 200
+`{handled: true}` answer ACKs Telnyx and stops (no demo reply, no demo state). Any
+other answer, a timeout (3s), or a network error falls through to the demo unchanged.
+Every other text is never forwarded. Unset = demo-sms behaves exactly as before.
+
+Order vs the BOTC divert: opt-out words (STOP, STOPALL, UNSUBSCRIBE, CANCEL, END,
+QUIT) go to PDW before BOTC, because Telnyx blocks all later texts to an opted-out
+sender, game texts included, so the CRM must always hear it. YES, START, UNSTOP and
+HELP go to PDW only after BOTC, so a seated player's "yes" stays a game answer and the
+game never waits on n8n. Details: `supabase/functions/_shared/pdw.ts`.
+
+Deploy (set the env, then ship demo-sms; it runs with JWT verification off, as now):
+```bash
+supabase secrets set PDW_SMS_DIVERT_URL=https://n8n.auto-mate.business/webhook/pdw-sms-consent \
+  --project-ref jeqnvdlfybpmbovywknz
+supabase functions deploy demo-sms --no-verify-jwt --project-ref jeqnvdlfybpmbovywknz
+```
+Undo (no redeploy needed; an unset env turns the divert off on the next request):
+```bash
+supabase secrets unset PDW_SMS_DIVERT_URL --project-ref jeqnvdlfybpmbovywknz
+```
+Test: `deno test --node-modules-dir=none --allow-env --allow-net supabase/functions/tests/`
+
 ### Telnyx: wire the hangup catch-all StatusCallback (REQUIRED for demo-call-status)
 Unlike the transcribe callback (constructed in-band in the TeXML), the call-lifecycle
 StatusCallback is a TeXML APPLICATION setting, so it needs one dashboard/API change.
