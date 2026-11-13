@@ -21,6 +21,13 @@ Let's Encrypt certificate to 2027-02-11, no errors in the logs. Not exercised: a
 (Supabase only redirects to `mate.auto-mate.business`), a cron run with the real secret (it
 writes production data), the n8n workflow. Nothing else on KVM2, DNS, Supabase or n8n changed.
 
+**Redeployed 2026-11-13 ~13:17 MST, release 95a34fd05daf** (review fixes: every `?next=` validated,
+the proxy's redirects pinned, base image pinned by digest), same `app.env`. Build 71 s, lowest
+MemAvailable 2369 MB, container healthy, 0 restarts, ~79 MiB. A forged `Host`, `X-Forwarded-Host`,
+`-Proto` or `-Port`, through Traefik or straight at the container, leaves every Location on
+`https://mate-test.automateutah.com` (absolute); `/codes?next=https://evil.example` goes to `/login`
+with no next. Previous release 1320414fb135 and its image stay on KVM2 for rollback.
+
 ## What is on this branch
 
 - `Dockerfile`: `next build` / `next start` on `node:22.23.3-alpine` pinned by digest (the CI Node major), npm
