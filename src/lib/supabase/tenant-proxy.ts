@@ -21,6 +21,8 @@
 import { NextResponse, type NextRequest } from 'next/server';
 import { resolveSessionId } from '@/lib/portal/demo';
 import { readTenancy, routeSession, type Tenancy } from './tenancy';
+import { publicRedirect } from '@/lib/public-url';
+
 
 const DEDICATED_EXACT = new Set([
   '/login',
@@ -87,7 +89,7 @@ export function tenantRoute(request: NextRequest): NextResponse | null {
   }
 
   if (sessionId) return routeSession(sessionId, tenancy).served ? null : notFound(path);
-  if (path === '/') return NextResponse.redirect(new URL('/postlogin', request.url));
+  if (path === '/') return publicRedirect('/postlogin', request);
   if (DEDICATED_EXACT.has(path) || DEDICATED_PREFIXES.some((p) => path.startsWith(p))) return null;
   return notFound(path);
 }

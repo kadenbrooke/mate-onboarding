@@ -150,6 +150,7 @@ in step 3 (`export MATE_HOST=...` next to `MATE_REV`).
 H=https://mate.auto-mate.business     # or https://mate-test.automateutah.com for the test deploy
 dig +short A ${H#https://}                                                       # 72.60.226.53
 curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' $H/                    # 307 .../login?next=%2F (signed out)
+curl -sSI -H 'X-Forwarded-Host: evil.example' -H 'X-Forwarded-Proto: http' "$H/codes?x=1" | grep -i '^location'   # location: $H/login?next=%2Fcodes%3Fx%3D1 (the proxy pins it too)
 curl -sS -o /dev/null -w '%{http_code}\n' $H/login                               # 200
 curl -sS -o /dev/null -w '%{http_code}\n' $H/demo                                # 200 (public lander)
 # The pinned redirects: forged Host / X-Forwarded-* must not move them off $H.

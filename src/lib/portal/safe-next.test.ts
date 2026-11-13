@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { pathSegment, safeNextPath, safeRelativePath } from "./safe-next";
+import { RETURN_TO_KEYS, pathSegment, safeNextPath, safeRelativePath } from "./safe-next";
 
 const ORIGIN = "https://mate.auto-mate.business";
 
@@ -63,11 +63,18 @@ describe("safeNextPath: encoded and nested forms", () => {
     ["a nested protocol-relative next", "/login?next=//evil.com"],
     ["a nested backslash next", "/login?next=/%5Cevil.com"],
     ["a nested returnTo", "/x?returnTo=https://evil.com"],
+    ["a nested return-to", "/x?return-to=https://evil.com"],
+    ["a nested encoded return-to", "/x?return-to=%2F%2Fevil.com"],
     ["a nested redirect_to", "/x?redirect_to=//evil.com"],
     ["a doubly nested next", "/login?next=%2Flogin%3Fnext%3Dhttps%3A%2F%2Fevil.com"],
     ["an over-long value", `/${"a".repeat(2048)}`],
   ])("rejects %s", (_, value) => {
     expect(safeNextPath(value, ORIGIN)).toBeNull();
+  });
+
+  it("names return-to among the checked keys, and keeps a safe one", () => {
+    expect(RETURN_TO_KEYS).toContain("return-to");
+    expect(safeNextPath("/x?return-to=%2Fdash%2Fabc", ORIGIN)).toBe("/x?return-to=%2Fdash%2Fabc");
   });
 
   it("keeps a safe nested next and normalizes dot segments", () => {

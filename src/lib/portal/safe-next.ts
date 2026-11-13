@@ -17,7 +17,7 @@ const MAX_LENGTH = 2048;
 const BASE = "https://same-site.invalid";
 
 // Query keys that name a place to send the browser next.
-export const RETURN_TO_KEYS = ["next", "returnTo", "return_to", "redirect", "redirectTo", "redirect_to", "continue"] as const;
+export const RETURN_TO_KEYS = ["next", "returnTo", "return-to", "return_to", "redirect", "redirectTo", "redirect_to", "continue"] as const;
 
 function plainPath(s: string): boolean {
   return s.startsWith("/") && !s.startsWith("//") && !s.includes("\\") && !CONTROL.test(s);
