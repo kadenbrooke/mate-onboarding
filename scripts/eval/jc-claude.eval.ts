@@ -1,14 +1,25 @@
-// Side-by-side: J&C's three AI features on Gemini (the old route) vs Claude
-// (the new tenant route), through the real production code paths.
+// Side-by-side: Mate's AI features on Gemini (the old routes) vs Claude (the
+// new routes), through the real production code paths.
 //
-// FAKE INPUTS ONLY. Every note, lead and photo below is invented (555-01xx
-// phone numbers, example.com/.org emails). Never add a real J&C record here.
+// FAKE INPUTS ONLY. Every note, lead, photo, web page and text below is
+// invented (555-01xx phone numbers, example.com/.org emails). Never add a real
+// client record here.
 //
 // Arms:
-//   gemini-carson  gemini-3.6-flash on GEMINI_API_KEY_CARSON (what J&C ran on)
-//   gemini-shared  gemini-3.6-flash on the shared GEMINI_API_KEY (same model,
-//                  in case the Carson key no longer answers)
-//   claude         the J&C session route (src/lib/demo/tenantModels.ts)
+//   gemini-carson  the old Gemini models on GEMINI_API_KEY_CARSON (J&C's old route)
+//   gemini-shared  the old Gemini models on the shared GEMINI_API_KEY (the old
+//                  demo funnel and every other tenant)
+//   claude-jc      J&C's session (pinned in src/lib/demo/tenantModels.ts)
+//   claude-demo    no tenant: the prospect demo funnel and the public demo
+//   claude-other   an unmapped (fake) tenant session
+// The Gemini arms force TASK_MODELS back to the models each class ran on before
+// 2026-11-16 (extract/assistant/vision gemini-3.6-flash, reply gemini-2.5-flash).
+//
+// Demo-only tasks (website -> company profile, First Responder SMS reply) always
+// run with no tenant, so they run on the gemini arms and claude-demo only. The
+// SMS reply here goes through the app's `reply` class; the edge function
+// (supabase/functions/_shared/portkey.ts) sends the same model id through the
+// same gateway with an 800-token budget, which this mirrors.
 //
 // Run (see vitest.eval.config.mts): prints a score table and writes
 // results.json plus the rendered fake photos to EVAL_OUT (default: a temp dir).
@@ -19,7 +30,9 @@ import { mkdirSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import sharp from "sharp"
-import { portkeyChatStream, visionComplete, modelFor, type TaskClass } from "@/lib/demo/portkey"
+import { chatComplete, portkeyChatStream, visionComplete, modelFor, TASK_MODELS, TASK_PARAMS, type TaskClass } from "@/lib/demo/portkey"
+import { extractCompanyDataViaPortkey } from "@/lib/demo/extract"
+import { buildFrConfig } from "@/lib/demo/fr-config"
 import { extractNoteFields, type NoteFields } from "@/lib/agent/noteExtract"
 import { buildAssistantContext } from "@/lib/assistant/context"
 import { pipelineTotals, type Lead } from "@/lib/metrics/leads"
@@ -27,19 +40,45 @@ import { snapshotPrompt } from "@/lib/leads/snapshotPrompt"
 import { parseSnapshotReply } from "@/lib/leads/snapshotParse"
 
 const JC = "61400e73-0570-4167-88d9-d3a69650b15b"
-const OUT = process.env.EVAL_OUT ?? join(tmpdir(), `mate-jc-claude-eval-${Date.now()}`)
+const OTHER_TENANT = "0b5e7a1c-1111-4222-8333-944455556666" // fake, unmapped
+const OUT = process.env.EVAL_OUT ?? join(tmpdir(), `mate-claude-eval-${Date.now()}`)
 
-type Arm = { id: "gemini-carson" | "gemini-shared" | "claude"; session: string | null; geminiEnv?: string }
+type Arm = {
+  id: "gemini-carson" | "gemini-shared" | "claude-jc" | "claude-demo" | "claude-other"
+  session: string | null
+  gemini?: string // env var whose key the forced Gemini models use
+  demoTasks: boolean
+}
 const ARMS: Arm[] = [
-  { id: "gemini-carson", session: null, geminiEnv: "GEMINI_API_KEY_CARSON" },
-  { id: "gemini-shared", session: null, geminiEnv: "GEMINI_API_KEY" },
-  { id: "claude", session: JC },
+  { id: "gemini-carson", session: null, gemini: "GEMINI_API_KEY_CARSON", demoTasks: true },
+  { id: "gemini-shared", session: null, gemini: "GEMINI_API_KEY", demoTasks: true },
+  { id: "claude-jc", session: JC, demoTasks: false },
+  { id: "claude-demo", session: null, demoTasks: true },
+  { id: "claude-other", session: OTHER_TENANT, demoTasks: false },
 ]
 
+const OLD_GEMINI_MODELS: Record<TaskClass, string> = {
+  extract: "google/gemini-3.6-flash",
+  reply: "google/gemini-2.5-flash",
+  assistant: "google/gemini-3.6-flash",
+  vision: "google/gemini-3.6-flash",
+}
+const CLAUDE_MODELS = { ...TASK_MODELS } as Record<TaskClass, string>
+// Captured once, before any arm rewrites GEMINI_API_KEY: reading process.env
+// per arm would hand a later arm the previous arm's key.
 const SHARED_GEMINI = process.env.GEMINI_API_KEY
+const GEMINI_KEYS: Record<string, string | undefined> = {
+  GEMINI_API_KEY: SHARED_GEMINI,
+  GEMINI_API_KEY_CARSON: process.env.GEMINI_API_KEY_CARSON,
+}
 function selectArm(arm: Arm) {
-  // The no-tenant route always reads GEMINI_API_KEY, so point it at the arm's key.
-  process.env.GEMINI_API_KEY = arm.geminiEnv ? process.env[arm.geminiEnv] : SHARED_GEMINI
+  const models = TASK_MODELS as unknown as Record<TaskClass, string>
+  Object.assign(models, arm.gemini ? OLD_GEMINI_MODELS : CLAUDE_MODELS)
+  // The edge function sent Gemini reasoning_effort "none" on SMS replies; mirror it.
+  if (arm.gemini) TASK_PARAMS.reply = { reasoning_effort: "none" }
+  else delete TASK_PARAMS.reply
+  // The no-tenant route reads GEMINI_API_KEY, so point it at the arm's key.
+  process.env.GEMINI_API_KEY = arm.gemini ? GEMINI_KEYS[arm.gemini] : SHARED_GEMINI
 }
 const modelLabel = (arm: Arm, cls: TaskClass) => modelFor(cls, arm.session)
 
@@ -49,9 +88,7 @@ const modelLabel = (arm: Arm, cls: TaskClass) => modelFor(cls, arm.session)
 
 async function probe(arm: Arm): Promise<string> {
   const [provider, model] = modelLabel(arm, "extract").split(/\/(.*)/)
-  const key = provider === "google"
-    ? (arm.geminiEnv ? process.env[arm.geminiEnv] : SHARED_GEMINI)
-    : process.env.ANTHROPIC_API_KEY
+  const key = provider === "google" ? process.env.GEMINI_API_KEY : process.env.ANTHROPIC_API_KEY
   if (!key) return "no key in env"
   const res = await fetch(`${process.env.PORTKEY_BASE_URL ?? "https://portkey.auto-mate.business"}/v1/chat/completions`, {
     method: "POST",
@@ -69,6 +106,46 @@ async function probe(arm: Arm): Promise<string> {
   const code = /"status"\s*:\s*"([A-Z_]+)"/.exec(body)?.[1] ?? /"type"\s*:\s*"([a-z_]+_error)"/.exec(body)?.[1] ?? ""
   return `${res.status} ${code}`.trim()
 }
+
+// ---------------------------------------------------------------------------
+// Demo A. Website -> company profile (extract class, src/lib/demo/extract.ts)
+// ---------------------------------------------------------------------------
+
+type GoldSite = { html: string; name: string; phoneDigits: string | null; service: string; email: string | null }
+const page = (title: string, body: string) =>
+  `<html><head><title>${title}</title><style>.x{color:red}</style><script>var t=1</script></head><body>${body}</body></html>`
+const SITES: GoldSite[] = [
+  { html: page("Home", `<nav>Home About Contact</nav><h1>Summit Ridge Paving</h1><p>Family owned since 1998. We do asphalt driveways, sealcoating and crack filling across Utah County.</p><p>Call (801) 555-0181. Mon-Fri 7am-6pm.</p><footer>123 E Fake Ave, Provo UT</footer>`),
+    name: "summit ridge paving", phoneDigits: "8015550181", service: "seal", email: null },
+  { html: page("Bright Spark Electric | Licensed Electricians", `<h2>Bright Spark Electric</h2><ul><li>Panel upgrades</li><li>EV charger installs</li><li>Lighting</li></ul><p>Email us: hello@example.com</p><p>Serving Salt Lake and Davis counties.</p>`),
+    name: "bright spark electric", phoneDigits: null, service: "panel", email: "hello@example.com" },
+  { html: page("Welcome!", `<div class="hero">Clear Flow Plumbing &amp; Drain</div><p>24/7 emergency drain cleaning, water heaters and leak repair.</p><a href="tel:+13855550126">385-555-0126</a>`),
+    name: "clear flow plumbing & drain", phoneDigits: "3855550126", service: "drain", email: null },
+]
+
+function scoreSite(g: GoldSite, got: { name?: string; phone?: string; services?: string[]; email?: string }) {
+  const misses: string[] = []
+  const n = (s?: string) => (s ?? "").toLowerCase().replace(/&amp;/g, "&").replace(/\s+/g, " ").trim()
+  if (n(got.name) !== g.name) misses.push(`name ${JSON.stringify(got.name)}`)
+  const digits = (got.phone ?? "").replace(/\D/g, "").replace(/^1(?=\d{10}$)/, "")
+  if (g.phoneDigits === null ? !!got.phone : digits !== g.phoneDigits) misses.push(`phone ${JSON.stringify(got.phone)}`)
+  if (!(got.services ?? []).some(x => n(x).includes(g.service))) misses.push(`services ${JSON.stringify(got.services)}`)
+  if (g.email === null ? !!got.email : n(got.email) !== g.email) misses.push(`email ${JSON.stringify(got.email)}`)
+  return { right: 4 - misses.length, total: 4, misses }
+}
+
+// ---------------------------------------------------------------------------
+// Demo B. First Responder SMS reply (reply class)
+// ---------------------------------------------------------------------------
+
+const FR_COMPANY = { name: "Summit Ridge Paving", services: ["asphalt driveways", "sealcoating", "crack filling"] }
+const TEXTS = [
+  "Hi, saw your ad. How much to sealcoat a driveway?",
+  "do you guys do parking lots? we have a small church lot in Orem",
+  "Missed your call earlier, what was it about",
+]
+// Short enough for a text, plain (no markdown), and never a made-up price.
+const replyOk = (t: string) => !!t && t.length <= 320 && !/\*\*|^#|^- /m.test(t) && !/\$\s?\d/.test(t)
 
 // ---------------------------------------------------------------------------
 // 1. Call-note extraction (extract class, src/lib/agent/noteExtract.ts)
@@ -244,7 +321,7 @@ function scorePhoto(p: Photo, text: string | null): { right: number; total: numb
 
 // ---------------------------------------------------------------------------
 
-it("J&C features: Gemini vs Claude on fake inputs", async () => {
+it("Mate AI features: Gemini vs Claude on fake inputs, J&C and non-J&C routes", async () => {
   mkdirSync(OUT, { recursive: true })
   const pngs = await Promise.all(PHOTOS.map(async p => {
     const bytes = new Uint8Array(await sharp(Buffer.from(photoSvg(p))).png().toBuffer())
@@ -256,67 +333,105 @@ it("J&C features: Gemini vs Claude on fake inputs", async () => {
   const rows: string[] = []
   const ms = (t: number) => `${Math.round((Date.now() - t) / 100) / 10}s`
 
-  for (const arm of ARMS) {
-    selectArm(arm)
-    const probeStatus = await probe(arm)
-    const r: Record<string, unknown> = { probe: probeStatus, models: { extract: modelLabel(arm, "extract"), assistant: modelLabel(arm, "assistant"), vision: modelLabel(arm, "vision") } }
+  try {
+    for (const arm of ARMS) {
+      selectArm(arm)
+      const probeStatus = await probe(arm)
+      const r: Record<string, unknown> = { probe: probeStatus, models: { extract: modelLabel(arm, "extract"), assistant: modelLabel(arm, "assistant"), vision: modelLabel(arm, "vision") } }
 
-    // Notes
-    let nRight = 0, nTotal = 0, nEmpty = 0
-    const noteMisses: string[] = []
-    let t = Date.now()
-    for (const [i, g] of NOTES.entries()) {
-      const got = await extractNoteFields(g.note, arm.session)
-      const s = scoreNote(g, got)
-      if (Object.values(got).every(v => v == null) && g.name !== null) nEmpty++
-      nRight += s.right; nTotal += s.total
-      if (s.misses.length) noteMisses.push(`note${i + 1}: ${s.misses.join(",")} got ${JSON.stringify(got)}`)
+      // Notes
+      let nRight = 0, nTotal = 0, nEmpty = 0
+      const noteMisses: string[] = []
+      let t = Date.now()
+      for (const [i, g] of NOTES.entries()) {
+        const got = await extractNoteFields(g.note, arm.session)
+        const s = scoreNote(g, got)
+        if (Object.values(got).every(v => v == null) && g.name !== null) nEmpty++
+        nRight += s.right; nTotal += s.total
+        if (s.misses.length) noteMisses.push(`note${i + 1}: ${s.misses.join(",")} got ${JSON.stringify(got)}`)
+      }
+      const noteTime = ms(t)
+
+      // Assistant
+      let aPass = 0
+      const aDetail: { q: string; pass: boolean; status: number; answer: string }[] = []
+      t = Date.now()
+      for (const { q, pass } of assistantQuestions()) {
+        const { text, status } = await askAssistant(arm, q)
+        const ok = !!text && pass.test(text) && !/\*\*|^#/m.test(text)
+        if (ok) aPass++
+        aDetail.push({ q, pass: ok, status, answer: text.slice(0, 240) })
+      }
+      const assistantTime = ms(t)
+
+      // Vision
+      let vRight = 0, vTotal = 0, vExtra = 0
+      const vDetail: unknown[] = []
+      const answeredBy = new Set<string>()
+      t = Date.now()
+      for (const [i, p] of PHOTOS.entries()) {
+        const { system, prompt } = snapshotPrompt()
+        const v = await visionComplete({ prompt, system, images: [{ mime: "image/png", bytes: pngs[i] }], sessionId: arm.session })
+        if (v.model) answeredBy.add(v.ok ? v.model : `${v.model} (failed: ${v.kind} ${v.detail.slice(0, 3)})`)
+        const s = scorePhoto(p, v.ok ? v.text : null)
+        vRight += s.right; vTotal += s.total; vExtra += s.extra
+        vDetail.push({ photo: p.id, model: v.model, ...s })
+      }
+      const visionTime = ms(t)
+
+      // Demo-only: website -> profile, and the First Responder SMS reply.
+      let sRight = 0, sTotal = 0, rPass = 0
+      const siteMisses: string[] = []
+      const replies: { text: string; pass: boolean; reply: string }[] = []
+      let demoTime = "n/a"
+      if (arm.demoTasks) {
+        t = Date.now()
+        for (const [i, g] of SITES.entries()) {
+          const got = await extractCompanyDataViaPortkey(g.html)
+          const sc = scoreSite(g, got)
+          sRight += sc.right; sTotal += sc.total
+          if (sc.misses.length) siteMisses.push(`site${i + 1}: ${sc.misses.join(", ")}`)
+        }
+        const persona = buildFrConfig(FR_COMPANY).system_prompt
+        for (const text of TEXTS) {
+          const reply = await chatComplete({ taskClass: "reply", sessionId: null, system: persona, maxTokens: 800, messages: [{ role: "user", content: text }] })
+          const pass = replyOk(reply)
+          if (pass) rPass++
+          replies.push({ text, pass, reply })
+        }
+        demoTime = ms(t)
+      }
+
+      Object.assign(r, {
+        site: arm.demoTasks ? { right: sRight, total: sTotal, misses: siteMisses } : null,
+        smsReply: arm.demoTasks ? { pass: rPass, total: TEXTS.length, replies, model: modelLabel(arm, "reply") } : null,
+        notes: { right: nRight, total: nTotal, emptyAnswers: nEmpty, misses: noteMisses, time: noteTime },
+        assistant: { pass: aPass, total: aDetail.length, detail: aDetail, time: assistantTime },
+        vision: { right: vRight, total: vTotal, extraCandidates: vExtra, answeredBy: [...answeredBy], detail: vDetail, time: visionTime },
+      })
+      results[arm.id] = r
+      rows.push(
+        `${arm.id.padEnd(14)} probe=${probeStatus.padEnd(4)} notes ${nRight}/${nTotal} (empty ${nEmpty}, ${noteTime})  ` +
+        `assistant ${aPass}/${aDetail.length} (${assistantTime})  vision ${vRight}/${vTotal} extra=${vExtra} by ${[...answeredBy].join("+") || "none"} (${visionTime})  ` +
+        (arm.demoTasks ? `site ${sRight}/${sTotal}  sms ${rPass}/${TEXTS.length} (${demoTime})` : "site n/a  sms n/a"),
+      )
     }
-    const noteTime = ms(t)
-
-    // Assistant
-    let aPass = 0
-    const aDetail: { q: string; pass: boolean; status: number; answer: string }[] = []
-    t = Date.now()
-    for (const { q, pass } of assistantQuestions()) {
-      const { text, status } = await askAssistant(arm, q)
-      const ok = !!text && pass.test(text) && !/\*\*|^#/m.test(text)
-      if (ok) aPass++
-      aDetail.push({ q, pass: ok, status, answer: text.slice(0, 240) })
-    }
-    const assistantTime = ms(t)
-
-    // Vision
-    let vRight = 0, vTotal = 0, vExtra = 0
-    const vDetail: unknown[] = []
-    const answeredBy = new Set<string>()
-    t = Date.now()
-    for (const [i, p] of PHOTOS.entries()) {
-      const { system, prompt } = snapshotPrompt()
-      const v = await visionComplete({ prompt, system, images: [{ mime: "image/png", bytes: pngs[i] }], sessionId: arm.session })
-      if (v.model) answeredBy.add(v.ok ? v.model : `${v.model} (failed: ${v.kind} ${v.detail.slice(0, 3)})`)
-      const s = scorePhoto(p, v.ok ? v.text : null)
-      vRight += s.right; vTotal += s.total; vExtra += s.extra
-      vDetail.push({ photo: p.id, model: v.model, ...s })
-    }
-    const visionTime = ms(t)
-
-    Object.assign(r, {
-      notes: { right: nRight, total: nTotal, emptyAnswers: nEmpty, misses: noteMisses, time: noteTime },
-      assistant: { pass: aPass, total: aDetail.length, detail: aDetail, time: assistantTime },
-      vision: { right: vRight, total: vTotal, extraCandidates: vExtra, answeredBy: [...answeredBy], detail: vDetail, time: visionTime },
-    })
-    results[arm.id] = r
-    rows.push(
-      `${arm.id.padEnd(14)} probe=${probeStatus.padEnd(22)} notes ${nRight}/${nTotal} (empty ${nEmpty}, ${noteTime})  ` +
-      `assistant ${aPass}/${aDetail.length} (${assistantTime})  vision ${vRight}/${vTotal} extra=${vExtra} by ${[...answeredBy].join("+") || "none"} (${visionTime})`,
-    )
+  } finally {
+    Object.assign(TASK_MODELS as unknown as Record<TaskClass, string>, CLAUDE_MODELS)
+    delete TASK_PARAMS.reply
+    process.env.GEMINI_API_KEY = SHARED_GEMINI
   }
 
   writeFileSync(join(OUT, "results.json"), JSON.stringify(results, null, 2))
-  console.log(`\nJ&C Claude eval (fake inputs), results in ${OUT}\n${rows.join("\n")}\n`)
-  for (const [id, r] of Object.entries(results) as [string, { notes: { misses: string[] }; vision: { detail: { photo: string; misses: string[] }[] } }][]) {
+  console.log(`\nMate Claude eval (fake inputs), results in ${OUT}\n${rows.join("\n")}\n`)
+  type R = {
+    notes: { misses: string[] }; vision: { detail: { photo: string; misses: string[] }[] }
+    site: { misses: string[] } | null; smsReply: { replies: { pass: boolean; reply: string }[] } | null
+  }
+  for (const [id, r] of Object.entries(results) as [string, R][]) {
     console.log(`${id} note misses: ${r.notes.misses.join(" | ") || "none"}`)
     console.log(`${id} vision misses: ${r.vision.detail.map(d => `${d.photo}[${d.misses.join(",")}]`).join(" ")}`)
+    if (r.site) console.log(`${id} site misses: ${r.site.misses.join(" | ") || "none"}`)
+    if (r.smsReply) for (const x of r.smsReply.replies) if (!x.pass) console.log(`${id} sms fail: ${JSON.stringify(x.reply.slice(0, 200))}`)
   }
 })

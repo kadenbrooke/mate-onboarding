@@ -4,8 +4,8 @@ import { chatComplete, portkeyChatStream, visionComplete, modelFor, TASK_MODELS,
 import { TENANT_TASK_MODELS, tenantModelFor } from './tenantModels';
 
 // Every entry point picks its model AND key from the session it is handed.
-// J&C runs on Claude (./tenantModels); everyone else stays on Gemini with the
-// shared key. Fake key values only: these never leave the test.
+// Every route runs on Claude now; J&C is pinned in ./tenantModels, and its
+// Gemini key guard stays. Fake key values only: these never leave the test.
 
 const JC = '61400e73-0570-4167-88d9-d3a69650b15b';
 const UNMAPPED = 'bbbbbbbb-0000-4000-8000-000000000002';
@@ -78,13 +78,32 @@ describe('chatComplete routing', () => {
     expect(bodyOf().max_tokens).toBeGreaterThan(0);
   });
 
-  it('keeps an unmapped tenant and no tenant on Gemini with the shared key', async () => {
+  it('runs an unmapped tenant and no tenant on Claude Haiku too, never a Gemini key', async () => {
     await chatComplete({ taskClass: 'extract', messages: msg, sessionId: UNMAPPED });
     await chatComplete({ taskClass: 'extract', messages: msg, sessionId: null });
     for (const i of [0, 1]) {
-      expect(providerOf(i)).toBe('google');
-      expect(authOf(i)).toBe('Bearer shared-test-key');
-      expect(bodyOf(i).reasoning_effort).toBe('minimal');
+      expect(providerOf(i)).toBe('anthropic');
+      expect(authOf(i)).toBe('Bearer anthropic-test-key');
+      expect(bodyOf(i).model).toBe('claude-haiku-5-5');
+      expect(bodyOf(i).reasoning_effort).toBeUndefined();
+    }
+  });
+
+  it('still refuses J&C on the shared Gemini key if a google model is ever configured', async () => {
+    const models = TASK_MODELS as unknown as { reply: string };
+    const original = models.reply;
+    models.reply = 'google/gemini-3.6-flash';
+    try {
+      // J&C has no reply override, so this reaches the google provider.
+      delete process.env.GEMINI_API_KEY_CARSON;
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+      expect(await chatComplete({ taskClass: 'reply', messages: msg, sessionId: JC })).toBe('');
+      expect(fetchMock).not.toHaveBeenCalled();
+      // An unmapped tenant on that google model gets the shared key, as before.
+      await chatComplete({ taskClass: 'reply', messages: msg, sessionId: UNMAPPED });
+      expect(authOf()).toBe('Bearer shared-test-key');
+    } finally {
+      models.reply = original;
     }
   });
 
@@ -115,10 +134,11 @@ describe('portkeyChatStream routing', () => {
     expect(bodyOf().reasoning_effort).toBeUndefined();
   });
 
-  it('keeps an unmapped tenant on Gemini with the shared key', async () => {
+  it('streams an unmapped tenant on Claude Sonnet too', async () => {
     await portkeyChatStream({ taskClass: 'assistant', messages: msg, sessionId: UNMAPPED });
-    expect(providerOf()).toBe('google');
-    expect(authOf()).toBe('Bearer shared-test-key');
+    expect(providerOf()).toBe('anthropic');
+    expect(authOf()).toBe('Bearer anthropic-test-key');
+    expect(bodyOf().model).toBe('claude-sonnet-5-5');
   });
 
   it('fails closed for J&C when ANTHROPIC_API_KEY is missing: non-ok, nothing sent', async () => {
@@ -139,10 +159,11 @@ describe('visionComplete routing', () => {
     expect(bodyOf().model).toBe('claude-sonnet-5-5');
   });
 
-  it('keeps no tenant on Gemini with the shared key', async () => {
+  it('reads a photo for no tenant on Claude Sonnet too', async () => {
     await visionComplete({ prompt: 'p', images: [img], sessionId: null });
-    expect(providerOf()).toBe('google');
-    expect(authOf()).toBe('Bearer shared-test-key');
+    expect(providerOf()).toBe('anthropic');
+    expect(authOf()).toBe('Bearer anthropic-test-key');
+    expect(bodyOf().model).toBe('claude-sonnet-5-5');
   });
 
   it('falls back to OpenAI when Claude is out of credit (a 400, not a 429)', async () => {

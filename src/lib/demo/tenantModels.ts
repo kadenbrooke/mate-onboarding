@@ -12,6 +12,11 @@
 // request was AUTHORIZED for, never a raw request value, so a user of tenant A
 // can never pick tenant B's route. Anything not listed (the public demo
 // dashboard, the prospect demo funnel, other clients) keeps TASK_MODELS.
+//
+// TASK_MODELS moved to the same Claude models later the same day, so J&C's row
+// now matches the default. It stays on purpose: J&C is pinned, so a future
+// change to the default never moves a paying client's AI without a deliberate
+// edit here.
 
 import { normalizeSessionId } from '@/lib/supabase/tenancy';
 import type { TaskClass } from './portkey';

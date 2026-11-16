@@ -33,6 +33,14 @@
 // Worth knowing before panicking about this: iOS Safari usually transcodes HEIC
 // to JPEG when a photo goes through a file input, so the camera-capture path
 // this feature is built around may rarely produce a HEIC at all.
+//
+// 2026-11-16: HEIC is now OFF by default. The reader moved to Claude (with an
+// OpenAI fallback), and a live probe through Portkey got a 400 from both for
+// image/heic: Claude takes jpeg/png/gif/webp only, OpenAI the same. Forwarding
+// a HEIC would only turn into "the reader is unavailable", so it is refused at
+// upload with the plain-language heic-disabled message instead.
+// LEAD_SNAPSHOT_ALLOW_HEIC=1 turns pass-through back on, which only makes sense
+// with a vision model that reads HEIC or a libheif-enabled sharp to transcode.
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGES_PER_REQUEST = 5;
@@ -94,9 +102,9 @@ export type ImageCheck =
  *  so a test can pass a plain object literal, while process.env still fits. */
 export type SnapshotEnv = Record<string, string | undefined>;
 
-/** Whether HEIC uploads are forwarded. See the header note. */
+/** Whether HEIC uploads are forwarded. Off unless set to "1". See the header note. */
 export function heicAllowed(env: SnapshotEnv = process.env): boolean {
-  return env.LEAD_SNAPSHOT_ALLOW_HEIC !== '0';
+  return env.LEAD_SNAPSHOT_ALLOW_HEIC === '1';
 }
 
 /** Validate one uploaded image. Pure: no IO, no network. */

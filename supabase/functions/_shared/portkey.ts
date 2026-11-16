@@ -9,11 +9,14 @@
 
 const DEFAULT_PORTKEY_BASE_URL = "https://portkey.auto-mate.business"
 
-// Cheap SMS-reply model (creator/model). google -> GEMINI_API_KEY as the BYOK key.
-// Must be NON-reasoning: gemini-3-flash-preview burns the whole low max_tokens
-// budget on reasoning tokens and returns EMPTY content, blanking the reply.
-// gemini-2.5-flash is cheap, non-reasoning, and returns clean output.
-const REPLY_MODEL = Deno.env.get("DEMO_REPLY_MODEL") ?? "google/gemini-2.5-flash"
+// Cheap SMS-reply model (creator/model). anthropic -> ANTHROPIC_API_KEY as the
+// BYOK key. Moved from google/gemini-2.5-flash to Claude Haiku 5.5 on 2026-11-16
+// (founder ruling: "move it all to claude"; same model as the app's reply class
+// in src/lib/demo/portkey.ts). History: must be NON-reasoning, because
+// gemini-3-flash-preview burned the whole low max_tokens budget on reasoning
+// tokens and returned EMPTY content, blanking the reply. Haiku does not reason
+// unless asked. DEMO_REPLY_MODEL still overrides; leave it unset in production.
+const REPLY_MODEL = Deno.env.get("DEMO_REPLY_MODEL") ?? "anthropic/claude-haiku-5-5"
 
 // max_tokens budget for a 1-2 sentence SMS reply. This must cover Gemini's HIDDEN
 // reasoning tokens PLUS the visible content: gemini-2.5-flash emits ~100-300
@@ -64,11 +67,12 @@ export async function generateReply(system: string, msgs: Msg[]): Promise<string
   // Request no reasoning where the model honors it (cuts hidden-token burn +
   // latency). Gemini via this Portkey path accepted reasoning_effort:"none" (200);
   // a model that rejects the field is covered by the ample max_tokens budget above.
+  // Sent to google only: it is a Gemini knob, and Claude needs none.
   const payload: Record<string, unknown> = {
     model,
     messages,
     max_tokens: replyMaxTokens(),
-    reasoning_effort: "none",
+    ...(provider === "google" ? { reasoning_effort: "none" } : {}),
   }
 
   try {

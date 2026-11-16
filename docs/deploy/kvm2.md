@@ -54,7 +54,8 @@ with no next. Previous release 1320414fb135 and its image stay on KVM2 for rollb
   `no-new-privileges`, `restart: unless-stopped`, `env_file /opt/mate/app.env`, `NODE_ENV`
   fixed. One router, `Host(${MATE_HOST:-mate.auto-mate.business})`; the same `MATE_HOST`
   builds `NEXT_PUBLIC_MATE_URL`, so the router and the redirect origin cannot disagree.
-- `deploy/kvm2/write-app-env.mjs`: writes `app.env` (the same 32 names Vercel production held)
+- `deploy/kvm2/write-app-env.mjs`: writes `app.env` (the 32 names Vercel production held; since
+  2026-11-16 `ANTHROPIC_API_KEY` in and both Gemini keys out, 31 names)
   from the amos secret helper into an ssh pipe that runs inside `secret run`. It refuses a
   terminal, prints names only, and refuses a missing value or one with a line break, quote,
   `$`, backslash or space. Mapping, so nothing is guessed at go-live:
@@ -145,14 +146,14 @@ git -C "$REPO" archive --format=tar "$REV" | ssh $KVM2 "set -e; d=/opt/mate/rele
 #    `node "$1/deploy/kvm2/write-app-env.mjs" --check $3` and no ssh, prints names only.
 node ~/kaden/amos/scripts/secrets/secret.mjs run --login "QuickBooks Online PRODUCTION keys (added 2026-08-06)" \
   -- node ~/kaden/amos/scripts/secrets/secret.mjs run --login "QBO generated secrets (DEL-14, 2026-08-06) — used by local + KVM2 rail (PROXY_SECRET must match the n8n QBO Live Proxy)" \
-  -e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY -e SUPABASE_SECRET_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY \
-  -e GEMINI_API_KEY_CARSON -e PORTKEY_GATEWAY_KEY -e ANTHROPIC_API_KEY -e TELNYX_API_KEY -e LEADS_INGEST_TOKEN \
+  -e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY -e SUPABASE_SECRET_KEY -e OPENAI_API_KEY \
+  -e PORTKEY_GATEWAY_KEY -e ANTHROPIC_API_KEY -e TELNYX_API_KEY -e LEADS_INGEST_TOKEN \
   -e CALCOM_WEBHOOK_SECRET -e CAL_JC_API_KEY -e META_JC_AD_ACCOUNT -e META_JC_PAGE_TOKEN \
   -e LEAD_INTAKE_WEBHOOK_URL -e LEAD_INTAKE_SECRET -e GOOGLE_OAUTH_CLIENT_ID -e GOOGLE_OAUTH_CLIENT_SECRET \
   -e GOOGLE_OAUTH_REDIRECT_URI -e MATE_AGENT_TOKEN -e MATE_ADS_CRON_SECRET -e MATE_SESSION_SECRET \
   -- sh -c 'node "$1/deploy/kvm2/write-app-env.mjs" $3 | ssh "$2" "set -e; umask 077; mkdir -p /opt/mate; cat > /opt/mate/app.env.new; chmod 600 /opt/mate/app.env.new; mv /opt/mate/app.env.new /opt/mate/app.env"' \
   sh "$REPO" "$KVM2" "$WRITE_ARGS"
-# Names, value lengths and mode only (never cat the file): expect "600 root", 33 names, and 0
+# Names, value lengths and mode only (never cat the file): expect "600 root", 31 names, and 0
 # placeholders. Compare lengths with `node $S has NAME`.
 ssh $KVM2 'stat -c "%a %U" /opt/mate/app.env; awk -F= "{print \$1\"=len\"length(substr(\$0,index(\$0,\"=\")+1))}" /opt/mate/app.env | tr "\n" " "; echo; wc -l < /opt/mate/app.env; grep -c redacted /opt/mate/app.env || true'
 

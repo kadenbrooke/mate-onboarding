@@ -10,10 +10,11 @@
 // dashboard, the prospect demo funnel, internal use, clients not yet on their
 // own key) stays on the shared GEMINI_API_KEY.
 //
-// J&C's extract, assistant and vision calls run on Claude since 2026-11-16
-// (./tenantModels), so no J&C call is expected to reach Gemini. The mapping
-// stays as a guard: a J&C call that ever lands on a google model still never
-// uses the shared key, and once GEMINI_API_KEY_CARSON is retired it is refused.
+// Every AI call runs on Claude since 2026-11-16 (TASK_MODELS in ./portkey, J&C
+// pinned in ./tenantModels), so nothing reaches this module unless a google
+// model is configured again, and neither key is in the deploy any more. The
+// J&C mapping stays as a guard: a J&C call that ever lands on a google model
+// is refused rather than sent on the shared key.
 //
 // The session id handed in must be the one the request was AUTHORIZED for
 // (checkDashApiAccess for a dashboard user, the token-gated machine caller's

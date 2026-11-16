@@ -26,7 +26,7 @@ beforeEach(() => {
   delete process.env.PORTKEY_GATEWAY_KEY;
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
-  process.env.GEMINI_API_KEY = 'g';
+  process.env.ANTHROPIC_API_KEY = 'a';
   process.env.OPENAI_API_KEY = 'o';
 });
 afterEach(() => {
@@ -41,7 +41,7 @@ describe('visionComplete fallback', () => {
     const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: true, text: '{"candidates":[]}', model: TASK_MODELS.vision });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(providerOf(fetchMock.mock.calls[0])).toBe('google');
+    expect(providerOf(fetchMock.mock.calls[0])).toBe('anthropic');
   });
 
   it('sends PORTKEY_GATEWAY_KEY on the vision gateway request', async () => {
