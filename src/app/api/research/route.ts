@@ -7,6 +7,7 @@ import {
 } from "@/lib/research/website"
 import { createServiceClient } from "@/lib/supabase/service"
 import { defaultMateName } from "@/lib/mate/name"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 
 export async function POST(req: NextRequest) {
   // Parse + validate body. Bad JSON or missing url => 400, don't throw.
@@ -30,6 +31,16 @@ export async function POST(req: NextRequest) {
       { error: "sessionId must be a string" },
       { status: 400 }
     )
+  }
+
+  // Saving the result writes that session's `collected` profile, so the caller
+  // must be allowed to open it (checkOnboardingAccess). Checked before the
+  // scrape, so a refused caller costs nothing.
+  if (sessionId) {
+    const access = await checkOnboardingAccess(req, sessionId)
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status })
+    }
   }
 
   const { html, finalUrl } = await fetchSite(url)

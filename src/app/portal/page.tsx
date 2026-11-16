@@ -135,8 +135,10 @@ export default function PortalPage() {
 
         const res = await fetch(`/api/portal?session=${encodeURIComponent(id)}`)
         if (!res.ok) {
-          // The API is designed to soft-error to 200; a non-2xx here is unusual.
-          throw new Error("Could not load your portal.")
+          // A data failure soft-errors to 200; a non-2xx is a refusal (sign in,
+          // not your session) or an outage. Show the API's own message.
+          const body = (await res.json().catch(() => null)) as { error?: string } | null
+          throw new Error(body?.error ?? "Could not load your portal.")
         }
         const json = (await res.json()) as PortalData
         setData(json)

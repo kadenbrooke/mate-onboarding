@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { COOKIE_NAME } from "@/lib/session-cookie"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 import { agentRoster } from "@/lib/portal/capabilities"
 import { annualLoss } from "@/lib/mate/loss-math"
 
@@ -85,6 +86,14 @@ export async function GET(req: NextRequest) {
       { error: "Missing session" },
       { status: 400 }
     )
+  }
+
+  // The portal shows that session's contact, capabilities and requests, so the
+  // caller must be allowed to open it (checkOnboardingAccess), not merely know
+  // its id. Refusals are real 4xx statuses; the page shows their message.
+  const access = await checkOnboardingAccess(req, sessionId)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
   }
 
   // Service-role client, created INSIDE the handler, never at module scope, so

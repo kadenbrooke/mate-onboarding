@@ -23,7 +23,7 @@ afterEach(() => { process.env = { ...OLD }; });
 describe('checkOnboardingAccess', () => {
   it('allows whatever the dash gate allows (demo, member, internal)', async () => {
     verdict.mockResolvedValue({ ok: true, access: 'member' });
-    expect(await checkOnboardingAccess(req(), OWN)).toEqual({ ok: true });
+    expect(await checkOnboardingAccess(req(), OWN)).toEqual({ ok: true, access: 'member' });
     expect(verdict).toHaveBeenCalledWith(OWN);
   });
 
@@ -39,7 +39,7 @@ describe('checkOnboardingAccess', () => {
 
   it("allows the signed-in creator holding this session's signed cookie", async () => {
     verdict.mockResolvedValue({ ok: false, status: 403, error: 'Not your dashboard.' });
-    expect(await checkOnboardingAccess(req(cookieFor(OWN)), OWN.toUpperCase())).toEqual({ ok: true });
+    expect(await checkOnboardingAccess(req(cookieFor(OWN)), OWN.toUpperCase())).toEqual({ ok: true, access: 'creator' });
   });
 
   it('never lets the cookie replace sign-in or a missing session', async () => {

@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { practiceStatus, fetchMock, syncSessionCalendar } = vi.hoisted(() => ({
+const { practiceStatus, fetchMock, syncSessionCalendar, gate } = vi.hoisted(() => ({
   practiceStatus: vi.fn(),
+  gate: vi.fn(),
   fetchMock: vi.fn(),
   syncSessionCalendar: vi.fn(async () => ({ status: 'ok', upserted: 0, removed: 0 })),
 }));
@@ -28,6 +29,7 @@ vi.mock('@/lib/supabase/service', () => {
   return { ...m, createControlServiceClient: m.createServiceClient };
 });
 vi.mock('@/lib/portal/practice', () => ({ practiceStatus }));
+vi.mock('@/lib/portal/onboarding-gate', () => ({ checkOnboardingAccess: (_req: Request, id: string) => gate(id) }));
 vi.mock('@/lib/metrics/calendarSyncRun', () => ({ syncSessionCalendar }));
 vi.stubGlobal('fetch', fetchMock);
 
@@ -39,6 +41,8 @@ function request(sessionId: string) {
 
 beforeEach(() => {
   practiceStatus.mockReset();
+  gate.mockReset();
+  gate.mockResolvedValue({ ok: true, access: 'creator' });
   fetchMock.mockReset();
   syncSessionCalendar.mockClear();
   process.env.GOOGLE_OAUTH_CLIENT_ID = 'fake-client';
@@ -64,5 +68,24 @@ describe('GET /api/connect/google/callback', () => {
     expect(response.status).toBe(307);
     expect(response.headers.get('location')).toContain('/onboard?google=connected');
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  // `state` is only a session id. A caller who may not open that session must
+  // never get a Google token stored on it (or its calendar synced into it).
+  it("never exchanges a code for another tenant's session", async () => {
+    gate.mockResolvedValue({ ok: false, status: 403, error: 'Not your dashboard.' });
+    const response = await GET(request('other-session'));
+
+    expect(gate).toHaveBeenCalledWith('other-session');
+    expect(response.headers.get('location')).toContain('/onboard?google=forbidden');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(syncSessionCalendar).not.toHaveBeenCalled();
+  });
+
+  it('never exchanges a code for the public demo session', async () => {
+    gate.mockResolvedValue({ ok: true, access: 'demo' });
+    const response = await GET(request('demo-session'));
+    expect(response.headers.get('location')).toContain('google=forbidden');
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

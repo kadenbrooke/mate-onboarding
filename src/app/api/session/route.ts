@@ -2,11 +2,12 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { maskCollectedForClient, isMaskedValue } from "@/lib/mate/mask"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 
 /**
  * True when the request carries an authenticated Supabase user (SSR cookies).
- * Onboarding sessions are gated behind sign-in; only demo sessions stay
- * anonymous. Membership-binding (user owns THIS session) is Plan-3 hardening.
+ * Creating a session needs one. Reading or writing one goes through
+ * checkOnboardingAccess, which also binds the user to THIS session.
  */
 async function hasAuthedUser(): Promise<boolean> {
   const supabase = await createClient()
@@ -95,7 +96,8 @@ export async function POST(req: NextRequest) {
 
 /**
  * GET /api/session?id=... — load a session for the onboarding UI.
- * 400 if id missing, 404 if not found.
+ * 400 if id missing, 404 if not found, 401/403 unless the caller may open THIS
+ * session (checkOnboardingAccess: demo, member, internal, or its creator).
  */
 export async function GET(req: NextRequest) {
   const id = req.nextUrl.searchParams.get("id")
@@ -103,11 +105,16 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Missing id" }, { status: 400 })
   }
 
+  const access = await checkOnboardingAccess(req, id)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
+  }
+
   const supabase = createServiceClient()
 
   const { data, error } = await supabase
     .from("onboarding_sessions")
-    .select(`${CLIENT_FIELDS}, is_demo`)
+    .select(CLIENT_FIELDS)
     .eq("id", id)
     .maybeSingle()
 
@@ -118,19 +125,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
-  // Real (non-demo) sessions require a signed-in user; demo sessions stay
-  // anonymous for the public Instant Demo flow.
-  if (!(data as { is_demo?: boolean | null }).is_demo && !(await hasAuthedUser())) {
-    return NextResponse.json(SIGN_IN_REQUIRED, { status: 401 })
-  }
-
   // Mask server-only fields (EIN -> last 4) before anything leaves the server.
-  // is_demo is a gate input, not a client field; keep the response shape to
-  // CLIENT_FIELDS exactly.
-  const clientData = { ...(data as Record<string, unknown>) }
-  delete clientData.is_demo
+  // The response shape is CLIENT_FIELDS exactly.
   const safe = {
-    ...clientData,
+    ...(data as Record<string, unknown>),
     collected: maskCollectedForClient(
       (data as { collected?: Record<string, unknown> | null }).collected ?? null
     ),
@@ -280,26 +278,15 @@ export async function PATCH(req: NextRequest) {
     }
   }
 
+  // Authorize THIS session before any write: demo sessions stay anonymous for
+  // the public Instant Demo flow; real ones need a member, an internal user, or
+  // the signed-in creator holding its signed cookie (checkOnboardingAccess).
+  const access = await checkOnboardingAccess(req, id)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
+  }
+
   const supabase = createServiceClient()
-
-  // Load the session row first: real (non-demo) sessions require a signed-in
-  // user before any write; demo sessions stay anonymous for the public
-  // Instant Demo flow.
-  const { data: sessionRow, error: sessionError } = await supabase
-    .from("onboarding_sessions")
-    .select("is_demo")
-    .eq("id", id)
-    .maybeSingle()
-
-  if (sessionError) {
-    return NextResponse.json({ error: sessionError.message }, { status: 500 })
-  }
-  if (!sessionRow) {
-    return NextResponse.json({ error: "Session not found" }, { status: 404 })
-  }
-  if (!sessionRow.is_demo && !(await hasAuthedUser())) {
-    return NextResponse.json(SIGN_IN_REQUIRED, { status: 401 })
-  }
 
   if (collectedPatch !== null) {
     // Read the current collected, shallow-merge the whitelisted patch on top,

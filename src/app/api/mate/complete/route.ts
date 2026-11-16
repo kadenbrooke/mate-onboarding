@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { materialsForCollected } from "@/lib/materials"
+import { checkOnboardingAccess, DEMO_REFUSED } from "@/lib/portal/onboarding-gate"
 
 /**
  * POST /api/mate/complete: no-gate auto-provision for a finished onboarding.
@@ -13,6 +14,11 @@ import { materialsForCollected } from "@/lib/materials"
  *      (intake_form, scope_lock), idempotent + silent.
  *   4. Seeds the Phase-1 capability manifest (first_responder_sms, gbp_reviews).
  *   5. Marks the session complete.
+ *
+ * Authorization: the caller must be allowed to open THIS session
+ * (checkOnboardingAccess: a member, an internal user, or the signed-in creator
+ * holding its signed cookie), and a public demo session is never provisioned.
+ * Knowing a session id is not enough: this writes a Signed/Paid CRM contact.
  *
  * No approval gate: white-label resellers self-provision. Failures on the
  * contact upsert are fatal (nothing downstream can run without it); material /
@@ -100,6 +106,12 @@ export async function POST(req: NextRequest) {
       { error: "Missing or invalid sessionId" },
       { status: 400 }
     )
+  }
+
+  const access = await checkOnboardingAccess(req, sessionId)
+  const refused = !access.ok ? access : access.access === "demo" ? DEMO_REFUSED : null
+  if (refused && !refused.ok) {
+    return NextResponse.json({ error: refused.error }, { status: refused.status })
   }
 
   // Service-role client, created INSIDE the handler, never at module scope, so

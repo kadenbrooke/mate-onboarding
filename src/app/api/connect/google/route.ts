@@ -5,6 +5,7 @@ import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { practiceStatus } from "@/lib/portal/practice"
 import { publicRedirect } from "@/lib/public-url"
 import { pathSegment } from "@/lib/portal/safe-next"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 
 /**
  * GET /api/connect/google?sessionId=... : start the Google OAuth flow.
@@ -54,6 +55,13 @@ export async function GET(req: NextRequest) {
     // Read-only deployment (lib/supabase/write-gate): the token could not be stored.
     if (!dataWritesEnabled()) {
       return publicRedirect(`/dash/${pathSegment(sessionId)}?google=writes_disabled`, req)
+    }
+    // The callback stores a Google refresh token on this session and syncs that
+    // calendar into it, so the caller must be allowed to open THIS session
+    // (checkOnboardingAccess), and the public demo session never gets one.
+    const access = await checkOnboardingAccess(req, sessionId)
+    if (!access.ok || access.access === "demo") {
+      return publicRedirect(`/dash/${pathSegment(sessionId)}?google=forbidden`, req)
     }
     const practice = await practiceStatus(createServiceClient(), sessionId)
     if (!practice.ok) {

@@ -6,6 +6,7 @@ import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
 import { practiceStatus } from "@/lib/portal/practice"
 import { publicRedirect } from "@/lib/public-url"
 import { pathSegment } from "@/lib/portal/safe-next"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
@@ -73,6 +74,11 @@ export async function GET(req: NextRequest) {
   if (sessionId) {
     // Never store a token for a session whose data this deployment does not own.
     if (!routeSession(sessionId).served) return backToOnboard(req, "unavailable")
+    // `state` is only the session id the flow started with, so re-check that
+    // THIS browser may open that session before the code is exchanged: without
+    // it, anyone could attach their own Google calendar to another tenant.
+    const access = await checkOnboardingAccess(req, sessionId)
+    if (!access.ok || access.access === "demo") return backToOnboard(req, "forbidden")
     const practice = await practiceStatus(createServiceClient(), sessionId)
     if (!practice.ok) return backToOnboard(req, "unavailable")
     if (practice.isPractice) return backToOnboard(req, "practice")
