@@ -1,17 +1,14 @@
-// SSRF-guarded site fetch for the Instant First Responder Demo (HIGH FIX H3b).
-//
-// The demo's public /api/demo/start route must NOT be usable as an SSRF proxy into
-// our own infrastructure. fetchSite (src/lib/research/website.ts) is shared with the
-// authenticated onboarding research route, so we leave it untouched and route the
-// PUBLIC demo path through this wrapper instead. It:
+// SSRF-guarded site fetch (HIGH FIX H3b). Every site a caller names goes through
+// here: the public demo (/api/demo/start) and onboarding research (/api/research).
+// Neither route may be usable as an SSRF proxy into our own infrastructure. It:
 //   1. normalizes + statically screens the URL (scheme + literal-IP checks),
 //   2. resolves the hostname and rejects if ANY resolved address is private
 //      (defeats DNS-rebinding to internal ranges),
-//   3. fetches with a hard body-size cap (fetchSite's await res.text() is unbounded).
-// Returns the same { html, finalUrl } shape as fetchSite. Never throws.
-import { lookup } from "node:dns/promises"
+//   3. follows redirects only after re-checking each hop (./safe-fetch),
+//   4. fetches with a hard body-size cap.
+// Returns { html, finalUrl }. Never throws.
 import { normalizeUrl } from "@/lib/research/website"
-import { checkUrlForSsrf, isPrivateIp } from "./ssrf"
+import { safeFetch } from "./safe-fetch"
 
 // Cap the fetched HTML so a hostile/huge response can't blow memory. The extractor
 // only reads the first 8k chars of text anyway; 2MB of HTML is far more than enough.
@@ -66,49 +63,20 @@ export async function fetchSiteGuarded(
     }
   }
 
-  const finalUrl = normalizeUrl(url)
+  const target = normalizeUrl(url)
 
-  const check = checkUrlForSsrf(finalUrl)
-  if (!check.ok) {
-    return { html: null, finalUrl, blocked: true, reason: check.reason }
-  }
+  // Static checks, DNS re-check of every address, and per-hop redirect checks.
+  const { res, finalUrl, blocked, reason } = await safeFetch(target, {
+    headers: { "user-agent": userAgent },
+    timeoutMs: FETCH_TIMEOUT_MS,
+  })
+  if (blocked) return { html: null, finalUrl, blocked: true, reason }
+  if (!res || !res.ok) return { html: null, finalUrl }
 
-  // Resolve DNS and re-check every address. A hostname that resolves to a private
-  // IP (including deliberate DNS-rebinding) is blocked before we ever connect.
-  if (!check.isIpLiteral) {
-    try {
-      const addrs = await lookup(check.hostname, { all: true })
-      if (addrs.length === 0) {
-        return { html: null, finalUrl, blocked: true, reason: "host did not resolve" }
-      }
-      const bad = addrs.find((a) => isPrivateIp(a.address))
-      if (bad) {
-        return {
-          html: null,
-          finalUrl,
-          blocked: true,
-          reason: `host resolves to private IP: ${bad.address}`,
-        }
-      }
-    } catch {
-      return { html: null, finalUrl, blocked: true, reason: "DNS resolution failed" }
-    }
-  }
-
-  try {
-    const res = await fetch(finalUrl, {
-      headers: { "user-agent": userAgent },
-      redirect: "manual", // don't follow redirects into internal ranges
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-    })
-    if (!res.ok) return { html: null, finalUrl }
-
-    // Body-size cap: stream and abort past MAX_HTML_BYTES.
-    const html = await readCapped(res, MAX_HTML_BYTES)
-    return { html, finalUrl }
-  } catch {
-    return { html: null, finalUrl }
-  }
+  // Body-size cap: stream and abort past MAX_HTML_BYTES. A body that cannot be
+  // read (already locked, stream error) is html:null, never a throw.
+  const html = await readCapped(res, MAX_HTML_BYTES).catch(() => null)
+  return { html, finalUrl }
 }
 
 /** Read a response body as text, capped at maxBytes. Never throws. */

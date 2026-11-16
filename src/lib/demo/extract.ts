@@ -12,7 +12,7 @@
 // over the LLM name (spec: JSON-LD > og:site_name > application-name > <title> >
 // LLM), while services/phone/etc. backfill from whichever source has them.
 //
-// Reuses the provider-agnostic scraper (fetchSite) but routes the LLM extraction
+// Reuses the SSRF-guarded scraper (fetchSiteGuarded) but routes the LLM extraction
 // through the thin Portkey client (decision b). Same JSON contract as CompanyData
 // so buildFrConfig consumes it unchanged. Cheapest model that clears the bar per
 // .claude/rules/model-agnostic.md.

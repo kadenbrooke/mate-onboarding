@@ -3,6 +3,7 @@ import * as portkey from "@/lib/demo/portkey"
 import {
   extractBrandFromHtml,
   extractCompanyData,
+  fetchImageBuffer,
   extractBrandColorsFromMarkup,
   normalizeUrl,
 } from "./website"
@@ -143,5 +144,19 @@ describe("extractCompanyData", () => {
     vi.spyOn(portkey, "chatComplete").mockResolvedValueOnce("").mockResolvedValueOnce("sorry")
     expect(await extractCompanyData("<p>x</p>")).toEqual({})
     expect(await extractCompanyData("<p>x</p>")).toEqual({})
+  })
+})
+
+// Logo, stylesheet and manifest URLs come from the researched page's HTML, so
+// they go through the same SSRF guard as the page itself.
+describe("fetchImageBuffer", () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("refuses an internal or metadata logo URL without fetching it", async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal("fetch", fetchMock)
+    expect(await fetchImageBuffer("http://169.254.169.254/latest/meta-data/logo.png")).toBeNull()
+    expect(await fetchImageBuffer("http://127.0.0.1:5678/logo.png")).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

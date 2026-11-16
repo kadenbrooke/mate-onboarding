@@ -1,11 +1,12 @@
 // SSRF guard for the Instant First Responder Demo (HIGH FIX H3b).
 //
-// /api/demo/start is PUBLIC and unauthed, and it fetches an arbitrary user-supplied
-// URL server-side (fetchSite). Without a guard, an attacker can point it at internal
-// infrastructure (169.254.169.254 cloud metadata, localhost admin ports, RFC1918
-// hosts) and use our server as a proxy. fetchSite is SHARED with the real onboarding
-// research route, so we do NOT change it — the demo path calls fetchSiteGuarded,
-// which pre-flights the URL through this guard before delegating to fetchSite.
+// /api/demo/start and /api/research fetch an arbitrary caller-supplied URL
+// server-side, and the brand-color step then fetches logo, stylesheet and manifest
+// URLs that page's HTML names. Without a guard, an attacker can point any of them
+// at internal infrastructure (169.254.169.254 cloud metadata, localhost admin
+// ports, RFC1918 hosts) and use our server as a proxy. Every such fetch goes
+// through ./safe-fetch (fetchSiteGuarded for the page itself), which checks each
+// hop with this guard.
 //
 // Checks (pure, unit-tested):
 //   1. scheme must be http/https,
@@ -57,6 +58,14 @@ export function isPrivateIpv6(host: string): boolean {
   if (mapped) {
     const v4 = parseIpv4(mapped[1])
     return v4 ? isPrivateIpv4(v4) : true
+  }
+  // The same mapping in hex, which is how the URL parser writes it:
+  // new URL("http://[::ffff:127.0.0.1]").hostname is "[::ffff:7f00:1]".
+  const mappedHex = h.match(/^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/)
+  if (mappedHex) {
+    const hi = parseInt(mappedHex[1], 16)
+    const lo = parseInt(mappedHex[2], 16)
+    return isPrivateIpv4([hi >> 8, hi & 255, lo >> 8, lo & 255])
   }
   return false
 }
