@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest';
-import { checkGoogleCallback, googleStateSecret, newGoogleNonce, signGoogleState, verifyGoogleState } from './google-oauth-state';
+import {
+  GOOGLE_STATE_TTL_MS, checkGoogleCallback, googleStateSecret, newGoogleNonce, nonceKey, signGoogleState, verifyGoogleState,
+} from './google-oauth-state';
 
 const SECRET = 'state-test-secret';
 const NOW = 1_800_000_000_000;
@@ -28,8 +30,14 @@ describe('signGoogleState / verifyGoogleState', () => {
 describe('checkGoogleCallback', () => {
   const ok = { state: signGoogleState(base, SECRET), cookieNonce: 'n1', userId: 'u1', secret: SECRET, now: NOW };
 
-  it('passes a valid callback and returns the signed session', () => {
-    expect(checkGoogleCallback(ok)).toEqual({ ok: true, sessionId: base.sessionId });
+  it('passes a valid callback and returns the signed session and its nonce', () => {
+    expect(checkGoogleCallback(ok)).toEqual({ ok: true, sessionId: base.sessionId, nonce: 'n1' });
+  });
+  it('counts a flow that crosses UTC midnight as expired (the single-use record is per day)', () => {
+    const start = Date.UTC(2026, 10, 16, 23, 55);
+    const state = signGoogleState({ ...base, exp: start + GOOGLE_STATE_TTL_MS }, SECRET);
+    expect(checkGoogleCallback({ ...ok, state, now: start + 60_000 }).ok).toBe(true);
+    expect(checkGoogleCallback({ ...ok, state, now: Date.UTC(2026, 10, 17, 0, 2) })).toEqual({ ok: false, reason: 'expired' });
   });
   it('refuses a forged state', () => {
     expect(checkGoogleCallback({ ...ok, state: base.sessionId })).toEqual({ ok: false, reason: 'bad-state' });
@@ -52,5 +60,13 @@ describe('googleStateSecret', () => {
     expect(googleStateSecret({ GOOGLE_OAUTH_STATE_SECRET: 'a', MATE_SESSION_SECRET: 'b' })).toBe('a');
     expect(googleStateSecret({ MATE_SESSION_SECRET: 'b' })).toBe('b');
     expect(() => googleStateSecret({})).toThrow();
+  });
+});
+
+describe('nonceKey', () => {
+  it('is a stable hash, never the nonce itself', () => {
+    expect(nonceKey('abc')).toBe(nonceKey('abc'));
+    expect(nonceKey('abc')).not.toContain('abc');
+    expect(nonceKey('abc')).toMatch(/^[0-9a-f]{64}$/);
   });
 });

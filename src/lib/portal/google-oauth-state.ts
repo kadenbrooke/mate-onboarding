@@ -15,17 +15,31 @@
 //   2. it has not expired (GOOGLE_STATE_TTL_MS),
 //   3. the nonce cookie is present and equals the state's nonce (this browser
 //      started this flow),
-//   4. the signed-in user is the one who started it.
+//   4. the signed-in user is the one who started it,
+//   5. (in the callback route) the nonce has not been used before: it is
+//      claimed once in the atomic demo_counter_bump counter (cap 1), so a
+//      replayed callback, even with the cookie still present, is refused.
+//      That counter is per UTC day, so a flow must also finish on the UTC day
+//      it started (otherwise it counts as expired and is simply restarted).
 //
 // Node crypto only; pure + testable. Never throws on bad input.
 
-import { createHmac, randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, randomBytes, timingSafeEqual } from 'crypto';
 
 export type GoogleState = { sessionId: string; nonce: string; userId: string; exp: number };
 
 export const GOOGLE_STATE_COOKIE = 'google_oauth_nonce';
 /** Ten minutes to finish Google's consent screen. Also the cookie's max age. */
 export const GOOGLE_STATE_TTL_MS = 10 * 60 * 1000;
+/** demo_counter_bump scope that records each nonce once (single use). */
+export const GOOGLE_NONCE_SCOPE = 'google_oauth_nonce';
+
+/** The counter key for a nonce: its SHA-256, so the raw nonce is never stored. */
+export function nonceKey(nonce: string): string {
+  return createHash('sha256').update(nonce).digest('hex');
+}
+
+const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 const b64 = (s: string) => Buffer.from(s, 'utf8').toString('base64url');
 const unb64 = (s: string) => Buffer.from(s, 'base64url').toString('utf8');
@@ -69,7 +83,7 @@ export function verifyGoogleState(token: unknown, secret: string): GoogleState |
 }
 
 export type GoogleCallbackCheck =
-  | { ok: true; sessionId: string }
+  | { ok: true; sessionId: string; nonce: string }
   | { ok: false; reason: 'bad-state' | 'expired' | 'nonce-mismatch' | 'wrong-user' };
 
 /** Every check the callback needs before it may exchange the code. */
@@ -82,10 +96,13 @@ export function checkGoogleCallback(input: {
 }): GoogleCallbackCheck {
   const state = verifyGoogleState(input.state, input.secret);
   if (!state) return { ok: false, reason: 'bad-state' };
-  if ((input.now ?? Date.now()) > state.exp) return { ok: false, reason: 'expired' };
+  const now = input.now ?? Date.now();
+  if (now > state.exp) return { ok: false, reason: 'expired' };
+  // The single-use record is per UTC day: a flow must finish on the day it started.
+  if (utcDay(state.exp - GOOGLE_STATE_TTL_MS) !== utcDay(now)) return { ok: false, reason: 'expired' };
   const cookie = Buffer.from(input.cookieNonce ?? '', 'utf8');
   const nonce = Buffer.from(state.nonce, 'utf8');
   if (cookie.length !== nonce.length || !timingSafeEqual(cookie, nonce)) return { ok: false, reason: 'nonce-mismatch' };
   if (!input.userId || input.userId !== state.userId) return { ok: false, reason: 'wrong-user' };
-  return { ok: true, sessionId: state.sessionId };
+  return { ok: true, sessionId: state.sessionId, nonce: state.nonce };
 }

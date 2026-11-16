@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { NextRequest } from 'next/server';
+import { NextRequest, type NextResponse } from 'next/server';
 
-const { practiceStatus, fetchMock, syncSessionCalendar, gate, auth } = vi.hoisted(() => ({
+const { practiceStatus, fetchMock, syncSessionCalendar, gate, auth, counter } = vi.hoisted(() => ({
   practiceStatus: vi.fn(),
   gate: vi.fn(),
-  auth: { user: { id: 'user-own' } as { id: string } | null },
+  auth: { user: { id: 'user-own' } as { id: string } | null, throws: false },
+  // demo_counter_bump in memory: (scope, key) -> n, allowed while n < cap.
+  counter: { rows: new Map<string, number>(), error: false },
   fetchMock: vi.fn(),
   syncSessionCalendar: vi.fn(async () => ({ status: 'ok', upserted: 0, removed: 0 })),
 }));
@@ -24,7 +26,17 @@ function tableStub(table: string) {
 
 vi.mock('@/lib/supabase/service', () => {
   const m = {
-  createServiceClient: () => ({ from: (table: string) => tableStub(table) }),
+  createServiceClient: () => ({
+    from: (table: string) => tableStub(table),
+    rpc: async (_fn: string, a: { p_scope: string; p_key: string; p_cap: number }) => {
+      if (counter.error) return { data: null, error: { message: 'counter down' } };
+      const k = `${a.p_scope}:${a.p_key}`;
+      const n = counter.rows.get(k) ?? 0;
+      if (n >= a.p_cap) return { data: false, error: null };
+      counter.rows.set(k, n + 1);
+      return { data: true, error: null };
+    },
+  }),
 };
   // Shared mode: logins and data are the same project, so the control client is the same fake.
   return { ...m, createControlServiceClient: m.createServiceClient };
@@ -32,7 +44,14 @@ vi.mock('@/lib/supabase/service', () => {
 vi.mock('@/lib/portal/practice', () => ({ practiceStatus }));
 vi.mock('@/lib/portal/onboarding-gate', () => ({ checkOnboardingAccess: (_req: Request, id: string) => gate(id) }));
 vi.mock('@/lib/supabase/server', () => ({
-  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: auth.user } }) } }),
+  createClient: async () => ({
+    auth: {
+      getUser: async () => {
+        if (auth.throws) throw new Error('auth service unreachable');
+        return { data: { user: auth.user } };
+      },
+    },
+  }),
 }));
 vi.mock('@/lib/metrics/calendarSyncRun', () => ({ syncSessionCalendar }));
 vi.stubGlobal('fetch', fetchMock);
@@ -64,6 +83,9 @@ beforeEach(() => {
   gate.mockReset();
   gate.mockResolvedValue({ ok: true, access: 'creator' });
   auth.user = { id: 'user-own' };
+  auth.throws = false;
+  counter.rows.clear();
+  counter.error = false;
   process.env.GOOGLE_OAUTH_STATE_SECRET = SECRET;
   fetchMock.mockReset();
   syncSessionCalendar.mockClear();
@@ -158,6 +180,46 @@ describe('GET /api/connect/google/callback', () => {
     it('clears the nonce on a refusal too', async () => {
       const response = await GET(callback('normal-session', { cookie: 'some-other-nonce' }));
       expect(response.cookies.get(GOOGLE_STATE_COOKIE)).toMatchObject({ value: '', maxAge: 0 });
+    });
+  });
+
+  describe('single use, on every outcome', () => {
+    beforeEach(() => practiceStatus.mockResolvedValue({ ok: true, isPractice: false }));
+    const cleared = (r: NextResponse) =>
+      expect(r.cookies.get(GOOGLE_STATE_COOKIE)).toMatchObject({ value: '', maxAge: 0 });
+
+    it('refuses a replay of the same callback, even with the cookie still present', async () => {
+      const first = await GET(callback('normal-session'));
+      expect(first.headers.get('location')).toContain('google=connected');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+
+      const replay = await GET(callback('normal-session'));
+      expect(replay.headers.get('location')).toContain('google=forbidden');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(syncSessionCalendar).toHaveBeenCalledTimes(1);
+      cleared(replay);
+    });
+
+    it('refuses when the single-use record cannot be written (fails closed)', async () => {
+      counter.error = true;
+      const res = await GET(callback('normal-session'));
+      expect(res.headers.get('location')).toContain('google=forbidden');
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('still answers and clears the cookie when something throws inside the callback', async () => {
+      auth.throws = true;
+      const res = await GET(callback('normal-session'));
+      expect(res.headers.get('location')).toContain('google=error');
+      expect(fetchMock).not.toHaveBeenCalled();
+      cleared(res);
+
+      auth.throws = false;
+      gate.mockRejectedValue(new Error('membership lookup failed'));
+      const res2 = await GET(callback('normal-session', { cookie: NONCE }));
+      expect(res2.headers.get('location')).toContain('google=error');
+      expect(fetchMock).not.toHaveBeenCalled();
+      cleared(res2);
     });
   });
 });

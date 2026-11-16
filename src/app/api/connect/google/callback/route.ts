@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server"
-import { createServiceClient } from "@/lib/supabase/service"
+import { createControlServiceClient, createServiceClient } from "@/lib/supabase/service"
 import { readTenancy, routeSession } from "@/lib/supabase/tenancy"
 import { dataWritesEnabled } from "@/lib/supabase/write-gate"
 import { syncSessionCalendar } from "@/lib/metrics/calendarSyncRun"
@@ -9,11 +9,14 @@ import { pathSegment } from "@/lib/portal/safe-next"
 import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 import { createClient } from "@/lib/supabase/server"
 import {
+  GOOGLE_NONCE_SCOPE,
   GOOGLE_STATE_COOKIE,
   checkGoogleCallback,
   googleStateSecret,
+  nonceKey,
   verifyGoogleState,
 } from "@/lib/portal/google-oauth-state"
+import { bumpCounter } from "@/lib/demo/counter"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
@@ -55,10 +58,26 @@ function backToOnboard(req: NextRequest, status: string, sessionId: string): Nex
 }
 
 export async function GET(req: NextRequest): Promise<NextResponse> {
-  const res = await connect(req)
-  // The nonce is single-use: clear it whatever the outcome.
+  let res: NextResponse
+  try {
+    res = await connect(req)
+  } catch (e) {
+    // Never leak details or leave the nonce cookie behind on an unexpected throw.
+    console.error("google callback failed", e instanceof Error ? e.message : String(e))
+    res = errorResponse(req)
+  }
+  // The nonce is single-use: clear it on every outcome, the throw included.
   res.cookies.set(GOOGLE_STATE_COOKIE, "", { path: "/api/connect/google", maxAge: 0 })
   return res
+}
+
+/** A redirect back with ?google=error, or a plain 500 if even that cannot be built. */
+function errorResponse(req: NextRequest): NextResponse {
+  try {
+    return backToOnboard(req, "error", "")
+  } catch {
+    return NextResponse.json({ error: "Could not finish connecting Google." }, { status: 500 })
+  }
 }
 
 async function connect(req: NextRequest): Promise<NextResponse> {
@@ -109,6 +128,13 @@ async function connect(req: NextRequest): Promise<NextResponse> {
     secret,
   })
   if (!check.ok) return back(check.reason === "expired" ? "expired" : "forbidden")
+  // Single use: claim the nonce once (atomic, cap 1). A replay of this exact
+  // callback, cookie and all, finds it claimed; a counter error refuses too
+  // (bumpCounter fails closed). The counter lives with the logins in the
+  // control project, which every deployment can reach.
+  if (!(await bumpCounter(createControlServiceClient(), GOOGLE_NONCE_SCOPE, nonceKey(check.nonce), 1))) {
+    return back("forbidden")
+  }
   const sessionId = check.sessionId
 
   // Never store a token for a session whose data this deployment does not own.
