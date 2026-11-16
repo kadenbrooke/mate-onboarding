@@ -146,13 +146,13 @@ git -C "$REPO" archive --format=tar "$REV" | ssh $KVM2 "set -e; d=/opt/mate/rele
 node ~/kaden/amos/scripts/secrets/secret.mjs run --login "QuickBooks Online PRODUCTION keys (added 2026-08-06)" \
   -- node ~/kaden/amos/scripts/secrets/secret.mjs run --login "QBO generated secrets (DEL-14, 2026-08-06) — used by local + KVM2 rail (PROXY_SECRET must match the n8n QBO Live Proxy)" \
   -e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY -e SUPABASE_SECRET_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY \
-  -e GEMINI_API_KEY_CARSON -e PORTKEY_GATEWAY_KEY -e TELNYX_API_KEY -e LEADS_INGEST_TOKEN \
+  -e GEMINI_API_KEY_CARSON -e PORTKEY_GATEWAY_KEY -e ANTHROPIC_API_KEY -e TELNYX_API_KEY -e LEADS_INGEST_TOKEN \
   -e CALCOM_WEBHOOK_SECRET -e CAL_JC_API_KEY -e META_JC_AD_ACCOUNT -e META_JC_PAGE_TOKEN \
   -e LEAD_INTAKE_WEBHOOK_URL -e LEAD_INTAKE_SECRET -e GOOGLE_OAUTH_CLIENT_ID -e GOOGLE_OAUTH_CLIENT_SECRET \
   -e GOOGLE_OAUTH_REDIRECT_URI -e MATE_AGENT_TOKEN -e MATE_ADS_CRON_SECRET -e MATE_SESSION_SECRET \
   -- sh -c 'node "$1/deploy/kvm2/write-app-env.mjs" $3 | ssh "$2" "set -e; umask 077; mkdir -p /opt/mate; cat > /opt/mate/app.env.new; chmod 600 /opt/mate/app.env.new; mv /opt/mate/app.env.new /opt/mate/app.env"' \
   sh "$REPO" "$KVM2" "$WRITE_ARGS"
-# Names, value lengths and mode only (never cat the file): expect "600 root", 32 names, and 0
+# Names, value lengths and mode only (never cat the file): expect "600 root", 33 names, and 0
 # placeholders. Compare lengths with `node $S has NAME`.
 ssh $KVM2 'stat -c "%a %U" /opt/mate/app.env; awk -F= "{print \$1\"=len\"length(substr(\$0,index(\$0,\"=\")+1))}" /opt/mate/app.env | tr "\n" " "; echo; wc -l < /opt/mate/app.env; grep -c redacted /opt/mate/app.env || true'
 

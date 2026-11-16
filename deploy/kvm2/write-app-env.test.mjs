@@ -21,13 +21,14 @@ const VERCEL_PRODUCTION = [
   'OPENAI_API_KEY', 'SUPABASE_SECRET_KEY', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'NEXT_PUBLIC_SUPABASE_URL',
 ];
 
-test('writes exactly the 32 names Vercel production held, fixed values first, no QBO client secret', () => {
+test('writes the 32 names Vercel production held plus ANTHROPIC_API_KEY, fixed values first, no QBO client secret', () => {
   const { text, error } = appEnv(fake());
   assert.equal(error, undefined);
   const names = text.trimEnd().split('\n').map((l) => l.split('=')[0]);
   assert.deepEqual(names, ALL_NAMES);
-  assert.equal(names.length, 32);
-  assert.deepEqual([...names].sort(), [...VERCEL_PRODUCTION].sort());
+  assert.equal(names.length, 33);
+  // Added after the move off Vercel: J&C's AI calls run on Claude (2026-11-16).
+  assert.deepEqual([...names].sort(), [...VERCEL_PRODUCTION, 'ANTHROPIC_API_KEY'].sort());
   assert.ok(!names.includes('QBO_CLIENT_SECRET'));
   assert.match(text, /^QBO_ENVIRONMENT=production$/m);
   assert.match(text, /^NEXT_PUBLIC_SUPABASE_URL=https:\/\/jeqnvdlfybpmbovywknz\.supabase\.co$/m);
@@ -103,7 +104,7 @@ test('--check writes nothing, even with every value present', () => {
   const ok = run(['--check'], fake());
   assert.equal(ok.status, 0, ok.stderr);
   assert.equal(ok.stdout, '');
-  assert.match(ok.stderr, /^OK every value present and safe, 32 names/);
+  assert.match(ok.stderr, /^OK every value present and safe, 33 names/);
   const bad = run(['--check'], { ...fake(), META_JC_PAGE_TOKEN: '' });
   assert.equal(bad.status, 1);
   assert.equal(bad.stdout, '');

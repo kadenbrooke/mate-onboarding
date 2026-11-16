@@ -4,9 +4,9 @@
  * value on stderr, and refuses when any required name is missing or holds a character the env file
  * cannot carry safely (line break, NUL, quote, backslash, "$", whitespace).
  *
- * The 32 names are exactly the ones Vercel production held for mate-onboarding on 2026-11-13
- * (`vercel env ls production`). QBO_CLIENT_SECRET is deliberately absent: only the KVM2 n8n rail
- * calls Intuit (docs/qbo/kvm2-rail.md).
+ * 32 of the 33 names are exactly the ones Vercel production held for mate-onboarding on 2026-11-13
+ * (`vercel env ls production`); ANTHROPIC_API_KEY was added 2026-11-16 for J&C on Claude.
+ * QBO_CLIENT_SECRET is deliberately absent: only the KVM2 n8n rail calls Intuit (docs/qbo/kvm2-rail.md).
  *
  * The ssh pipe must run INSIDE the `secret run` child (sh -c), never after it: `secret run` masks its
  * child's stdout, so `secret run ... | ssh` writes "[redacted NAME]" placeholders instead of the values
@@ -17,7 +17,7 @@
  *   node ~/kaden/amos/scripts/secrets/secret.mjs run --login "QuickBooks Online PRODUCTION keys (added 2026-08-06)" \
  *     -- node ~/kaden/amos/scripts/secrets/secret.mjs run --login "QBO generated secrets (DEL-14, 2026-08-06) — used by local + KVM2 rail (PROXY_SECRET must match the n8n QBO Live Proxy)" \
  *     -e NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY -e SUPABASE_SECRET_KEY -e OPENAI_API_KEY -e GEMINI_API_KEY \
- *     -e GEMINI_API_KEY_CARSON -e PORTKEY_GATEWAY_KEY -e TELNYX_API_KEY -e LEADS_INGEST_TOKEN \
+ *     -e GEMINI_API_KEY_CARSON -e PORTKEY_GATEWAY_KEY -e ANTHROPIC_API_KEY -e TELNYX_API_KEY -e LEADS_INGEST_TOKEN \
  *     -e CALCOM_WEBHOOK_SECRET -e CAL_JC_API_KEY -e META_JC_AD_ACCOUNT -e META_JC_PAGE_TOKEN \
  *     -e LEAD_INTAKE_WEBHOOK_URL -e LEAD_INTAKE_SECRET -e GOOGLE_OAUTH_CLIENT_ID -e GOOGLE_OAUTH_CLIENT_SECRET \
  *     -e GOOGLE_OAUTH_REDIRECT_URI -e MATE_AGENT_TOKEN -e MATE_ADS_CRON_SECRET -e MATE_SESSION_SECRET \
@@ -48,6 +48,8 @@ export const SECRET_NAMES = {
   GEMINI_API_KEY: 'GEMINI_API_KEY',
   GEMINI_API_KEY_CARSON: 'GEMINI_API_KEY_CARSON',
   PORTKEY_GATEWAY_KEY: 'PORTKEY_GATEWAY_KEY',
+  // J&C's extract, assistant and photo reading run on Claude (src/lib/demo/tenantModels.ts, 2026-11-16).
+  ANTHROPIC_API_KEY: 'ANTHROPIC_API_KEY',
   TELNYX_API_KEY: 'TELNYX_API_KEY',
   LEADS_INGEST_TOKEN: 'LEADS_INGEST_TOKEN',
   CALCOM_WEBHOOK_SECRET: 'CALCOM_WEBHOOK_SECRET',

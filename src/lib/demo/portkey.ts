@@ -35,8 +35,14 @@
 // google key comes from resolveGeminiKey (./geminiKey). null = no tenant (the
 // prospect demo funnel), which uses the shared GEMINI_API_KEY. Routing through
 // Portkey is unchanged; only the Authorization key differs.
+//
+// Per-tenant models: the same session id can also pick a different model per
+// class (./tenantModels). J&C runs on Claude (anthropic/*) since 2026-11-16,
+// over Portkey's OpenAI-compatible chat path like every other call here; that
+// path translates text, streaming and image_url parts for Anthropic.
 
 import { resolveGeminiKey } from "./geminiKey"
+import { tenantModelFor } from "./tenantModels"
 
 const DEFAULT_PORTKEY_BASE_URL = "https://portkey.auto-mate.business"
 
@@ -65,11 +71,12 @@ export const TASK_MODELS = {
 
 export type TaskClass = keyof typeof TASK_MODELS
 
-// Extra request params per task class, sent on every chat call for that class.
-// reasoning_effort "minimal" is Gemini 3.x's lowest level over the OpenAI-
-// compatible API ("none" is ignored by 3.6 Flash). Temperature is deliberately
-// left at the model default: Google advises against lowering it on Gemini 3.
-// Revisit these when a class moves to another model or provider.
+// Extra request params per task class, sent on every GOOGLE chat call for that
+// class (see paramsFor). reasoning_effort "minimal" is Gemini 3.x's lowest
+// level over the OpenAI-compatible API ("none" is ignored by 3.6 Flash).
+// Temperature is deliberately left at the model default: Google advises against
+// lowering it on Gemini 3. Revisit these when a class moves to another model or
+// provider.
 export const TASK_PARAMS: Partial<Record<TaskClass, Record<string, unknown>>> = {
   extract: { reasoning_effort: "minimal" },
   assistant: { reasoning_effort: "minimal" },
@@ -94,6 +101,17 @@ export const MIN_MAX_TOKENS: Record<TaskClass, number> = {
 
 export function modelForClass(cls: TaskClass): string {
   return TASK_MODELS[cls]
+}
+
+/** The model a class runs on for this (authorized) session: its tenant override, else TASK_MODELS. */
+export function modelFor(cls: TaskClass, sessionId: string | null): string {
+  return tenantModelFor(sessionId, cls) ?? modelForClass(cls)
+}
+
+// TASK_PARAMS are Gemini knobs. Claude (Haiku/Sonnet 5.5) answers these small
+// tasks without hidden reasoning unless asked, so it gets none of them.
+function paramsFor(cls: TaskClass, provider: Provider): Record<string, unknown> {
+  return provider === "google" ? (TASK_PARAMS[cls] ?? {}) : {}
 }
 
 function portkeyBaseUrl(): string {
@@ -125,8 +143,14 @@ function providerKey(provider: Provider, sessionId: string | null): ProviderKey 
     }
     case "openai":
       return { ok: true, key: process.env.OPENAI_API_KEY ?? "" }
-    case "anthropic":
-      return { ok: true, key: process.env.ANTHROPIC_API_KEY ?? "" }
+    case "anthropic": {
+      // Only tenants routed to Claude reach this, so a missing key refuses
+      // (names the variable, never a value) instead of sending an empty one.
+      const key = process.env.ANTHROPIC_API_KEY?.trim() ?? ""
+      if (key) return { ok: true, key }
+      console.error("[portkey] ANTHROPIC_API_KEY is not set. Refusing this Claude call.")
+      return { ok: false, detail: "ANTHROPIC_API_KEY is not set" }
+    }
   }
 }
 
@@ -140,7 +164,7 @@ export interface ChatCompleteOpts {
   messages: ChatMessage[]
   system?: string
   maxTokens?: number
-  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  /** Authorized tenant session (picks the model and key); null = no tenant, shared key. */
   sessionId: string | null
 }
 
@@ -152,7 +176,7 @@ export interface ChatCompleteOpts {
  * provider) throws, and that is a programming error, not a runtime condition.
  */
 export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
-  const modelId = modelForClass(opts.taskClass)
+  const modelId = modelFor(opts.taskClass, opts.sessionId)
   const { provider, model } = parseModelId(modelId)
   const resolved = providerKey(provider, opts.sessionId)
   // Fail closed: a tenant whose own key is missing gets the same "" as any
@@ -173,7 +197,7 @@ export async function chatComplete(opts: ChatCompleteOpts): Promise<string> {
     model,
     messages,
     max_tokens: maxTokens,
-    ...TASK_PARAMS[opts.taskClass],
+    ...paramsFor(opts.taskClass, provider),
   })
 
   const bypass = process.env.LLM_PORTKEY_BYPASS === "1"
@@ -219,7 +243,7 @@ export interface ChatStreamOpts {
   system?: string
   maxTokens?: number
   taskClass?: TaskClass
-  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  /** Authorized tenant session (picks the model and key); null = no tenant, shared key. */
   sessionId: string | null
 }
 
@@ -231,7 +255,7 @@ export interface ChatStreamOpts {
  */
 export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response> {
   const cls = opts.taskClass ?? "assistant"
-  const { provider, model } = parseModelId(modelForClass(cls))
+  const { provider, model } = parseModelId(modelFor(cls, opts.sessionId))
   const resolved = providerKey(provider, opts.sessionId)
   // Fail closed as a plain non-ok Response, so the caller's existing !res.ok
   // path answers "unavailable" and nothing goes upstream on the shared key.
@@ -261,7 +285,7 @@ export async function portkeyChatStream(opts: ChatStreamOpts): Promise<Response>
   return fetch(`${baseUrl}/v1/chat/completions`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ model, messages, max_tokens: maxTokens, ...TASK_PARAMS[cls], stream: true }),
+    body: JSON.stringify({ model, messages, max_tokens: maxTokens, ...paramsFor(cls, provider), stream: true }),
     signal: AbortSignal.timeout(60000),
   })
 }
@@ -291,18 +315,24 @@ export type VisionResult =
  * gateway with a working key, and this model does vision cheaply. piiSafe
  * holds: it is OpenAI direct, not an OpenRouter-backed row.
  *
- * Only PROVIDER failures fall through (429, 5xx, transport). A 4xx that says
- * the request itself is bad, or a clean-but-empty answer, is returned as is,
- * because retrying the same bad request on another model hides the bug.
+ * Only PROVIDER failures fall through (429, 5xx, transport, and Anthropic's
+ * out-of-credit answer). A 4xx that says the request itself is bad, or a
+ * clean-but-empty answer, is returned as is, because retrying the same bad
+ * request on another model hides the bug.
  */
 export const VISION_FALLBACK_MODEL = "openai/gpt-4o-mini"
+
+// Anthropic reports exhausted credit as a 400 ("Your credit balance is too low
+// to access the Anthropic API"), not a 429. That is the same billing event the
+// Gemini 429 was, so it falls back too.
+const CREDIT_EXHAUSTED = /credit balance is too low/i
 
 function shouldFallBack(r: VisionResult): boolean {
   if (r.ok) return false
   if (r.kind === "network") return true
   if (r.kind !== "http") return false
   const status = Number(r.detail.slice(0, 3))
-  return status === 429 || status >= 500
+  return status === 429 || status >= 500 || (status === 400 && CREDIT_EXHAUSTED.test(r.detail))
 }
 
 /**
@@ -315,8 +345,9 @@ function shouldFallBack(r: VisionResult): boolean {
  * as the same shrug, and the 429 that the depleted Gemini credits produce
  * would look identical to a blurry photo.
  *
- * Tries the vision class model first, then VISION_FALLBACK_MODEL when the
- * primary provider itself is down (see shouldFallBack).
+ * Tries the session's vision model first (modelFor), then
+ * VISION_FALLBACK_MODEL when the primary provider itself is down (see
+ * shouldFallBack).
  */
 export async function visionComplete(opts: {
   prompt: string
@@ -324,14 +355,15 @@ export async function visionComplete(opts: {
   system?: string
   maxTokens?: number
   clientId?: string
-  /** Authorized tenant session (picks the Gemini key); null = no tenant, shared key. */
+  /** Authorized tenant session (picks the model and key); null = no tenant, shared key. */
   sessionId: string | null
 }): Promise<VisionResult & { model?: string }> {
   if (opts.images.length === 0) {
     return { ok: false, kind: "config", detail: "no images supplied" }
   }
-  const primary = await visionOnce(modelForClass("vision"), opts)
-  if (!shouldFallBack(primary)) return { ...primary, model: modelForClass("vision") }
+  const primaryModel = modelFor("vision", opts.sessionId)
+  const primary = await visionOnce(primaryModel, opts)
+  if (!shouldFallBack(primary)) return { ...primary, model: primaryModel }
 
   console.warn("vision: primary failed, falling back", primary.ok ? "" : `${primary.kind} ${primary.detail.slice(0, 120)}`)
   const second = await visionOnce(VISION_FALLBACK_MODEL, opts)

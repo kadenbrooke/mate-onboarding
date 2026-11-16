@@ -191,7 +191,7 @@ export async function POST(
     system,
     images,
     clientId: (session.contact_id as string) ?? undefined,
-    // The gated session row, so the tenant's own Gemini key pays for the read.
+    // The gated session row, so the tenant's own model and key do the read.
     sessionId: session.id as string,
   });
 
