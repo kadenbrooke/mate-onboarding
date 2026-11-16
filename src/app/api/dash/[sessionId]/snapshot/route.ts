@@ -11,6 +11,7 @@ import {
   storagePathFor,
   MAX_IMAGES_PER_REQUEST,
 } from '@/lib/leads/snapshotImage';
+import { heicToJpeg } from '@/lib/leads/heicToJpeg';
 import { parseSnapshotReply } from '@/lib/leads/snapshotParse';
 import { snapshotPrompt } from '@/lib/leads/snapshotPrompt';
 import { visionComplete, type VisionImage } from '@/lib/demo/portkey';
@@ -125,15 +126,26 @@ export async function POST(
   }
 
   // Sniff every file BEFORE anything is stored or sent upstream. The declared
-  // content-type is the client's claim, not evidence.
-  const prepared: { bytes: Uint8Array; mime: string; ext: string }[] = [];
+  // content-type is the client's claim, not evidence. A HEIC is also converted
+  // here, before any row exists: the model cannot read HEIC, so it gets a JPEG
+  // copy, while storage keeps the original upload.
+  const prepared: { bytes: Uint8Array; mime: string; ext: string; vision: VisionImage }[] = [];
   for (const file of files) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const check = checkImage(bytes);
     if (!check.ok) {
       return NextResponse.json({ error: imageRejectionMessage(check.rejection) }, { status: 400 });
     }
-    prepared.push({ bytes, mime: check.mime, ext: check.ext });
+    let vision: VisionImage = { mime: check.mime, bytes };
+    if (check.kind === 'heic') {
+      const jpeg = await heicToJpeg(bytes);
+      if (!jpeg.ok) {
+        console.warn('snapshot: HEIC conversion failed', jpeg.detail.slice(0, 200));
+        return NextResponse.json({ error: imageRejectionMessage({ reason: 'heic-unreadable' }) }, { status: 400 });
+      }
+      vision = { mime: jpeg.mime, bytes: jpeg.bytes };
+    }
+    prepared.push({ bytes, mime: check.mime, ext: check.ext, vision });
   }
 
   // Who is uploading, for the consent record. The gate already proved they may.
@@ -184,7 +196,7 @@ export async function POST(
   // ---- extract -------------------------------------------------------------
 
   const { system, prompt } = snapshotPrompt();
-  const images: VisionImage[] = prepared.map(p => ({ mime: p.mime, bytes: p.bytes }));
+  const images: VisionImage[] = prepared.map(p => p.vision);
 
   const vision = await visionComplete({
     prompt,

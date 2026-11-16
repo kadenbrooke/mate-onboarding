@@ -106,27 +106,24 @@ describe('checkImage', () => {
       .toEqual({ ok: false, rejection: { reason: 'unsupported-type' } });
   });
 
-  // Claude and the OpenAI fallback both 400 on image/heic (probed 2026-11-16),
-  // so HEIC is refused at upload unless explicitly turned back on.
-  it('rejects HEIC by default', () => {
-    expect(checkImage(isoBmff('heic'), {}))
-      .toEqual({ ok: false, rejection: { reason: 'heic-disabled' } });
-    // HEIC-specific: everything else still works.
-    expect(checkImage(JPEG, {}).ok).toBe(true);
+  it('passes HEIC through by default', () => {
+    expect(checkImage(isoBmff('heic'), env).ok).toBe(true);
   });
 
-  it('passes HEIC through only when LEAD_SNAPSHOT_ALLOW_HEIC=1', () => {
-    expect(checkImage(isoBmff('heic'), { LEAD_SNAPSHOT_ALLOW_HEIC: '1' }).ok).toBe(true);
-    expect(checkImage(isoBmff('heic'), { LEAD_SNAPSHOT_ALLOW_HEIC: '0' }).ok).toBe(false);
+  it('rejects HEIC when the escape hatch is set', () => {
+    const off = { LEAD_SNAPSHOT_ALLOW_HEIC: '0' };
+    expect(checkImage(isoBmff('heic'), off))
+      .toEqual({ ok: false, rejection: { reason: 'heic-disabled' } });
+    // The flag is HEIC-specific: everything else still works.
+    expect(checkImage(JPEG, off).ok).toBe(true);
   });
 });
 
 describe('heicAllowed', () => {
-  it('defaults to off, and only "1" turns it on', () => {
-    expect(heicAllowed({})).toBe(false);
+  it('defaults to on, and only "0" turns it off', () => {
+    expect(heicAllowed({})).toBe(true);
     expect(heicAllowed({ LEAD_SNAPSHOT_ALLOW_HEIC: '1' })).toBe(true);
     expect(heicAllowed({ LEAD_SNAPSHOT_ALLOW_HEIC: '0' })).toBe(false);
-    expect(heicAllowed({ LEAD_SNAPSHOT_ALLOW_HEIC: 'true' })).toBe(false);
   });
 });
 
@@ -137,6 +134,7 @@ describe('imageRejectionMessage', () => {
       { reason: 'too-large' as const, bytes: 12 * 1024 * 1024 },
       { reason: 'unsupported-type' as const },
       { reason: 'heic-disabled' as const },
+      { reason: 'heic-unreadable' as const },
     ];
     for (const r of all) {
       const msg = imageRejectionMessage(r);

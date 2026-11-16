@@ -1,5 +1,4 @@
-import { generateText } from "ai"
-import { openai } from "@ai-sdk/openai"
+import { chatComplete } from "@/lib/demo/portkey"
 import { derivePalette } from "./palette"
 import { extractColorsFromCss, extractColorCandidates } from "./css-colors"
 
@@ -415,12 +414,14 @@ export async function extractCompanyData(html: string | null): Promise<CompanyDa
     .replace(/<[^>]+>/g, " ")
     .slice(0, 8000)
 
-  // Lazy-init the model client inside the handler (never at module scope), so a
-  // missing OPENAI key at build/import time can't break the app.
+  // The `extract` class (Claude Haiku since 2026-11-16, was gpt-4o-mini), with
+  // the OpenAI credit-out fallback. Onboarding research has no tenant yet.
+  // chatComplete answers "" on any model failure, which parses to {} below.
   try {
-    const { text: json } = await generateText({
-      model: openai("gpt-4o-mini"),
-      prompt: [
+    const json = await chatComplete({
+      taskClass: "extract",
+      sessionId: null,
+      messages: [{ role: "user", content: [
         "Extract company info from the website text below as a single JSON object.",
         "Keys (all optional, omit if truly unknown):",
         "  name: string",
@@ -436,7 +437,7 @@ export async function extractCompanyData(html: string | null): Promise<CompanyDa
         "",
         "Website text:",
         text,
-      ].join("\n"),
+      ].join("\n") }],
     })
     return JSON.parse(json.replace(/```json|```/g, "").trim()) as CompanyData
   } catch {

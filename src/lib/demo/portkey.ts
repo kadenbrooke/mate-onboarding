@@ -70,6 +70,9 @@ export const TASK_MODELS = {
   reply: "anthropic/claude-haiku-5-5",
   // Dashboard assistant chat: longer answers about the client's data.
   assistant: "anthropic/claude-sonnet-5-5",
+  // Onboarding chat (/api/mate): a multi-turn conversation that calls tools to
+  // save what the client tells it. Through the AI SDK (./portkeyModel).
+  onboarding: "anthropic/claude-sonnet-5-5",
   // Lead Snapshot: read a photographed note into lead fields. This is the
   // `long-doc-vision` class from amos's .claude/model-routing/registry.json,
   // pinned by the Lead Snapshot spec. piiSafe: true is BINDING here, because a
@@ -102,6 +105,8 @@ export const MIN_MAX_TOKENS: Record<TaskClass, number> = {
   reply: 256,
   // Same headroom over a multi-paragraph answer.
   assistant: 2500,
+  // A short chat turn plus tool calls, per step.
+  onboarding: 1500,
   // Generous on purpose. A multi-lead photo returns an array of objects, and
   // the empty-output trap in the header note bites hardest when the budget is
   // tight. 2500 matches what amos-ui gives its own image ingest.
@@ -195,6 +200,56 @@ export function isCreditOut(status: number, body: string): boolean {
   return status === 402 || (status >= 400 && status < 500 && CREDIT_EXHAUSTED.test(body))
 }
 
+/** Everything needed to call one model through the gateway (or the bypass). */
+export type PortkeyConnection =
+  | {
+      ok: true
+      provider: Provider
+      /** Bare model id forwarded upstream (creator/ prefix stripped). */
+      model: string
+      /** Base URL that ends in /v1 (OpenAI-compatible). */
+      baseURL: string
+      /** The provider key, sent as Authorization: Bearer. */
+      apiKey: string
+      /** Gateway headers (none on the native bypass). */
+      headers: Record<string, string>
+    }
+  | { ok: false; detail: string }
+
+/**
+ * Resolve a `creator/model` id for an authorized session into a gateway
+ * connection, or refuse when its key is missing. Shared by the raw fetch paths
+ * here and the AI SDK model in ./portkeyModel, so both route and fail closed
+ * the same way.
+ */
+export function portkeyConnection(modelId: string, sessionId: string | null, surface?: string): PortkeyConnection {
+  const { provider, model } = parseModelId(modelId)
+  const resolved = providerKey(provider, sessionId)
+  if (!resolved.ok) return resolved
+
+  const bypass = process.env.LLM_PORTKEY_BYPASS === "1"
+
+  // Bypass -> provider-native OpenAI-compatible endpoint. Only OpenAI exposes a
+  // drop-in /v1/chat/completions natively; Google/Anthropic do not, so the bypass
+  // is only meaningful for openai upstreams. For google (our default) the bypass
+  // still targets Portkey's URL unless PORTKEY_BASE_URL is repointed, so in
+  // practice the KVM2-outage failover for THIS app is: flip TASK_MODELS to an
+  // openai model AND set LLM_PORTKEY_BYPASS=1, or repoint PORTKEY_BASE_URL. Kept
+  // simple on purpose — documented in the go-live notes.
+  const native = bypass && provider === "openai"
+  const baseUrl = native ? "https://api.openai.com" : portkeyBaseUrl()
+
+  const headers: Record<string, string> = {}
+  if (!native) {
+    headers["x-portkey-provider"] = provider
+    headers["x-portkey-metadata"] = JSON.stringify(
+      surface ? { app: "mate-onboarding", surface } : { app: "mate-onboarding" },
+    )
+    Object.assign(headers, portkeyGatewayKeyHeader())
+  }
+  return { ok: true, provider, model, baseURL: `${baseUrl}/v1`, apiKey: resolved.key, headers }
+}
+
 type Prepared =
   | { ok: true; provider: Provider; url: string; init: RequestInit }
   | { ok: false; detail: string }
@@ -206,9 +261,8 @@ function prepareChat(
   opts: { messages: ChatMessage[]; system?: string; maxTokens?: number; sessionId: string | null },
   extra: { stream: boolean; surface?: string; timeoutMs: number },
 ): Prepared {
-  const { provider, model } = parseModelId(modelId)
-  const resolved = providerKey(provider, opts.sessionId)
-  if (!resolved.ok) return resolved
+  const conn = portkeyConnection(modelId, opts.sessionId, extra.surface)
+  if (!conn.ok) return conn
 
   const messages: ChatMessage[] = opts.system
     ? [{ role: "system", content: opts.system }, ...opts.messages]
@@ -219,41 +273,18 @@ function prepareChat(
   const floor = MIN_MAX_TOKENS[cls]
   const maxTokens = Math.max(opts.maxTokens ?? floor, floor)
 
-  const bypass = process.env.LLM_PORTKEY_BYPASS === "1"
-
-  // Bypass -> provider-native OpenAI-compatible endpoint. Only OpenAI exposes a
-  // drop-in /v1/chat/completions natively; Google/Anthropic do not, so the bypass
-  // is only meaningful for openai upstreams. For google (our default) the bypass
-  // still targets Portkey's URL unless PORTKEY_BASE_URL is repointed, so in
-  // practice the KVM2-outage failover for THIS app is: flip TASK_MODELS to an
-  // openai model AND set LLM_PORTKEY_BYPASS=1, or repoint PORTKEY_BASE_URL. Kept
-  // simple on purpose — documented in the go-live notes.
-  const baseUrl = bypass && provider === "openai" ? "https://api.openai.com" : portkeyBaseUrl()
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Authorization: `Bearer ${resolved.key}`,
-  }
-  if (!(bypass && provider === "openai")) {
-    headers["x-portkey-provider"] = provider
-    headers["x-portkey-metadata"] = JSON.stringify(
-      extra.surface ? { app: "mate-onboarding", surface: extra.surface } : { app: "mate-onboarding" },
-    )
-    Object.assign(headers, portkeyGatewayKeyHeader())
-  }
-
   return {
     ok: true,
-    provider,
-    url: `${baseUrl}/v1/chat/completions`,
+    provider: conn.provider,
+    url: `${conn.baseURL}/chat/completions`,
     init: {
       method: "POST",
-      headers,
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${conn.apiKey}`, ...conn.headers },
       body: JSON.stringify({
-        model,
+        model: conn.model,
         messages,
         max_tokens: maxTokens,
-        ...paramsFor(cls, provider),
+        ...paramsFor(cls, conn.provider),
         ...(extra.stream ? { stream: true } : {}),
       }),
       signal: AbortSignal.timeout(extra.timeoutMs),

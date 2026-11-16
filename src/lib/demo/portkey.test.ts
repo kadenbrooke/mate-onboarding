@@ -27,6 +27,7 @@ describe("modelForClass / TASK_MODELS", () => {
       extract: "anthropic/claude-haiku-5-5",
       reply: "anthropic/claude-haiku-5-5",
       assistant: "anthropic/claude-sonnet-5-5",
+      onboarding: "anthropic/claude-sonnet-5-5",
       vision: "anthropic/claude-sonnet-5-5",
     })
   })

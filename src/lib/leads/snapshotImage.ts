@@ -34,13 +34,14 @@
 // to JPEG when a photo goes through a file input, so the camera-capture path
 // this feature is built around may rarely produce a HEIC at all.
 //
-// 2026-11-16: HEIC is now OFF by default. The reader moved to Claude (with an
-// OpenAI fallback), and a live probe through Portkey got a 400 from both for
-// image/heic: Claude takes jpeg/png/gif/webp only, OpenAI the same. Forwarding
-// a HEIC would only turn into "the reader is unavailable", so it is refused at
-// upload with the plain-language heic-disabled message instead.
-// LEAD_SNAPSHOT_ALLOW_HEIC=1 turns pass-through back on, which only makes sense
-// with a vision model that reads HEIC or a libheif-enabled sharp to transcode.
+// 2026-11-16: the reader moved to Claude (with an OpenAI fallback), and a live
+// probe through Portkey got a 400 from both for image/heic: they take
+// jpeg/png/gif/webp only. So a HEIC is no longer passed through; the route
+// converts it to JPEG for the model with heicToJpeg (./heicToJpeg, libheif as
+// WebAssembly, since sharp's prebuilt binary cannot decode HEVC). The stored
+// evidence is still the original HEIC. A HEIC that will not decode is refused
+// with the heic-unreadable message. LEAD_SNAPSHOT_ALLOW_HEIC=0 still refuses
+// every HEIC at upload.
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGES_PER_REQUEST = 5;
@@ -92,7 +93,8 @@ export type ImageRejection =
   | { reason: 'empty' }
   | { reason: 'too-large'; bytes: number }
   | { reason: 'unsupported-type' }
-  | { reason: 'heic-disabled' };
+  | { reason: 'heic-disabled' }
+  | { reason: 'heic-unreadable' };
 
 export type ImageCheck =
   | { ok: true; kind: ImageKind; mime: string; ext: string; bytes: number }
@@ -102,9 +104,9 @@ export type ImageCheck =
  *  so a test can pass a plain object literal, while process.env still fits. */
 export type SnapshotEnv = Record<string, string | undefined>;
 
-/** Whether HEIC uploads are forwarded. Off unless set to "1". See the header note. */
+/** Whether HEIC uploads are accepted (and converted for the model). See the header note. */
 export function heicAllowed(env: SnapshotEnv = process.env): boolean {
-  return env.LEAD_SNAPSHOT_ALLOW_HEIC === '1';
+  return env.LEAD_SNAPSHOT_ALLOW_HEIC !== '0';
 }
 
 /** Validate one uploaded image. Pure: no IO, no network. */
@@ -134,6 +136,8 @@ export function imageRejectionMessage(r: ImageRejection): string {
       return 'That file is not a photo we can read. Use a JPEG, PNG, or WebP.';
     case 'heic-disabled':
       return 'iPhone HEIC photos are not supported right now. Set Camera to Most Compatible, or send a screenshot.';
+    case 'heic-unreadable':
+      return 'We could not open that iPhone photo. Set Camera to Most Compatible, or send a screenshot.';
   }
 }
 

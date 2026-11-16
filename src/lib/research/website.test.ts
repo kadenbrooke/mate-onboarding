@@ -1,4 +1,5 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi, afterEach } from "vitest"
+import * as portkey from "@/lib/demo/portkey"
 import {
   extractBrandFromHtml,
   extractCompanyData,
@@ -121,8 +122,26 @@ describe("extractBrandColorsFromMarkup", () => {
 })
 
 describe("extractCompanyData", () => {
+  afterEach(() => vi.restoreAllMocks())
+
   it("resolves to {} for null html without any network call", async () => {
     const data = await extractCompanyData(null)
     expect(data).toEqual({})
+  })
+
+  it("asks the extract class with no tenant and parses its JSON", async () => {
+    const spy = vi.spyOn(portkey, "chatComplete").mockResolvedValue('```json\n{"name":"Acme Paving"}\n```')
+    const data = await extractCompanyData("<h1>Acme Paving</h1><script>x</script>")
+    expect(data).toEqual({ name: "Acme Paving" })
+    const opts = spy.mock.calls[0][0]
+    expect(opts).toMatchObject({ taskClass: "extract", sessionId: null })
+    expect(opts.messages[0].content).toContain("Acme Paving")
+    expect(opts.messages[0].content).not.toContain("<script>")
+  })
+
+  it("resolves to {} when the model fails or answers junk", async () => {
+    vi.spyOn(portkey, "chatComplete").mockResolvedValueOnce("").mockResolvedValueOnce("sorry")
+    expect(await extractCompanyData("<p>x</p>")).toEqual({})
+    expect(await extractCompanyData("<p>x</p>")).toEqual({})
   })
 })

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
 import { z } from "zod"
-import { openai } from "@ai-sdk/openai"
+import { portkeyLanguageModel } from "@/lib/demo/portkeyModel"
 import { createClient } from "@/lib/supabase/server"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
@@ -266,10 +266,19 @@ export async function POST(req: Request) {
   const businessName =
     (company.name && String(company.name)) || session.mate_name || "your business"
 
-  // openai(...) is instantiated inside the handler so the build never needs
-  // OPENAI_API_KEY. Cost-first model per the model-agnostic rule.
+  // The `onboarding` class (Claude Sonnet since 2026-11-16, was gpt-4o-mini),
+  // through the Portkey gateway with the OpenAI credit-out fallback. Built inside
+  // the handler so the build never needs a key. resolvedSessionId can be the
+  // body's claim on a demo session, not an authorized tenant, so the call runs
+  // with no tenant (the default models), never a tenant's route.
+  const llm = portkeyLanguageModel("onboarding", null, "onboarding")
+  if (!llm.ok) {
+    return NextResponse.json({ error: "Mate is unavailable right now. Try again shortly." }, { status: 503 })
+  }
   const result = streamText({
-    model: openai("gpt-4o-mini"),
+    model: llm.model,
+    // Anthropic requires max_tokens on every call; the class floor covers a turn.
+    maxTokens: llm.maxTokens,
     system: portalMode
       ? matePortalPrompt(session.mate_name ?? "Mate", businessName, capabilitiesText)
       : mateSystemPrompt(

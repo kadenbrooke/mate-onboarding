@@ -16,7 +16,11 @@
 // 2026-11-16 (extract/assistant/vision gemini-3.6-flash, reply gemini-2.5-flash).
 //
 // Demo-only tasks (website -> company profile, First Responder SMS reply) always
-// run with no tenant, so they run on the gemini arms and claude-demo only. The
+// run with no tenant, so they run on the gemini arms and claude-demo only.
+//
+// Second table: the three features that ran on OpenAI gpt-4o-mini before
+// 2026-11-16 (onboarding website research, the sandbox reply, the onboarding
+// chat with tools), old model vs Claude, through the same code the routes call. The
 // SMS reply here goes through the app's `reply` class; the edge function
 // (supabase/functions/_shared/portkey.ts) sends the same model id through the
 // same gateway with an 800-token budget, which this mirrors.
@@ -36,6 +40,14 @@ import { buildFrConfig } from "@/lib/demo/fr-config"
 import { extractNoteFields, type NoteFields } from "@/lib/agent/noteExtract"
 import { buildAssistantContext } from "@/lib/assistant/context"
 import { pipelineTotals, type Lead } from "@/lib/metrics/leads"
+import { streamText, tool } from "ai"
+import { portkeyLanguageModel } from "@/lib/demo/portkeyModel"
+import { extractCompanyData } from "@/lib/research/website"
+import { sandboxSystemPrompt } from "@/lib/mate/sandbox-agent"
+import { mateSystemPrompt } from "@/lib/mate/system-prompt"
+import { toolSchemas } from "@/lib/mate/tools"
+import { capabilitySummary } from "@/lib/mate/capability"
+import { missingRequired, REQUIRED_LABELS } from "@/lib/mate/required-fields"
 import { snapshotPrompt } from "@/lib/leads/snapshotPrompt"
 import { parseSnapshotReply } from "@/lib/leads/snapshotParse"
 
@@ -62,7 +74,16 @@ const OLD_GEMINI_MODELS: Record<TaskClass, string> = {
   reply: "google/gemini-2.5-flash",
   assistant: "google/gemini-3.6-flash",
   vision: "google/gemini-3.6-flash",
+  // The onboarding chat was never on Gemini (it was gpt-4o-mini); unused by these arms.
+  onboarding: "openai/gpt-4o-mini",
 }
+
+// The formerly-OpenAI features, old model vs the Claude defaults.
+const OLD_OPENAI = "openai/gpt-4o-mini"
+const OPENAI_PATH_ARMS: { id: string; models: Partial<Record<TaskClass, string>> }[] = [
+  { id: "openai-old", models: { extract: OLD_OPENAI, reply: OLD_OPENAI, onboarding: OLD_OPENAI } },
+  { id: "claude", models: {} },
+]
 const CLAUDE_MODELS = { ...TASK_MODELS } as Record<TaskClass, string>
 // Captured once, before any arm rewrites GEMINI_API_KEY: reading process.env
 // per arm would hand a later arm the previous arm's key.
@@ -321,6 +342,49 @@ function scorePhoto(p: Photo, text: string | null): { right: number; total: numb
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Formerly-OpenAI features
+// ---------------------------------------------------------------------------
+
+// Sandbox: the owner's in-browser First Responder preview (/api/sandbox).
+const SANDBOX_COLLECTED = { company: { name: "Summit Ridge Paving" }, services: ["asphalt driveways", "sealcoating"] }
+
+// Onboarding chat (/api/mate): each turn must call the right tool with the right value.
+type Call = { tool: string; args: Record<string, unknown> }
+const ONBOARD_COMPANY = { name: "Summit Ridge Paving", services: ["sealcoating"] }
+const ONBOARDING: { say: string; want: string; pass: (calls: Call[]) => boolean }[] = [
+  { say: "Our main business phone is 801-555-0110.", want: "saveField with the phone",
+    pass: calls => calls.some(c => c.tool === "saveField" && String(c.args.value).replace(/\D/g, "").endsWith("8015550110")) },
+  { say: "We do driveway sealcoating, crack filling and parking lot striping.", want: "confirmServices with all three",
+    pass: calls => calls.some(c => c.tool === "confirmServices" && Array.isArray(c.args.services) &&
+      (c.args.services as string[]).length >= 3 && (c.args.services as string[]).some(x => /strip/i.test(x))) },
+  { say: "Can you also run our Facebook ad campaigns for us?", want: "requestBuild",
+    pass: calls => calls.some(c => c.tool === "requestBuild") },
+]
+
+async function onboardingTurn(say: string): Promise<{ calls: Call[]; text: string; error: string | null }> {
+  const llm = portkeyLanguageModel("onboarding", null, "eval")
+  if (!llm.ok) return { calls: [], text: "", error: llm.detail }
+  const calls: Call[] = []
+  const record = (name: string) => async (args: Record<string, unknown>) => { calls.push({ tool: name, args }); return "Saved." }
+  const tools = Object.fromEntries(Object.entries(toolSchemas).map(([name, def]) =>
+    [name, tool({ description: def.description, parameters: def.parameters, execute: record(name) as never })]))
+  let error: string | null = null
+  const result = streamText({
+    model: llm.model,
+    maxTokens: llm.maxTokens,
+    maxSteps: 5,
+    system: mateSystemPrompt("Mate", ONBOARD_COMPANY, capabilitySummary([]), missingRequired({}).map(k => REQUIRED_LABELS[k])),
+    messages: [{ role: "user", content: say }],
+    tools,
+    abortSignal: AbortSignal.timeout(60000),
+    onError: ({ error: e }) => { error = String(e).slice(0, 200) },
+  })
+  let text = ""
+  for await (const part of result.fullStream) if (part.type === "text-delta") text += part.textDelta
+  return { calls, text: text.trim(), error }
+}
+
 it("Mate AI features: Gemini vs Claude on fake inputs, J&C and non-J&C routes", async () => {
   mkdirSync(OUT, { recursive: true })
   const pngs = await Promise.all(PHOTOS.map(async p => {
@@ -331,6 +395,7 @@ it("Mate AI features: Gemini vs Claude on fake inputs, J&C and non-J&C routes", 
 
   const results: Record<string, unknown> = {}
   const rows: string[] = []
+  const rows2: string[] = []
   const ms = (t: number) => `${Math.round((Date.now() - t) / 100) / 10}s`
 
   try {
@@ -416,6 +481,56 @@ it("Mate AI features: Gemini vs Claude on fake inputs, J&C and non-J&C routes", 
         (arm.demoTasks ? `site ${sRight}/${sTotal}  sms ${rPass}/${TEXTS.length} (${demoTime})` : "site n/a  sms n/a"),
       )
     }
+
+    // Second table: the formerly-OpenAI features.
+    process.env.GEMINI_API_KEY = SHARED_GEMINI
+    delete TASK_PARAMS.reply
+    for (const arm of OPENAI_PATH_ARMS) {
+      Object.assign(TASK_MODELS as unknown as Record<TaskClass, string>, CLAUDE_MODELS, arm.models)
+      let t = Date.now()
+      let rsRight = 0, rsTotal = 0
+      const researchMisses: string[] = []
+      for (const [i, g] of SITES.entries()) {
+        const sc = scoreSite(g, await extractCompanyData(g.html))
+        rsRight += sc.right; rsTotal += sc.total
+        if (sc.misses.length) researchMisses.push(`site${i + 1}: ${sc.misses.join(", ")}`)
+      }
+      const researchTime = ms(t)
+      t = Date.now()
+      let sbPass = 0
+      const sandbox: { text: string; pass: boolean; reply: string }[] = []
+      for (const text of TEXTS) {
+        const reply = await chatComplete({
+          taskClass: "reply", sessionId: null, system: sandboxSystemPrompt(SANDBOX_COLLECTED, "Mate"),
+          messages: [{ role: "user", content: text }], maxTokens: 300,
+        })
+        const pass = replyOk(reply)
+        if (pass) sbPass++
+        sandbox.push({ text, pass, reply })
+      }
+      const sandboxTime = ms(t)
+      t = Date.now()
+      let obPass = 0
+      const onboarding: { say: string; want: string; pass: boolean; calls: Call[]; text: string; error: string | null }[] = []
+      for (const c of ONBOARDING) {
+        const turn = await onboardingTurn(c.say)
+        const pass = !turn.error && c.pass(turn.calls)
+        if (pass) obPass++
+        onboarding.push({ say: c.say, want: c.want, pass, ...turn })
+      }
+      const onboardingTime = ms(t)
+      results[arm.id] = {
+        models: { research: TASK_MODELS.extract, sandbox: TASK_MODELS.reply, onboarding: TASK_MODELS.onboarding },
+        research: { right: rsRight, total: rsTotal, misses: researchMisses, time: researchTime },
+        sandbox: { pass: sbPass, total: TEXTS.length, replies: sandbox, time: sandboxTime },
+        onboarding: { pass: obPass, total: ONBOARDING.length, turns: onboarding, time: onboardingTime },
+      }
+      rows2.push(
+        `${arm.id.padEnd(11)} research ${rsRight}/${rsTotal} (${researchTime}) by ${TASK_MODELS.extract}  ` +
+        `sandbox ${sbPass}/${TEXTS.length} (${sandboxTime}) by ${TASK_MODELS.reply}  ` +
+        `onboarding ${obPass}/${ONBOARDING.length} (${onboardingTime}) by ${TASK_MODELS.onboarding}`,
+      )
+    }
   } finally {
     Object.assign(TASK_MODELS as unknown as Record<TaskClass, string>, CLAUDE_MODELS)
     delete TASK_PARAMS.reply
@@ -423,12 +538,22 @@ it("Mate AI features: Gemini vs Claude on fake inputs, J&C and non-J&C routes", 
   }
 
   writeFileSync(join(OUT, "results.json"), JSON.stringify(results, null, 2))
-  console.log(`\nMate Claude eval (fake inputs), results in ${OUT}\n${rows.join("\n")}\n`)
+  console.log(`\nMate Claude eval (fake inputs), results in ${OUT}\n${rows.join("\n")}\n\nFormerly-OpenAI features\n${rows2.join("\n")}\n`)
   type R = {
     notes: { misses: string[] }; vision: { detail: { photo: string; misses: string[] }[] }
     site: { misses: string[] } | null; smsReply: { replies: { pass: boolean; reply: string }[] } | null
   }
-  for (const [id, r] of Object.entries(results) as [string, R][]) {
+  type R2 = {
+    research: { misses: string[] }; sandbox: { replies: { pass: boolean; reply: string }[] }
+    onboarding: { turns: { pass: boolean; want: string; calls: Call[]; error: string | null }[] }
+  }
+  for (const id of OPENAI_PATH_ARMS.map(a => a.id)) {
+    const r = results[id] as R2
+    console.log(`${id} research misses: ${r.research.misses.join(" | ") || "none"}`)
+    for (const x of r.sandbox.replies) if (!x.pass) console.log(`${id} sandbox fail: ${JSON.stringify(x.reply.slice(0, 200))}`)
+    for (const x of r.onboarding.turns) if (!x.pass) console.log(`${id} onboarding fail (${x.want}): calls ${JSON.stringify(x.calls).slice(0, 200)} error ${x.error}`)
+  }
+  for (const [id, r] of Object.entries(results).filter(([id]) => !OPENAI_PATH_ARMS.some(a => a.id === id)) as [string, R][]) {
     console.log(`${id} note misses: ${r.notes.misses.join(" | ") || "none"}`)
     console.log(`${id} vision misses: ${r.vision.detail.map(d => `${d.photo}[${d.misses.join(",")}]`).join(" ")}`)
     if (r.site) console.log(`${id} site misses: ${r.site.misses.join(" | ") || "none"}`)
