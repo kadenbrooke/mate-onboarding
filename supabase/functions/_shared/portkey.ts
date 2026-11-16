@@ -36,29 +36,41 @@ export interface Msg {
   content: string
 }
 
-function providerKey(provider: string): string {
-  switch (provider) {
-    case "google":
-      return Deno.env.get("GEMINI_API_KEY") ?? ""
-    case "openai":
-      return Deno.env.get("OPENAI_API_KEY") ?? ""
-    case "anthropic":
-      return Deno.env.get("ANTHROPIC_API_KEY") ?? ""
-    default:
-      return ""
-  }
+// Env var holding each provider's BYOK key.
+const KEY_ENV: Record<string, string> = {
+  google: "GEMINI_API_KEY",
+  openai: "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
 }
 
-/**
- * Generate a First Responder SMS reply via Portkey. Never throws; returns "" so
- * the caller can fall back to a safe canned line. `system` is the per-session
- * fr_config.system_prompt (the prospect's business voice).
- */
-export async function generateReply(system: string, msgs: Msg[]): Promise<string> {
-  const slash = REPLY_MODEL.indexOf("/")
-  const provider = slash === -1 ? "google" : REPLY_MODEL.slice(0, slash)
-  const model = slash === -1 ? REPLY_MODEL : REPLY_MODEL.slice(slash + 1)
-  const key = providerKey(provider)
+// Retried once when Anthropic says the credit is spent; the same model and the
+// same rule as the app (src/lib/demo/portkey.ts FALLBACK_MODEL / isCreditOut).
+export const FALLBACK_MODEL = "openai/gpt-4o-mini"
+
+// Anthropic reports exhausted credit as a 400 ("Your credit balance is too low
+// to access the Anthropic API"); its billing_error type and a plain 402 mean
+// the same. The one failure that falls back: a bad request, an outage or a
+// missing key still ends in "" and the caller's canned line.
+const CREDIT_EXHAUSTED = /credit balance is too low|"billing_error"/i
+
+export function isCreditOut(status: number, body: string): boolean {
+  return status === 402 || (status >= 400 && status < 500 && CREDIT_EXHAUSTED.test(body))
+}
+
+type Once = { ok: true; text: string } | { ok: false; creditOut: boolean }
+
+async function replyOnce(modelId: string, system: string, msgs: Msg[]): Promise<Once> {
+  const slash = modelId.indexOf("/")
+  const provider = slash === -1 ? "google" : modelId.slice(0, slash)
+  const model = slash === -1 ? modelId : modelId.slice(slash + 1)
+  const envName = KEY_ENV[provider]
+  const key = envName ? Deno.env.get(envName)?.trim() ?? "" : ""
+  // Fail closed: never send an empty key upstream. The log names the
+  // variable, never a value.
+  if (!key) {
+    console.error(`[portkey] ${envName ?? `no key for provider ${provider}`} is not set. Refusing this reply.`)
+    return { ok: false, creditOut: false }
+  }
   const base = Deno.env.get("PORTKEY_BASE_URL") ?? DEFAULT_PORTKEY_BASE_URL
   const gatewayKey = Deno.env.get("PORTKEY_GATEWAY_KEY")?.trim()
 
@@ -90,10 +102,28 @@ export async function generateReply(system: string, msgs: Msg[]): Promise<string
       body: JSON.stringify(payload),
       signal: AbortSignal.timeout(15000),
     })
-    if (!res.ok) return ""
+    if (!res.ok) {
+      const body = await res.text().catch(() => "")
+      return { ok: false, creditOut: isCreditOut(res.status, body) }
+    }
     const json = await res.json()
-    return json?.choices?.[0]?.message?.content?.trim() ?? ""
+    return { ok: true, text: json?.choices?.[0]?.message?.content?.trim() ?? "" }
   } catch {
-    return ""
+    return { ok: false, creditOut: false }
   }
+}
+
+/**
+ * Generate a First Responder SMS reply via Portkey. Never throws; returns "" so
+ * the caller can fall back to a safe canned line. `system` is the per-session
+ * fr_config.system_prompt (the prospect's business voice). A spent Claude
+ * credit retries once on FALLBACK_MODEL; nothing else does.
+ */
+export async function generateReply(system: string, msgs: Msg[]): Promise<string> {
+  const first = await replyOnce(REPLY_MODEL, system, msgs)
+  if (first.ok) return first.text
+  if (!first.creditOut || REPLY_MODEL === FALLBACK_MODEL) return ""
+  console.warn(`[portkey] ${REPLY_MODEL} is out of credit, falling back to ${FALLBACK_MODEL}`)
+  const second = await replyOnce(FALLBACK_MODEL, system, msgs)
+  return second.ok ? second.text : ""
 }

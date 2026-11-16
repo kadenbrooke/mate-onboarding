@@ -4,8 +4,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // The sandbox reply runs on the `reply` class with no tenant. Fake session data only.
 const chatComplete = vi.fn<(opts: unknown) => Promise<string>>();
 vi.mock('@/lib/demo/portkey', () => ({ chatComplete: (opts: unknown) => chatComplete(opts) }));
+const gate = vi.fn();
+vi.mock('@/lib/portal/onboarding-gate', () => ({ checkOnboardingAccess: (_req: Request, id: string) => gate(id) }));
+const serviceReads = vi.fn();
 vi.mock('@/lib/supabase/service', () => ({
-  createServiceClient: () => ({
+  createServiceClient: () => (serviceReads(), {
     from: () => ({
       select: () => ({
         eq: () => ({
@@ -24,7 +27,12 @@ import { POST } from './route';
 const send = (body: unknown) =>
   POST(new Request('http://x/api/sandbox', { method: 'POST', body: JSON.stringify(body) }));
 
-beforeEach(() => chatComplete.mockReset());
+beforeEach(() => {
+  chatComplete.mockReset();
+  serviceReads.mockReset();
+  gate.mockReset();
+  gate.mockResolvedValue({ ok: true });
+});
 
 describe('POST /api/sandbox', () => {
   it('asks the reply class with no tenant, the persona and the history', async () => {
@@ -42,6 +50,15 @@ describe('POST /api/sandbox', () => {
       { role: 'assistant', content: 'Hello' },
       { role: 'user', content: 'how much for sealcoat' },
     ]);
+  });
+
+  it("refuses another tenant's session before reading it or calling the model", async () => {
+    gate.mockResolvedValue({ ok: false, status: 403, error: 'Not your dashboard.' });
+    const res = await send({ sessionId: 'someone-elses-session', message: 'hi' });
+    expect(res.status).toBe(403);
+    expect(gate).toHaveBeenCalledWith('someone-elses-session');
+    expect(serviceReads).not.toHaveBeenCalled();
+    expect(chatComplete).not.toHaveBeenCalled();
   });
 
   it('answers the canned line when the model returns nothing', async () => {

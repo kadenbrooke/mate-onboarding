@@ -40,7 +40,8 @@
 // converts it to JPEG for the model with heicToJpeg (./heicToJpeg, libheif as
 // WebAssembly, since sharp's prebuilt binary cannot decode HEVC). The stored
 // evidence is still the original HEIC. A HEIC that will not decode is refused
-// with the heic-unreadable message. LEAD_SNAPSHOT_ALLOW_HEIC=0 still refuses
+// with the heic-unreadable message, and one larger than heicToJpeg's pixel cap
+// (read from its header, before any decode) with heic-too-large. LEAD_SNAPSHOT_ALLOW_HEIC=0 still refuses
 // every HEIC at upload.
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -94,7 +95,8 @@ export type ImageRejection =
   | { reason: 'too-large'; bytes: number }
   | { reason: 'unsupported-type' }
   | { reason: 'heic-disabled' }
-  | { reason: 'heic-unreadable' };
+  | { reason: 'heic-unreadable' }
+  | { reason: 'heic-too-large'; megapixels: number };
 
 export type ImageCheck =
   | { ok: true; kind: ImageKind; mime: string; ext: string; bytes: number }
@@ -138,6 +140,8 @@ export function imageRejectionMessage(r: ImageRejection): string {
       return 'iPhone HEIC photos are not supported right now. Set Camera to Most Compatible, or send a screenshot.';
     case 'heic-unreadable':
       return 'We could not open that iPhone photo. Set Camera to Most Compatible, or send a screenshot.';
+    case 'heic-too-large':
+      return `That iPhone photo is ${r.megapixels} megapixels, too large to read here. Set Camera to Most Compatible, or send a screenshot.`;
   }
 }
 

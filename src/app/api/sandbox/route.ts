@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { chatComplete } from "@/lib/demo/portkey"
 import { createServiceClient } from "@/lib/supabase/service"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 import { sandboxSystemPrompt } from "@/lib/mate/sandbox-agent"
 
 // POST /api/sandbox — the personalized in-browser reveal.
@@ -9,7 +10,9 @@ import { sandboxSystemPrompt } from "@/lib/mate/sandbox-agent"
 // reply in their brand voice, using their real business name + services. This is
 // a DEMO: it loads `collected` from the session to seed the agent's persona but
 // it does NOT persist anything (no DB writes, ephemeral). The conversation
-// history is maintained client-side and posted back on each turn.
+// history is maintained client-side and posted back on each turn. The session
+// is authorized first (checkOnboardingAccess), so a caller cannot seed the
+// persona with another tenant's profile by sending its id.
 //
 // Cost-first per .claude/rules/model-agnostic.md: 1-2 sentence SMS qualify
 // replies are the cheapest-model-that-clears-the-bar case, so this is the
@@ -57,6 +60,11 @@ export async function POST(req: Request) {
   }
   if (typeof message !== "string" || message.trim() === "") {
     return NextResponse.json({ error: "Missing or invalid message" }, { status: 400 })
+  }
+
+  const access = await checkOnboardingAccess(req, sessionId)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
   }
 
   // Service-role client, created INSIDE the handler, never at module scope.

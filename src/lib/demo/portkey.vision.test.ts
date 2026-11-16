@@ -52,9 +52,11 @@ describe('visionComplete fallback', () => {
     expect(headers['x-amos-gateway-key']).toBe('gateway-test-key');
   });
 
-  it('falls back to OpenAI on a 429 from the primary', async () => {
+  const CREDIT_OUT = { type: 'error', error: { type: 'invalid_request_error', message: 'Your credit balance is too low to access the Anthropic API.' } };
+
+  it('falls back to OpenAI when the Claude credit is spent', async () => {
     fetchMock
-      .mockImplementationOnce(() => reply(429, { error: { message: 'prepayment credits are depleted' } }))
+      .mockImplementationOnce(() => reply(400, CREDIT_OUT))
       .mockImplementationOnce(() => reply(200, okBody('{"candidates":[{"name":"A"}]}')));
     const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: true, model: VISION_FALLBACK_MODEL });
@@ -63,17 +65,29 @@ describe('visionComplete fallback', () => {
     expect(modelOf(fetchMock.mock.calls[1])).toBe('gpt-4o-mini');
   });
 
-  it('falls back on a 5xx and on a transport failure', async () => {
+  it('also falls back on a 402 billing answer', async () => {
     fetchMock
-      .mockImplementationOnce(() => reply(503, 'gateway down'))
+      .mockImplementationOnce(() => reply(402, { error: { type: 'billing_error' } }))
       .mockImplementationOnce(() => reply(200, okBody('x')));
-    expect((await visionComplete({ prompt: 'p', images: [img], sessionId: null })).ok).toBe(true);
+    expect(await visionComplete({ prompt: 'p', images: [img], sessionId: null })).toMatchObject({ ok: true, model: VISION_FALLBACK_MODEL });
+  });
+
+  // Credit-out only: a client photo goes to a second provider for the billing
+  // event and nothing else (the same isCreditOut the text classes use).
+  it('does NOT fall back on a 429, a 5xx, or a transport failure', async () => {
+    fetchMock.mockImplementationOnce(() => reply(429, { error: { message: 'rate limited' } }));
+    expect(await visionComplete({ prompt: 'p', images: [img], sessionId: null })).toMatchObject({ ok: false, kind: 'http' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
 
     fetchMock.mockReset();
-    fetchMock
-      .mockImplementationOnce(() => Promise.reject(new Error('ECONNRESET')))
-      .mockImplementationOnce(() => reply(200, okBody('x')));
-    expect((await visionComplete({ prompt: 'p', images: [img], sessionId: null })).ok).toBe(true);
+    fetchMock.mockImplementationOnce(() => reply(503, 'gateway down'));
+    expect(await visionComplete({ prompt: 'p', images: [img], sessionId: null })).toMatchObject({ ok: false, kind: 'http' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockReset();
+    fetchMock.mockImplementationOnce(() => Promise.reject(new Error('ECONNRESET')));
+    expect(await visionComplete({ prompt: 'p', images: [img], sessionId: null })).toMatchObject({ ok: false, kind: 'network' });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('does NOT fall back on a 400: a bad request is our bug, not the provider', async () => {
@@ -90,9 +104,9 @@ describe('visionComplete fallback', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('reports the fallback failure when both are down', async () => {
+  it('reports the fallback failure when the credit is spent and OpenAI is down too', async () => {
     fetchMock
-      .mockImplementationOnce(() => reply(429, 'depleted'))
+      .mockImplementationOnce(() => reply(400, CREDIT_OUT))
       .mockImplementationOnce(() => reply(502, 'also down'));
     const r = await visionComplete({ prompt: 'p', images: [img], sessionId: null });
     expect(r).toMatchObject({ ok: false, kind: 'http', model: VISION_FALLBACK_MODEL });

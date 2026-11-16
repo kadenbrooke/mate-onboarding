@@ -140,8 +140,11 @@ export async function POST(
     if (check.kind === 'heic') {
       const jpeg = await heicToJpeg(bytes);
       if (!jpeg.ok) {
-        console.warn('snapshot: HEIC conversion failed', jpeg.detail.slice(0, 200));
-        return NextResponse.json({ error: imageRejectionMessage({ reason: 'heic-unreadable' }) }, { status: 400 });
+        const rejection = jpeg.reason === 'too-large'
+          ? { reason: 'heic-too-large' as const, megapixels: Math.round((jpeg.width * jpeg.height) / 1e6) }
+          : { reason: 'heic-unreadable' as const };
+        if (jpeg.reason === 'unreadable') console.warn('snapshot: HEIC conversion failed', jpeg.detail.slice(0, 200));
+        return NextResponse.json({ error: imageRejectionMessage(rejection) }, { status: 400 });
       }
       vision = { mime: jpeg.mime, bytes: jpeg.bytes };
     }

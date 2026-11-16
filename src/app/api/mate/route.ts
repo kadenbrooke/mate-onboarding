@@ -2,7 +2,7 @@ import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
 import { z } from "zod"
 import { portkeyLanguageModel } from "@/lib/demo/portkeyModel"
-import { createClient } from "@/lib/supabase/server"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
 import {
@@ -56,6 +56,14 @@ export async function POST(req: Request) {
     if (verified) resolvedSessionId = verified
   }
 
+  // Authorize THIS session before anything reads it: a member, internal user or
+  // demo session, or the signed-in creator holding its signed cookie. Knowing
+  // the id is not enough, or another tenant's profile would reach the model.
+  const access = await checkOnboardingAccess(req, resolvedSessionId)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
+  }
+
   // Service-role client, created INSIDE the handler, never at module scope.
   // Bypasses RLS so this trusted server route can load/persist onboarding_sessions.
   const supabase = createServiceClient()
@@ -73,18 +81,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
-  // Real (non-demo) sessions require a signed-in user; demo sessions stay
-  // anonymous for the public Instant Demo flow. Membership-binding (user owns
-  // THIS session) is Plan-3 hardening.
-  if (!(session as { is_demo?: boolean | null }).is_demo) {
-    const ssr = await createClient()
-    const {
-      data: { user },
-    } = await ssr.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "Sign in required." }, { status: 401 })
-    }
-  }
+  // Sign-in and membership were checked above (checkOnboardingAccess); demo
+  // sessions stay anonymous for the public Instant Demo flow.
 
   // Working copy of the collected blob. Tool executes mutate this via the pure
   // reducer; it is persisted after the stream finishes.

@@ -135,6 +135,7 @@ describe('imageRejectionMessage', () => {
       { reason: 'unsupported-type' as const },
       { reason: 'heic-disabled' as const },
       { reason: 'heic-unreadable' as const },
+      { reason: 'heic-too-large' as const, megapixels: 49 },
     ];
     for (const r of all) {
       const msg = imageRejectionMessage(r);

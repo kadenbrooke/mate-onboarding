@@ -393,19 +393,17 @@ export type VisionResult =
  * gateway with a working key, and this model does vision cheaply. piiSafe
  * holds: it is OpenAI direct, not an OpenRouter-backed row.
  *
- * Only PROVIDER failures fall through (429, 5xx, transport, and Anthropic's
- * out-of-credit answer). A 4xx that says the request itself is bad, or a
- * clean-but-empty answer, is returned as is, because retrying the same bad
- * request on another model hides the bug.
+ * Since 2026-11-16 only a spent credit falls through, by the same isCreditOut
+ * predicate the text classes use: a client photo goes to a second provider
+ * only for the billing event this fallback exists for. A 429, a 5xx, a
+ * transport error, a bad request, or a clean-but-empty answer is returned as
+ * is, and the route tells the client to try again (or retake the photo).
  */
 export const VISION_FALLBACK_MODEL = FALLBACK_MODEL
 
 function shouldFallBack(r: VisionResult): boolean {
-  if (r.ok) return false
-  if (r.kind === "network") return true
-  if (r.kind !== "http") return false
-  const status = Number(r.detail.slice(0, 3))
-  return status === 429 || status >= 500 || isCreditOut(status, r.detail)
+  if (r.ok || r.kind !== "http") return false
+  return isCreditOut(Number(r.detail.slice(0, 3)), r.detail)
 }
 
 /**
@@ -419,8 +417,7 @@ function shouldFallBack(r: VisionResult): boolean {
  * would look identical to a blurry photo.
  *
  * Tries the session's vision model first (modelFor), then
- * VISION_FALLBACK_MODEL when the primary provider itself is down (see
- * shouldFallBack).
+ * VISION_FALLBACK_MODEL when the Claude credit is spent (see shouldFallBack).
  */
 export async function visionComplete(opts: {
   prompt: string
