@@ -39,27 +39,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing or invalid message" }, { status: 400 })
   }
 
-  let resolvedSessionId = sessionId
-  const secret = process.env.MATE_SESSION_SECRET
-  const cookieToken = req.headers.get("cookie")?.match(/(?:^|;\s*)mate_session=([^;]+)/)?.[1]
-  if (secret && cookieToken) {
-    const { verifySession } = await import("@/lib/session-cookie")
-    // decodeURIComponent throws on malformed percent sequences; a garbage
-    // cookie must fall back to the body sessionId, never 500.
-    let decoded: string | null = null
-    try {
-      decoded = decodeURIComponent(cookieToken)
-    } catch {
-      decoded = null
-    }
-    const verified = decoded ? verifySession(decoded, secret) : null
-    if (verified) resolvedSessionId = verified
-  }
+  // The session the body names is the one authorized and written, never a
+  // different one from the mate_session cookie: a stale cookie from an earlier
+  // onboarding must not redirect this turn (or its persistence) to that
+  // session. The cookie only counts as proof inside checkOnboardingAccess, and
+  // only when it is for this exact session.
 
   // Authorize THIS session before anything reads it: a member, internal user or
   // demo session, or the signed-in creator holding its signed cookie. Knowing
   // the id is not enough, or another tenant's profile would reach the model.
-  const access = await checkOnboardingAccess(req, resolvedSessionId)
+  const access = await checkOnboardingAccess(req, sessionId)
   if (!access.ok) {
     return NextResponse.json({ error: access.error }, { status: access.status })
   }
@@ -71,7 +60,7 @@ export async function POST(req: Request) {
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
     .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key, step, status, is_demo")
-    .eq("id", resolvedSessionId)
+    .eq("id", sessionId)
     .maybeSingle()
 
   if (loadError) {
@@ -266,7 +255,7 @@ export async function POST(req: Request) {
 
   // The `onboarding` class (Claude Sonnet since 2026-11-16, was gpt-4o-mini),
   // through the Portkey gateway with the OpenAI credit-out fallback. Built inside
-  // the handler so the build never needs a key. resolvedSessionId can be the
+  // the handler so the build never needs a key. sessionId can be the
   // body's claim on a demo session, not an authorized tenant, so the call runs
   // with no tenant (the default models), never a tenant's route.
   const llm = portkeyLanguageModel("onboarding", null, "onboarding")
@@ -323,7 +312,7 @@ export async function POST(req: Request) {
             messages: nextMessages,
             updated_at: now,
           })
-          .eq("id", resolvedSessionId)
+          .eq("id", sessionId)
 
         if (saveError) {
           console.error("mate route: failed to persist session", saveError.message)

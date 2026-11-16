@@ -1,10 +1,9 @@
 /**
  * Signed session cookie (phase-2 hardening). Format: "<sessionId>.<hmac>",
  * HMAC-SHA256 over the id with MATE_SESSION_SECRET. HttpOnly cookie set at
- * session creation; /api/portal and /api/mate PREFER a valid cookie and fall
- * back to the UUID param/body (v1 continuity: links sent before this shipped,
- * and cookie-less browsers, keep working). Tools always scope by the
- * server-resolved id regardless of transport.
+ * session creation. It never replaces a session a request names: it is proof
+ * of creation for that exact session in lib/portal/onboarding-gate, and
+ * /api/portal falls back to it only when no ?session= is given.
  *
  * Node crypto only (routes run on the node runtime); pure + testable.
  */

@@ -7,6 +7,13 @@ import { practiceStatus } from "@/lib/portal/practice"
 import { publicRedirect } from "@/lib/public-url"
 import { pathSegment } from "@/lib/portal/safe-next"
 import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
+import { createClient } from "@/lib/supabase/server"
+import {
+  GOOGLE_STATE_COOKIE,
+  checkGoogleCallback,
+  googleStateSecret,
+  verifyGoogleState,
+} from "@/lib/portal/google-oauth-state"
 
 /**
  * GET /api/connect/google/callback: Google OAuth redirect target.
@@ -33,10 +40,11 @@ const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 // and let the daily cron backfill rather than hang the flow.
 const FIRST_SYNC_TIMEOUT_MS = 8000
 
-function backToOnboard(req: NextRequest, status: string): NextResponse {
+function backToOnboard(req: NextRequest, status: string, sessionId: string): NextResponse {
   // A dedicated deployment has no /onboard (lib/supabase/tenant-proxy): send
-  // the user back to their own dashboard instead.
-  const sessionId = req.nextUrl.searchParams.get("state") ?? ""
+  // the user back to their own dashboard instead. sessionId comes from a state
+  // whose signature verified ("" otherwise), never the raw parameter; it only
+  // picks where to send the browser.
   const dedicated = readTenancy().mode === "dedicated"
   const path = !dedicated
     ? "/onboard"
@@ -46,43 +54,72 @@ function backToOnboard(req: NextRequest, status: string): NextResponse {
   return publicRedirect(`${path}?${new URLSearchParams({ google: status })}`, req)
 }
 
-export async function GET(req: NextRequest) {
+export async function GET(req: NextRequest): Promise<NextResponse> {
+  const res = await connect(req)
+  // The nonce is single-use: clear it whatever the outcome.
+  res.cookies.set(GOOGLE_STATE_COOKIE, "", { path: "/api/connect/google", maxAge: 0 })
+  return res
+}
+
+async function connect(req: NextRequest): Promise<NextResponse> {
+  let secret: string | null = null
+  try {
+    secret = googleStateSecret()
+  } catch {
+    secret = null
+  }
+  const stateParam = req.nextUrl.searchParams.get("state")
+  // Where to send the browser back to: the session in a correctly signed state.
+  const returnSession = (secret && verifyGoogleState(stateParam, secret)?.sessionId) || ""
+  const back = (status: string): NextResponse => backToOnboard(req, status, returnSession)
+
   const clientId = process.env.GOOGLE_OAUTH_CLIENT_ID
   const clientSecret = process.env.GOOGLE_OAUTH_CLIENT_SECRET
   const redirectUri = process.env.GOOGLE_OAUTH_REDIRECT_URI
 
   // Not configured: treat as a soft "connect later", never crash.
   if (!clientId || !clientSecret || !redirectUri) {
-    return backToOnboard(req, "unconfigured")
+    return back("unconfigured")
   }
 
   // Google returns ?error=access_denied when the user declines. Tolerate it.
   const error = req.nextUrl.searchParams.get("error")
   if (error) {
-    return backToOnboard(req, "denied")
+    return back("denied")
   }
 
   const code = req.nextUrl.searchParams.get("code")
-  const sessionId = req.nextUrl.searchParams.get("state") ?? ""
   if (!code) {
-    return backToOnboard(req, "missing_code")
+    return back("missing_code")
   }
   // Read-only deployment (lib/supabase/write-gate): nothing may be stored yet,
   // so the code is never exchanged.
-  if (!dataWritesEnabled()) return backToOnboard(req, "writes_disabled")
+  if (!dataWritesEnabled()) return back("writes_disabled")
 
-  if (sessionId) {
-    // Never store a token for a session whose data this deployment does not own.
-    if (!routeSession(sessionId).served) return backToOnboard(req, "unavailable")
-    // `state` is only the session id the flow started with, so re-check that
-    // THIS browser may open that session before the code is exchanged: without
-    // it, anyone could attach their own Google calendar to another tenant.
-    const access = await checkOnboardingAccess(req, sessionId)
-    if (!access.ok || access.access === "demo") return backToOnboard(req, "forbidden")
-    const practice = await practiceStatus(createServiceClient(), sessionId)
-    if (!practice.ok) return backToOnboard(req, "unavailable")
-    if (practice.isPractice) return backToOnboard(req, "practice")
-  }
+  // Before ANY read or code exchange: the signed state must verify and be
+  // unexpired, this browser's nonce cookie must match it, and the signed-in
+  // user must be the one who started the flow (lib/portal/google-oauth-state).
+  // Only then is its session id trusted; the raw parameter never is.
+  if (!secret) return back("unconfigured")
+  const { data: { user } } = await (await createClient()).auth.getUser()
+  const check = checkGoogleCallback({
+    state: stateParam,
+    cookieNonce: req.cookies.get(GOOGLE_STATE_COOKIE)?.value,
+    userId: user?.id,
+    secret,
+  })
+  if (!check.ok) return back(check.reason === "expired" ? "expired" : "forbidden")
+  const sessionId = check.sessionId
+
+  // Never store a token for a session whose data this deployment does not own.
+  if (!routeSession(sessionId).served) return back("unavailable")
+  // Access may have changed since the flow started (membership removed), so
+  // re-check that this caller may still open the session.
+  const access = await checkOnboardingAccess(req, sessionId)
+  if (!access.ok || access.access === "demo") return back("forbidden")
+  const practice = await practiceStatus(createServiceClient(), sessionId)
+  if (!practice.ok) return back("unavailable")
+  if (practice.isPractice) return back("practice")
 
   // Exchange the authorization code for tokens.
   let refreshToken: string | null = null
@@ -101,7 +138,7 @@ export async function GET(req: NextRequest) {
 
     if (!tokenRes.ok) {
       // Do not log the response body; it can carry sensitive material.
-      return backToOnboard(req, "token_exchange_failed")
+      return back("token_exchange_failed")
     }
 
     const tokens = (await tokenRes.json()) as {
@@ -113,11 +150,11 @@ export async function GET(req: NextRequest) {
     refreshToken =
       typeof tokens.refresh_token === "string" ? tokens.refresh_token : null
   } catch {
-    return backToOnboard(req, "token_exchange_error")
+    return back("token_exchange_error")
   }
 
-  // Persist the connection on the session + flip the capability live, if we can
-  // resolve the session. A missing session id is not fatal; the user still
+  // Persist the connection on the verified session + flip the capability live.
+  // A session row that has gone missing is not fatal; the user still
   // authenticated, so just redirect back cleanly.
   if (sessionId) {
     try {
@@ -195,9 +232,9 @@ export async function GET(req: NextRequest) {
     } catch {
       // Persistence hiccup; the user still connected. Redirect cleanly and let
       // the completion route re-seed capabilities regardless.
-      return backToOnboard(req, "connected")
+      return back("connected")
     }
   }
 
-  return backToOnboard(req, "connected")
+  return back("connected")
 }

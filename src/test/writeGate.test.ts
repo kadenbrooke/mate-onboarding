@@ -13,6 +13,7 @@ import { createHmac } from 'crypto';
 import { NextRequest } from 'next/server';
 import { createFakeDb, type FakeDb } from '@/test/fakeSupabase';
 import { signState, QB_STATE_COOKIE } from '@/lib/qbo/state';
+import { signGoogleState, GOOGLE_STATE_COOKIE } from '@/lib/portal/google-oauth-state';
 
 const h = vi.hoisted(() => ({
   data: null as unknown as FakeDb,
@@ -41,6 +42,7 @@ const T = {
   cron: 'cron-token-for-tests',
   calcom: 'calcom-webhook-key-for-tests',
   qbState: 'qb-state-key-for-tests',
+  googleState: 'google-state-key-for-tests',
 };
 const MEMBER = { id: 'user-own', email: 'owner@client.test' };
 
@@ -56,6 +58,7 @@ const ENV: Record<string, string> = {
   CALCOM_WEBHOOK_SECRET: T.calcom,
   CALCOM_BOOKING_OWNERS: `${OWN}=event:123`,
   QBO_STATE_SECRET: T.qbState,
+  GOOGLE_OAUTH_STATE_SECRET: T.googleState,
   META_JC_SESSION_ID: OWN,
   JC_ONBOARDING_SESSION_ID: OWN,
   GOOGLE_OAUTH_CLIENT_ID: 'google-client-for-tests',
@@ -117,6 +120,14 @@ const calcomBody = JSON.stringify({
   payload: { uid: 'bk-gate-1', eventTypeId: 123, attendees: [{ phoneNumber: '+18015550101' }] },
 });
 
+function googleCallback(): NextRequest {
+  const nonce = 'google-nonce-for-tests';
+  const state = signGoogleState({ sessionId: OWN, nonce, userId: MEMBER.id, exp: Date.now() + 60_000 }, T.googleState);
+  return new NextRequest(`${HOST}/api/connect/google/callback?code=c&state=${encodeURIComponent(state)}`, {
+    headers: { cookie: `${GOOGLE_STATE_COOKIE}=${nonce}` },
+  });
+}
+
 function qbCallback(): NextRequest {
   const nonce = 'nonce-for-tests';
   const state = signState({ sessionId: OWN, nonce }, T.qbState);
@@ -163,7 +174,7 @@ export const WRITE_CASES: Case[] = [
     req: () => get(`/api/connect/google?sessionId=${OWN}`) },
   { route: 'api/connect/google/callback/route.ts', method: 'GET', off: 'redirect',
     load: () => import('@/app/api/connect/google/callback/route'),
-    req: () => get(`/api/connect/google/callback?code=c&state=${OWN}`) },
+    req: googleCallback },
   { route: 'api/qb/connect/route.ts', method: 'GET', off: 'redirect',
     load: () => import('@/app/api/qb/connect/route'),
     req: () => get(`/api/qb/connect?sessionId=${OWN}`) },

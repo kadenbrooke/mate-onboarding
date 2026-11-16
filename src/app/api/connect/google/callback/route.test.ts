@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
 
-const { practiceStatus, fetchMock, syncSessionCalendar, gate } = vi.hoisted(() => ({
+const { practiceStatus, fetchMock, syncSessionCalendar, gate, auth } = vi.hoisted(() => ({
   practiceStatus: vi.fn(),
   gate: vi.fn(),
+  auth: { user: { id: 'user-own' } as { id: string } | null },
   fetchMock: vi.fn(),
   syncSessionCalendar: vi.fn(async () => ({ status: 'ok', upserted: 0, removed: 0 })),
 }));
@@ -30,19 +31,40 @@ vi.mock('@/lib/supabase/service', () => {
 });
 vi.mock('@/lib/portal/practice', () => ({ practiceStatus }));
 vi.mock('@/lib/portal/onboarding-gate', () => ({ checkOnboardingAccess: (_req: Request, id: string) => gate(id) }));
+vi.mock('@/lib/supabase/server', () => ({
+  createClient: async () => ({ auth: { getUser: async () => ({ data: { user: auth.user } }) } }),
+}));
 vi.mock('@/lib/metrics/calendarSyncRun', () => ({ syncSessionCalendar }));
 vi.stubGlobal('fetch', fetchMock);
 
 import { GET } from './route';
+import { GOOGLE_STATE_COOKIE, signGoogleState } from '@/lib/portal/google-oauth-state';
 
-function request(sessionId: string) {
-  return new NextRequest(`http://mate.test/api/connect/google/callback?state=${sessionId}&code=fake-code`);
+const SECRET = 'google-state-test-secret';
+const NONCE = 'nonce-from-the-start-leg';
+
+/** A callback as Google sends it back, with a state signed the way the start leg signs it. */
+function callback(
+  sessionId: string,
+  o: { userId?: string; exp?: number; cookie?: string | null; secret?: string; rawState?: string } = {},
+) {
+  const state = o.rawState ?? signGoogleState(
+    { sessionId, nonce: NONCE, userId: o.userId ?? 'user-own', exp: o.exp ?? Date.now() + 60_000 },
+    o.secret ?? SECRET,
+  );
+  const cookie = o.cookie === undefined ? NONCE : o.cookie;
+  return new NextRequest(`http://mate.test/api/connect/google/callback?state=${encodeURIComponent(state)}&code=fake-code`, {
+    headers: cookie === null ? {} : { cookie: `${GOOGLE_STATE_COOKIE}=${cookie}` },
+  });
 }
+const request = (sessionId: string) => callback(sessionId);
 
 beforeEach(() => {
   practiceStatus.mockReset();
   gate.mockReset();
   gate.mockResolvedValue({ ok: true, access: 'creator' });
+  auth.user = { id: 'user-own' };
+  process.env.GOOGLE_OAUTH_STATE_SECRET = SECRET;
   fetchMock.mockReset();
   syncSessionCalendar.mockClear();
   process.env.GOOGLE_OAUTH_CLIENT_ID = 'fake-client';
@@ -87,5 +109,55 @@ describe('GET /api/connect/google/callback', () => {
     const response = await GET(request('demo-session'));
     expect(response.headers.get('location')).toContain('google=forbidden');
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  describe('signed state, before any read or code exchange', () => {
+    beforeEach(() => practiceStatus.mockResolvedValue({ ok: true, isPractice: false }));
+
+    function expectRefused(response: Response, status = 'forbidden') {
+      expect(response.headers.get('location')).toContain(`google=${status}`);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(gate).not.toHaveBeenCalled();
+      expect(practiceStatus).not.toHaveBeenCalled();
+      expect(syncSessionCalendar).not.toHaveBeenCalled();
+    }
+
+    it('refuses a forged state: the bare session id, a wrong key, or a tampered payload', async () => {
+      expectRefused(await GET(callback('normal-session', { rawState: 'normal-session' })));
+      expectRefused(await GET(callback('normal-session', { secret: 'attacker-key' })));
+      const good = signGoogleState({ sessionId: 'normal-session', nonce: NONCE, userId: 'user-own', exp: Date.now() + 60_000 }, SECRET);
+      const [, sig] = good.split('.');
+      const swapped = Buffer.from(JSON.stringify({ s: 'other-session', n: NONCE, u: 'user-own', e: Date.now() + 60_000 })).toString('base64url');
+      expectRefused(await GET(callback('normal-session', { rawState: `${swapped}.${sig}` })));
+    });
+
+    it('refuses when the nonce cookie is missing or does not match', async () => {
+      expectRefused(await GET(callback('normal-session', { cookie: null })));
+      expectRefused(await GET(callback('normal-session', { cookie: 'some-other-nonce' })));
+    });
+
+    it('refuses an expired state', async () => {
+      expectRefused(await GET(callback('normal-session', { exp: Date.now() - 1 })), 'expired');
+    });
+
+    it('refuses when another user (or nobody) is signed in', async () => {
+      expectRefused(await GET(callback('normal-session', { userId: 'user-attacker' })));
+      auth.user = null;
+      expectRefused(await GET(callback('normal-session')));
+    });
+
+    it('a valid flow exchanges the code for the session in the state, and clears the nonce', async () => {
+      const response = await GET(callback('normal-session'));
+      expect(response.headers.get('location')).toContain('google=connected');
+      expect(gate).toHaveBeenCalledWith('normal-session');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(syncSessionCalendar).toHaveBeenCalledWith('normal-session', expect.any(String));
+      expect(response.cookies.get(GOOGLE_STATE_COOKIE)).toMatchObject({ value: '', maxAge: 0 });
+    });
+
+    it('clears the nonce on a refusal too', async () => {
+      const response = await GET(callback('normal-session', { cookie: 'some-other-nonce' }));
+      expect(response.cookies.get(GOOGLE_STATE_COOKIE)).toMatchObject({ value: '', maxAge: 0 });
+    });
   });
 });
