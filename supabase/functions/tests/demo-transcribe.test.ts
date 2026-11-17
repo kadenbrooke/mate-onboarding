@@ -158,8 +158,7 @@ function setTranscribeEnv() {
   Deno.env.set("TELNYX_API_KEY", "tk")
   Deno.env.set("DEMO_TELNYX_NUMBER", "+13854409744")
   // Portkey provider key so generateReply attempts the (stubbed) model fetch.
-  Deno.env.set("GOOGLE_API_KEY", "gk")
-  Deno.env.set("GEMINI_API_KEY", "gk")
+  Deno.env.set("ANTHROPIC_API_KEY", "ak")
 }
 function clearTranscribeEnv() {
   for (
@@ -169,8 +168,7 @@ function clearTranscribeEnv() {
       "SUPABASE_SERVICE_ROLE_KEY",
       "TELNYX_API_KEY",
       "DEMO_TELNYX_NUMBER",
-      "GOOGLE_API_KEY",
-      "GEMINI_API_KEY",
+      "ANTHROPIC_API_KEY",
       "DEMO_VM_MODEL_MAX_PER_DAY",
     ]
   ) Deno.env.delete(k)

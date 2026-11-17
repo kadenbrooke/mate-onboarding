@@ -39,6 +39,10 @@ describe("isPrivateIpv6", () => {
     expect(isPrivateIpv6("::ffff:127.0.0.1")).toBe(true)
     expect(isPrivateIpv6("::ffff:169.254.169.254")).toBe(true)
     expect(isPrivateIpv6("::ffff:8.8.8.8")).toBe(false)
+    // The hex form the URL parser produces for the same addresses.
+    expect(isPrivateIpv6("::ffff:7f00:1")).toBe(true)
+    expect(isPrivateIpv6("::ffff:a9fe:a9fe")).toBe(true)
+    expect(isPrivateIpv6("::ffff:808:808")).toBe(false)
   })
 
   it("allows a public IPv6", () => {

@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server"
 import { streamText, tool } from "ai"
 import { z } from "zod"
-import { openai } from "@ai-sdk/openai"
-import { createClient } from "@/lib/supabase/server"
+import { portkeyLanguageModel } from "@/lib/demo/portkeyModel"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 import { createServiceClient } from "@/lib/supabase/service"
 import { mateSystemPrompt, type ResearchedCompany } from "@/lib/mate/system-prompt"
 import {
@@ -39,21 +39,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing or invalid message" }, { status: 400 })
   }
 
-  let resolvedSessionId = sessionId
-  const secret = process.env.MATE_SESSION_SECRET
-  const cookieToken = req.headers.get("cookie")?.match(/(?:^|;\s*)mate_session=([^;]+)/)?.[1]
-  if (secret && cookieToken) {
-    const { verifySession } = await import("@/lib/session-cookie")
-    // decodeURIComponent throws on malformed percent sequences; a garbage
-    // cookie must fall back to the body sessionId, never 500.
-    let decoded: string | null = null
-    try {
-      decoded = decodeURIComponent(cookieToken)
-    } catch {
-      decoded = null
-    }
-    const verified = decoded ? verifySession(decoded, secret) : null
-    if (verified) resolvedSessionId = verified
+  // The session the body names is the one authorized and written, never a
+  // different one from the mate_session cookie: a stale cookie from an earlier
+  // onboarding must not redirect this turn (or its persistence) to that
+  // session. The cookie only counts as proof inside checkOnboardingAccess, and
+  // only when it is for this exact session.
+
+  // Authorize THIS session before anything reads it: a member, internal user or
+  // demo session, or the signed-in creator holding its signed cookie. Knowing
+  // the id is not enough, or another tenant's profile would reach the model.
+  const access = await checkOnboardingAccess(req, sessionId)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
   }
 
   // Service-role client, created INSIDE the handler, never at module scope.
@@ -63,7 +60,7 @@ export async function POST(req: Request) {
   const { data: session, error: loadError } = await supabase
     .from("onboarding_sessions")
     .select("id, mate_name, collected, messages, website_url, brand, contact_id, reseller_key, step, status, is_demo")
-    .eq("id", resolvedSessionId)
+    .eq("id", sessionId)
     .maybeSingle()
 
   if (loadError) {
@@ -73,18 +70,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Session not found" }, { status: 404 })
   }
 
-  // Real (non-demo) sessions require a signed-in user; demo sessions stay
-  // anonymous for the public Instant Demo flow. Membership-binding (user owns
-  // THIS session) is Plan-3 hardening.
-  if (!(session as { is_demo?: boolean | null }).is_demo) {
-    const ssr = await createClient()
-    const {
-      data: { user },
-    } = await ssr.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: "Sign in required." }, { status: 401 })
-    }
-  }
+  // Sign-in and membership were checked above (checkOnboardingAccess); demo
+  // sessions stay anonymous for the public Instant Demo flow.
 
   // Working copy of the collected blob. Tool executes mutate this via the pure
   // reducer; it is persisted after the stream finishes.
@@ -266,10 +253,19 @@ export async function POST(req: Request) {
   const businessName =
     (company.name && String(company.name)) || session.mate_name || "your business"
 
-  // openai(...) is instantiated inside the handler so the build never needs
-  // OPENAI_API_KEY. Cost-first model per the model-agnostic rule.
+  // The `onboarding` class (Claude Sonnet since 2026-11-16, was gpt-4o-mini),
+  // through the Portkey gateway with the OpenAI credit-out fallback. Built inside
+  // the handler so the build never needs a key. sessionId can be the
+  // body's claim on a demo session, not an authorized tenant, so the call runs
+  // with no tenant (the default models), never a tenant's route.
+  const llm = portkeyLanguageModel("onboarding", null, "onboarding")
+  if (!llm.ok) {
+    return NextResponse.json({ error: "Mate is unavailable right now. Try again shortly." }, { status: 503 })
+  }
   const result = streamText({
-    model: openai("gpt-4o-mini"),
+    model: llm.model,
+    // Anthropic requires max_tokens on every call; the class floor covers a turn.
+    maxTokens: llm.maxTokens,
     system: portalMode
       ? matePortalPrompt(session.mate_name ?? "Mate", businessName, capabilitiesText)
       : mateSystemPrompt(
@@ -316,7 +312,7 @@ export async function POST(req: Request) {
             messages: nextMessages,
             updated_at: now,
           })
-          .eq("id", resolvedSessionId)
+          .eq("id", sessionId)
 
         if (saveError) {
           console.error("mate route: failed to persist session", saveError.message)

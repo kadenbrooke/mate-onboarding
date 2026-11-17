@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import {
-  fetchSite,
   extractBrandFromHtml,
   resolveBrandColors,
   extractCompanyData,
 } from "@/lib/research/website"
 import { createServiceClient } from "@/lib/supabase/service"
 import { defaultMateName } from "@/lib/mate/name"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
+import { fetchSiteGuarded } from "@/lib/demo/fetch-site-guarded"
+import { allowAnonymousResearch } from "@/lib/research/rate-limit"
 
 export async function POST(req: NextRequest) {
   // Parse + validate body. Bad JSON or missing url => 400, don't throw.
@@ -32,7 +34,27 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const { html, finalUrl } = await fetchSite(url)
+  // Saving the result writes that session's `collected` profile, so the caller
+  // must be allowed to open it (checkOnboardingAccess). Checked before the
+  // scrape, so a refused caller costs nothing.
+  if (sessionId) {
+    const access = await checkOnboardingAccess(req, sessionId)
+    if (!access.ok) {
+      return NextResponse.json({ error: access.error }, { status: access.status })
+    }
+  } else if (!(await allowAnonymousResearch(createServiceClient(), req))) {
+    // No session: nobody is signed in to hold accountable for the fetch and the
+    // Claude extraction, so a per-IP daily cap applies (fails closed).
+    return NextResponse.json({ error: "Too many lookups today. Try again tomorrow." }, { status: 429 })
+  }
+
+  // The caller names the URL, so the fetch is SSRF-guarded (no private,
+  // loopback or metadata addresses, every redirect hop re-checked). The brand
+  // step's logo, stylesheet and manifest fetches go through the same guard.
+  const { html, finalUrl, blocked } = await fetchSiteGuarded(url)
+  if (blocked) {
+    return NextResponse.json({ error: "That address cannot be looked up." }, { status: 400 })
+  }
   const baseBrand = extractBrandFromHtml(html ?? "", finalUrl)
   // Resolve real brand colors via the source chain (logo palette -> theme-color
   // -> manifest -> defaults). Non-throwing; research must never 500.

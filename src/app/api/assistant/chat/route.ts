@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
   }
 
   // session_id passed assertAssistantAccess and owns chat_id (both above), so
-  // it is the authorized tenant and picks that tenant's Gemini key.
+  // it is the authorized tenant and picks that tenant's model and key.
   const upstream = await portkeyChatStream({ system, messages, taskClass: 'assistant', sessionId: session_id });
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json({ error: 'assistant unavailable' }, { status: 502 });

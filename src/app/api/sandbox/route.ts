@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
-import { generateText } from "ai"
-import { openai } from "@ai-sdk/openai"
+import { chatComplete } from "@/lib/demo/portkey"
 import { createServiceClient } from "@/lib/supabase/service"
+import { checkOnboardingAccess } from "@/lib/portal/onboarding-gate"
 import { sandboxSystemPrompt } from "@/lib/mate/sandbox-agent"
 
 // POST /api/sandbox — the personalized in-browser reveal.
@@ -10,10 +10,14 @@ import { sandboxSystemPrompt } from "@/lib/mate/sandbox-agent"
 // reply in their brand voice, using their real business name + services. This is
 // a DEMO: it loads `collected` from the session to seed the agent's persona but
 // it does NOT persist anything (no DB writes, ephemeral). The conversation
-// history is maintained client-side and posted back on each turn.
+// history is maintained client-side and posted back on each turn. The session
+// is authorized first (checkOnboardingAccess), so a caller cannot seed the
+// persona with another tenant's profile by sending its id.
 //
-// Cost-first gpt-4o-mini per .claude/rules/model-agnostic.md: 1-2 sentence SMS
-// qualify replies are the cheapest-model-that-clears-the-bar case.
+// Cost-first per .claude/rules/model-agnostic.md: 1-2 sentence SMS qualify
+// replies are the cheapest-model-that-clears-the-bar case, so this is the
+// `reply` class (Claude Haiku since 2026-11-16, was gpt-4o-mini), the same model
+// as the live First Responder, with the OpenAI credit-out fallback.
 
 type Turn = { role: "user" | "assistant"; content: string }
 
@@ -58,6 +62,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing or invalid message" }, { status: 400 })
   }
 
+  const access = await checkOnboardingAccess(req, sessionId)
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status })
+  }
+
   // Service-role client, created INSIDE the handler, never at module scope.
   // Used ONLY to load the session's collected persona for the sandbox seed. The
   // sandbox does not write to the DB.
@@ -85,25 +94,20 @@ export async function POST(req: Request) {
   const priorTurns = sanitizeHistory(history)
   const messages: Turn[] = [...priorTurns, { role: "user", content: message }]
 
-  // openai(...) is instantiated inside the handler so the build never needs
-  // OPENAI_API_KEY. Cost-first model per the model-agnostic rule. A model
-  // failure returns a soft-error JSON — we never throw to the client so the
-  // demo chat keeps flowing.
+  // A model failure returns a soft-error JSON. We never throw to the client, so
+  // the demo chat keeps flowing. chatComplete answers "" on any model failure.
+  // sessionId is the caller's claim, not an authorized tenant, so the call runs
+  // with no tenant (the default models), never a tenant's route.
   try {
-    const { text } = await generateText({
-      model: openai("gpt-4o-mini"),
-      system,
-      messages,
-      maxTokens: 300,
-    })
+    const text = await chatComplete({ taskClass: "reply", sessionId: null, system, messages, maxTokens: 300 })
 
-    const reply = text?.trim()
+    const reply = text.trim()
     if (!reply) {
       return NextResponse.json({ reply: "Thanks! I'll have the team follow up shortly." })
     }
     return NextResponse.json({ reply })
   } catch (err) {
-    console.error("sandbox route: generateText failed", err)
+    console.error("sandbox route: chatComplete failed", err)
     return NextResponse.json({
       reply: "Thanks for reaching out! I'll have the team text you right back.",
     })

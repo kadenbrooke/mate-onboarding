@@ -33,6 +33,16 @@
 // Worth knowing before panicking about this: iOS Safari usually transcodes HEIC
 // to JPEG when a photo goes through a file input, so the camera-capture path
 // this feature is built around may rarely produce a HEIC at all.
+//
+// 2026-11-16: the reader moved to Claude (with an OpenAI fallback), and a live
+// probe through Portkey got a 400 from both for image/heic: they take
+// jpeg/png/gif/webp only. So a HEIC is no longer passed through; the route
+// converts it to JPEG for the model with heicToJpeg (./heicToJpeg, libheif as
+// WebAssembly, since sharp's prebuilt binary cannot decode HEVC). The stored
+// evidence is still the original HEIC. A HEIC that will not decode is refused
+// with the heic-unreadable message, and one larger than heicToJpeg's pixel cap
+// (read from its header, before any decode) with heic-too-large. LEAD_SNAPSHOT_ALLOW_HEIC=0 still refuses
+// every HEIC at upload.
 
 export const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 export const MAX_IMAGES_PER_REQUEST = 5;
@@ -84,7 +94,9 @@ export type ImageRejection =
   | { reason: 'empty' }
   | { reason: 'too-large'; bytes: number }
   | { reason: 'unsupported-type' }
-  | { reason: 'heic-disabled' };
+  | { reason: 'heic-disabled' }
+  | { reason: 'heic-unreadable' }
+  | { reason: 'heic-too-large'; megapixels: number };
 
 export type ImageCheck =
   | { ok: true; kind: ImageKind; mime: string; ext: string; bytes: number }
@@ -94,7 +106,7 @@ export type ImageCheck =
  *  so a test can pass a plain object literal, while process.env still fits. */
 export type SnapshotEnv = Record<string, string | undefined>;
 
-/** Whether HEIC uploads are forwarded. See the header note. */
+/** Whether HEIC uploads are accepted (and converted for the model). See the header note. */
 export function heicAllowed(env: SnapshotEnv = process.env): boolean {
   return env.LEAD_SNAPSHOT_ALLOW_HEIC !== '0';
 }
@@ -126,6 +138,10 @@ export function imageRejectionMessage(r: ImageRejection): string {
       return 'That file is not a photo we can read. Use a JPEG, PNG, or WebP.';
     case 'heic-disabled':
       return 'iPhone HEIC photos are not supported right now. Set Camera to Most Compatible, or send a screenshot.';
+    case 'heic-unreadable':
+      return 'We could not open that iPhone photo. Set Camera to Most Compatible, or send a screenshot.';
+    case 'heic-too-large':
+      return `That iPhone photo is ${r.megapixels} megapixels, too large to read here. Set Camera to Most Compatible, or send a screenshot.`;
   }
 }
 

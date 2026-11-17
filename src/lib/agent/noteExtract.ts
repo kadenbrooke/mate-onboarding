@@ -86,7 +86,7 @@ export function fillableFields(
 }
 
 /** Ask the model for the fields in a note. Returns {} on any failure.
- *  sessionId is the lead's tenant and picks its Gemini key. */
+ *  sessionId is the lead's tenant and picks its model and key. */
 export async function extractNoteFields(note: string, sessionId: string | null): Promise<NoteFields> {
   if (!note.trim()) return {};
   const raw = await chatComplete({

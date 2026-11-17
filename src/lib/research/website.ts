@@ -1,5 +1,5 @@
-import { generateText } from "ai"
-import { openai } from "@ai-sdk/openai"
+import { chatComplete } from "@/lib/demo/portkey"
+import { safeFetch } from "@/lib/demo/safe-fetch"
 import { derivePalette } from "./palette"
 import { extractColorsFromCss, extractColorCandidates } from "./css-colors"
 
@@ -135,22 +135,6 @@ export function extractBrandFromHtml(html: string, baseUrl: string): Brand {
   }
 }
 
-export async function fetchSite(
-  url: string
-): Promise<{ html: string | null; finalUrl: string }> {
-  const finalUrl = normalizeUrl(url)
-  try {
-    const res = await fetch(finalUrl, {
-      headers: { "user-agent": "Mozilla/5.0 (compatible; MateOnboarding/1.0)" },
-      signal: AbortSignal.timeout(8000),
-    })
-    if (!res.ok) return { html: null, finalUrl }
-    return { html: await res.text(), finalUrl }
-  } catch {
-    return { html: null, finalUrl }
-  }
-}
-
 /**
  * Fetch an image URL into a Buffer. Never throws; returns null on any failure,
  * timeout, non-image, or absurd payload so callers can fall through the source
@@ -172,11 +156,12 @@ export async function fetchImageBuffer(url: string): Promise<Buffer | null> {
 
     if (!/^https?:\/\//i.test(url)) return null
 
-    const res = await fetch(url, {
+    // The URL comes from a page's HTML, so it goes through the SSRF guard.
+    const { res } = await safeFetch(url, {
       headers: { "user-agent": "Mozilla/5.0 (compatible; MateOnboarding/1.0)" },
-      signal: AbortSignal.timeout(6000),
+      timeoutMs: 6000,
     })
-    if (!res.ok) return null
+    if (!res?.ok) return null
 
     const type = res.headers.get("content-type") ?? ""
     // Best-effort guard: skip obvious non-images (SVG is fine, sharp reads it).
@@ -212,11 +197,12 @@ async function fetchManifestThemeColor(
     const manifestUrl = resolve(baseUrl, href)
     if (!/^https?:\/\//i.test(manifestUrl)) return null
 
-    const res = await fetch(manifestUrl, {
+    // The URL comes from a page's HTML, so it goes through the SSRF guard.
+    const { res } = await safeFetch(manifestUrl, {
       headers: { "user-agent": "Mozilla/5.0 (compatible; MateOnboarding/1.0)" },
-      signal: AbortSignal.timeout(5000),
+      timeoutMs: 5000,
     })
-    if (!res.ok) return null
+    if (!res?.ok) return null
 
     const json = (await res.json()) as { theme_color?: unknown }
     const color =
@@ -234,11 +220,12 @@ async function fetchManifestThemeColor(
 async function fetchStylesheet(url: string): Promise<string> {
   try {
     if (!/^https?:\/\//i.test(url)) return ""
-    const res = await fetch(url, {
+    // The URL comes from a page's HTML, so it goes through the SSRF guard.
+    const { res } = await safeFetch(url, {
       headers: { "user-agent": "Mozilla/5.0 (compatible; MateOnboarding/1.0)" },
-      signal: AbortSignal.timeout(4000),
+      timeoutMs: 4000,
     })
-    if (!res.ok) return ""
+    if (!res?.ok) return ""
     const type = res.headers.get("content-type") ?? ""
     // Best-effort guard: only trust things that look like CSS.
     if (type && !/css|text\/plain|octet-stream/i.test(type)) return ""
@@ -415,12 +402,14 @@ export async function extractCompanyData(html: string | null): Promise<CompanyDa
     .replace(/<[^>]+>/g, " ")
     .slice(0, 8000)
 
-  // Lazy-init the model client inside the handler (never at module scope), so a
-  // missing OPENAI key at build/import time can't break the app.
+  // The `extract` class (Claude Haiku since 2026-11-16, was gpt-4o-mini), with
+  // the OpenAI credit-out fallback. Onboarding research has no tenant yet.
+  // chatComplete answers "" on any model failure, which parses to {} below.
   try {
-    const { text: json } = await generateText({
-      model: openai("gpt-4o-mini"),
-      prompt: [
+    const json = await chatComplete({
+      taskClass: "extract",
+      sessionId: null,
+      messages: [{ role: "user", content: [
         "Extract company info from the website text below as a single JSON object.",
         "Keys (all optional, omit if truly unknown):",
         "  name: string",
@@ -436,7 +425,7 @@ export async function extractCompanyData(html: string | null): Promise<CompanyDa
         "",
         "Website text:",
         text,
-      ].join("\n"),
+      ].join("\n") }],
     })
     return JSON.parse(json.replace(/```json|```/g, "").trim()) as CompanyData
   } catch {

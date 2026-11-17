@@ -65,16 +65,17 @@ until every item below is done. Env vars are in `.env.example` under the demo se
    local dev-skip (no key => accept) applies ONLY when not in a deployed context.
 2. **Telnyx Messaging env:** `TELNYX_API_KEY`, `DEMO_TELNYX_NUMBER` (the one shared
    demo number), optional `TELNYX_MESSAGING_PROFILE_ID`. Unset => sends no-op.
-3. **Model key:** `GEMINI_API_KEY` (default model `google/gemini-2.5-flash`),
-   `PORTKEY_BASE_URL`. Also `DEMO_REPLY_MAX_TOKENS` (default 800): the budget must
-   cover Gemini's HIDDEN reasoning tokens PLUS the visible SMS. A tight budget (e.g.
-   300) gets fully consumed by reasoning and the reply truncates mid-sentence
-   (`finish_reason:"length"`). The client also requests `reasoning_effort:"none"`.
-   The edge functions serve the prospect demo only, so they always use this shared
-   key. The dashboard's own AI calls (assistant chat, Lead Snapshot, call-note
-   extraction) pick a per-client key by session in `src/lib/demo/geminiKey.ts`
-   (J&C: `GEMINI_API_KEY_CARSON` on Vercel). A mapped client whose variable is
-   unset fails closed; it never falls back to `GEMINI_API_KEY`.
+3. **Model key:** `ANTHROPIC_API_KEY` (default reply model `anthropic/claude-haiku-5-5`
+   since 2026-11-16, was `google/gemini-2.5-flash`), `PORTKEY_BASE_URL`. Leave
+   `DEMO_REPLY_MODEL` unset so the default applies. `DEMO_REPLY_MAX_TOKENS` (default 800)
+   was sized for Gemini's HIDDEN reasoning tokens plus the visible SMS; Claude Haiku does
+   not reason unless asked, so it is ample. `reasoning_effort:"none"` is sent to a google
+   model only. The edge functions serve the prospect demo only. The dashboard's own AI
+   calls (assistant chat, Lead Snapshot, call-note extraction) run on Claude too
+   (`src/lib/demo/portkey.ts`, J&C pinned in `src/lib/demo/tenantModels.ts`), with an
+   OpenAI fallback when the Claude credit is spent. No Gemini key is read at runtime;
+   `src/lib/demo/geminiKey.ts` stays as a guard so J&C can never land on a shared Gemini
+   key if a google model is ever configured again.
 4. **Voicemail flow tokens (Flow A):** `DEMO_TRANSCRIBE_TOKEN` (auth for the
    transcribe callback; fails CLOSED when unset in prod) and `DEMO_TEXTBACK_DELAY_
    SECONDS` (default 30, the no-VM text-back buffer). See "Voicemail + text-back
