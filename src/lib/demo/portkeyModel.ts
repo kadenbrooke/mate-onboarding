@@ -21,6 +21,108 @@ export type PortkeyModel =
   | { ok: true; model: LanguageModelV1; modelId: string; maxTokens: number }
   | { ok: false; detail: string }
 
+// A tool that takes no arguments streams from the gateway (Claude through
+// Portkey) with arguments "" and nothing after it but the finish chunk.
+// @ai-sdk/openai v1 emits a streamed tool call only once its arguments parse as
+// JSON, and never finalizes a pending one at stream end, so it drops the call:
+// the step ends "tool-calls" with no call, no text and no next step, and the
+// visitor gets an empty reply. Fix it on the wire: when the finish chunk (or
+// [DONE]) arrives, add one chunk that appends "{}" to every call whose
+// arguments are still empty. The adapter then parses "{}" and emits the call.
+// Calls with real arguments are untouched, and so is every original byte.
+type SseChunk = {
+  choices?: {
+    index?: number
+    finish_reason?: string | null
+    delta?: { tool_calls?: { index: number; function?: { arguments?: string | null } }[] | null } | null
+  }[]
+}
+
+export function finalizeEmptyToolArgs(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  // Per tool-call index: the arguments seen so far.
+  const args = new Map<number, string>()
+  let choiceIndex = 0
+  let finished = false
+  let carry = ""
+
+  // The added chunk is its own SSE event (an event ends at a blank line), so
+  // it goes out only between events, never inside one.
+  const closeEmpty = (out: TransformStreamDefaultController<Uint8Array>, prefix = "") => {
+    const empty = [...args].filter(([, a]) => a.trim() === "").map(([i]) => i)
+    if (empty.length === 0) return
+    for (const i of empty) args.set(i, "{}")
+    const chunk = {
+      choices: [
+        {
+          index: choiceIndex,
+          delta: { tool_calls: empty.map((index) => ({ index, function: { arguments: "{}" } })) },
+          finish_reason: null,
+        },
+      ],
+    }
+    out.enqueue(encoder.encode(`${prefix}data: ${JSON.stringify(chunk)}\n\n`))
+  }
+
+  const line = (raw: string, out: TransformStreamDefaultController<Uint8Array>) => {
+    const text = raw.replace(/\r$/, "")
+    if (text === "") {
+      out.enqueue(encoder.encode(raw + "\n"))
+      // The event holding the finish chunk just ended. Its own deltas (if any)
+      // are already counted and the adapter has already read the finish reason.
+      if (finished) closeEmpty(out)
+      return
+    }
+    if (!text.startsWith("data:")) return out.enqueue(encoder.encode(raw + "\n"))
+    const payload = text.slice(5).trim()
+    // [DONE] opens its own event, so this is a boundary too (no finish chunk seen).
+    if (payload === "[DONE]") closeEmpty(out)
+    out.enqueue(encoder.encode(raw + "\n"))
+    let json: SseChunk
+    try {
+      json = JSON.parse(payload) as SseChunk
+    } catch {
+      return
+    }
+    const choice = json.choices?.[0]
+    if (!choice) return
+    choiceIndex = choice.index ?? 0
+    for (const call of choice.delta?.tool_calls ?? []) {
+      args.set(call.index, (args.get(call.index) ?? "") + (call.function?.arguments ?? ""))
+    }
+    if (choice.finish_reason != null) finished = true
+  }
+
+  return body.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      transform(bytes, out) {
+        carry += decoder.decode(bytes, { stream: true })
+        const lines = carry.split("\n")
+        carry = lines.pop() ?? ""
+        for (const raw of lines) line(raw, out)
+      },
+      flush(out) {
+        carry += decoder.decode()
+        if (carry) line(carry, out)
+        // The stream may end mid-event; the leading blank line closes it first.
+        closeEmpty(out, "\n")
+      },
+    }),
+  )
+}
+
+// Read the global fetch per call (tests stub it), and only touch event streams.
+const gatewayFetch: typeof fetch = async (input, init) => {
+  const res = await globalThis.fetch(input, init)
+  if (!res.ok || !res.body || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) return res
+  return new Response(finalizeEmptyToolArgs(res.body), {
+    status: res.status,
+    statusText: res.statusText,
+    headers: res.headers,
+  })
+}
+
 function connect(modelId: string, sessionId: string | null, surface?: string) {
   const conn = portkeyConnection(modelId, sessionId, surface)
   if (!conn.ok) return conn
@@ -31,6 +133,7 @@ function connect(modelId: string, sessionId: string | null, surface?: string) {
     // The gateway is OpenAI-compatible, not OpenAI: no OpenAI-only fields.
     compatibility: "compatible",
     name: `portkey.${conn.provider}`,
+    fetch: gatewayFetch,
   })
   const model = provider.chat(conn.model)
   if (conn.provider !== "anthropic") return { ok: true as const, model }
