@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { generateText, streamText, tool } from 'ai';
 import { z } from 'zod';
-import { portkeyLanguageModel } from './portkeyModel';
+import { finalizeEmptyToolArgs, portkeyLanguageModel } from './portkeyModel';
 
 // Fake key values only: these never leave the test.
 
@@ -32,6 +32,34 @@ const sse = (content: string) =>
     ].join('\n\n'),
     { status: 200, headers: { 'content-type': 'text/event-stream' } },
   );
+// A raw SSE body delivered in fixed-size byte pieces, as a network read would.
+const rawSse = (body: string | Uint8Array, size: number) => {
+  const bytes = typeof body === 'string' ? new TextEncoder().encode(body) : body;
+  return new Response(
+    new ReadableStream<Uint8Array>({
+      start(c) {
+        for (let i = 0; i < bytes.length; i += size) c.enqueue(bytes.slice(i, i + size));
+        c.close();
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'text/event-stream; charset=utf-8' } },
+  );
+};
+// Everything finalizeEmptyToolArgs puts out, as bytes.
+const through = async (body: string | Uint8Array, size: number) =>
+  new Uint8Array(await new Response(finalizeEmptyToolArgs(rawSse(body, size).body!)).arrayBuffer());
+const ADDED_EVENT = 'data: {"choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]},"finish_reason":null}]}\n\n';
+const chunk = (choice: Record<string, unknown>) =>
+  `data: ${JSON.stringify({ id: 'anthropic-1', object: 'chat.completion.chunk', created: 0, model: 'claude-sonnet-5-5', provider: 'anthropic', choices: [{ index: 0, logprobs: null, finish_reason: null, ...choice }] })}`;
+const NO_ARG_TOOL_SSE = [
+  'data: {"id":"anthropic-1794875515888","object":"chat.completion.chunk","created":1794875515,"model":"claude-sonnet-5-5","provider":"anthropic","choices":[{"delta":{"content":"","role":"assistant"},"index":0,"logprobs":null,"finish_reason":null}]}',
+  'data: {"id":"anthropic-1794875515888","object":"chat.completion.chunk","created":1794875515,"model":"claude-sonnet-5-5","provider":"anthropic","choices":[{"delta":{"tool_calls":[{"index":0,"id":"toolu_01Bwr1S76AaDKTXtQjHZmq2k","type":"function","function":{"name":"showColorCard","arguments":""}}]},"index":0,"logprobs":null,"finish_reason":null}]}',
+  'data: {"id":"anthropic-1794875515888","object":"chat.completion.chunk","created":1794875515,"model":"claude-sonnet-5-5","provider":"anthropic","choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":""}}]},"index":0,"logprobs":null,"finish_reason":null}]}',
+  'data: {"id":"anthropic-1794875515888","object":"chat.completion.chunk","created":1794875516,"model":"claude-sonnet-5-5","provider":"anthropic","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":387,"completion_tokens":28,"total_tokens":415,"prompt_tokens_details":{"cached_tokens":0}}}',
+  'data: [DONE]',
+  '',
+  '',
+].join('\n\n');
 const headersOf = (i: number) => new Headers((fetchMock.mock.calls[i][1] as RequestInit).headers);
 const bodyOf = (i: number) => JSON.parse(String((fetchMock.mock.calls[i][1] as RequestInit).body));
 
@@ -169,6 +197,157 @@ describe('portkeyLanguageModel', () => {
 
     expect(steps).toHaveLength(2);
     expect(text).toBe('Saved your phone.');
+  });
+
+  it('streams a no-argument tool call (Portkey sends arguments "") and goes on to step two', async () => {
+    // Byte for byte what the gateway streamed for Claude calling a no-argument
+    // tool on 2026-11-16: arguments "" twice, then only the finish chunk.
+    // Handed over in 37-byte pieces so events and lines split across reads.
+    fetchMock
+      .mockResolvedValueOnce(rawSse(NO_ARG_TOOL_SSE, 37))
+      .mockResolvedValueOnce(sse('Here are your colors.'));
+    let shown = 0;
+    const m = model();
+    const r = streamText({
+      model: m.model, maxTokens: m.maxTokens, maxSteps: 3, prompt: 'Show me the color card',
+      tools: {
+        showColorCard: tool({
+          description: 'Show the color card',
+          parameters: z.object({}),
+          execute: async () => { shown++; return { shown: true }; },
+        }),
+      },
+    });
+    await r.consumeStream();
+    const steps = await r.steps;
+
+    expect(shown).toBe(1);
+    expect(steps[0].finishReason).toBe('tool-calls');
+    expect(steps[0].toolCalls).toMatchObject([{ toolCallId: 'toolu_01Bwr1S76AaDKTXtQjHZmq2k', toolName: 'showColorCard', args: {} }]);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const assistant = bodyOf(1).messages.find((x: { role: string }) => x.role === 'assistant');
+    expect(assistant.tool_calls[0]).toMatchObject({ id: 'toolu_01Bwr1S76AaDKTXtQjHZmq2k', function: { name: 'showColorCard', arguments: '{}' } });
+    expect(await r.text).toBe('Here are your colors.');
+  });
+
+  it('leaves a streamed tool call with real arguments, and a text stream, byte for byte alone', async () => {
+    const withArgs = [
+      chunk({ delta: { role: 'assistant', content: '' } }),
+      chunk({ delta: { tool_calls: [{ index: 0, id: 'toolu_2', type: 'function', function: { name: 'saveField', arguments: '' } }] } }),
+      chunk({ delta: { tool_calls: [{ index: 0, function: { arguments: '{"key":"pho' } }] } }),
+      chunk({ delta: { tool_calls: [{ index: 0, function: { arguments: 'ne","value":"801"}' } }] } }),
+      chunk({ delta: {}, finish_reason: 'tool_calls' }),
+      'data: [DONE]',
+    ].map(e => `${e}\n\n`).join('');
+    const text = [chunk({ delta: { content: 'hi' } }), chunk({ delta: {}, finish_reason: 'stop' }), 'data: [DONE]']
+      .map(e => `${e}\n\n`).join('');
+    for (const body of [withArgs, text]) {
+      expect(await new Response(finalizeEmptyToolArgs(rawSse(body, 5).body!)).text()).toBe(body);
+    }
+
+    // Byte for byte, whatever the line endings, piece size, or a final line
+    // with no terminator at all (even one holding a non-ASCII character split
+    // across reads, or bytes that are not valid UTF-8).
+    const variants = [withArgs, text].flatMap(b => [
+      b, b.replace(/\n/g, '\r\n'), b.replace(/\n/g, '\r'), b.replace(/\n+$/, ''), b.replace(/\n/g, '\r\n').replace(/\r\n$/, '\r'),
+    ]);
+    variants.push(`${text}: keep-alive \u00e9`);
+    for (const body of variants) {
+      for (const size of [1, 3, 7, 4096]) {
+        expect(await through(body, size)).toEqual(new TextEncoder().encode(body));
+      }
+    }
+    const invalid = new Uint8Array([...new TextEncoder().encode(text), 0xff, 0xfe, 0x80]);
+    expect(await through(invalid, 2)).toEqual(invalid);
+
+    fetchMock.mockResolvedValueOnce(rawSse(withArgs, 11)).mockResolvedValueOnce(sse('Saved.'));
+    const saved: unknown[] = [];
+    const m = model();
+    const r = streamText({
+      model: m.model, maxTokens: m.maxTokens, maxSteps: 3, prompt: 'phone 801',
+      tools: {
+        saveField: tool({
+          description: 'Save one collected field',
+          parameters: z.object({ key: z.string(), value: z.string() }),
+          execute: async args => { saved.push(args); return 'ok'; },
+        }),
+      },
+    });
+    await r.consumeStream();
+    expect(saved).toEqual([{ key: 'phone', value: '801' }]);
+    expect(await r.text).toBe('Saved.');
+  });
+
+  it('parses multi-line events (several data: lines, CRLF) and adds only one event, right after the finish event', async () => {
+    // The same no-argument call, each JSON payload split over two data: lines
+    // (SSE joins them with "\n"), CRLF line endings, handed over in 7-byte
+    // pieces so CR and LF land in different reads.
+    const callEvent =
+      'data: {"id":"a","object":"chat.completion.chunk","choices":[{"index":0,"logprobs":null,"finish_reason":null,\r\n' +
+      'data: "delta":{"tool_calls":[{"index":0,"id":"toolu_4","type":"function","function":{"name":"showRegistrationCard","arguments":""}}]}}]}\r\n\r\n';
+    const finishEvent =
+      'data: {"id":"a","object":"chat.completion.chunk",\r\n' +
+      'data: "choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}\r\n\r\n';
+    const done = 'data: [DONE]\r\n\r\n';
+    const body = `${callEvent}${finishEvent}${done}`;
+
+    for (const size of [1, 7, 4096]) {
+      expect(new TextDecoder().decode(await through(body, size))).toBe(`${callEvent}${finishEvent}${ADDED_EVENT}${done}`);
+    }
+    // No finish chunk at all: the added event follows [DONE] (the adapter
+    // skips [DONE] and still reads what comes after it).
+    expect(new TextDecoder().decode(await through(`${callEvent}${done}`, 7))).toBe(`${callEvent}${done}${ADDED_EVENT}`);
+
+    fetchMock.mockResolvedValueOnce(rawSse(body, 7)).mockResolvedValueOnce(sse('Registration card is up.'));
+    let shown = 0;
+    const m = model();
+    const r = streamText({
+      model: m.model, maxTokens: m.maxTokens, maxSteps: 3, prompt: 'Register me',
+      tools: {
+        showRegistrationCard: tool({
+          description: 'Show the registration card',
+          parameters: z.object({}),
+          execute: async () => { shown++; return { shown: true }; },
+        }),
+      },
+    });
+    await r.consumeStream();
+    expect(shown).toBe(1);
+    expect((await r.steps)[0].toolCalls).toMatchObject([{ toolCallId: 'toolu_4', toolName: 'showRegistrationCard', args: {} }]);
+    expect(await r.text).toBe('Registration card is up.');
+  });
+
+  it('gives the credit-out fallback (OpenAI) the plain fetch, untouched', async () => {
+    // The same empty-arguments stream, but served on the fallback route. The
+    // plain adapter drops the call, which proves no rewrite ran there.
+    fetchMock
+      .mockResolvedValueOnce(new Response(CREDIT_OUT, { status: 400, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(rawSse(NO_ARG_TOOL_SSE, 37));
+    let shown = 0;
+    const m = model();
+    const r = streamText({
+      model: m.model, maxTokens: m.maxTokens, maxSteps: 3, prompt: 'Show me the color card', maxRetries: 0,
+      tools: {
+        showColorCard: tool({
+          description: 'Show the color card',
+          parameters: z.object({}),
+          execute: async () => { shown++; return { shown: true }; },
+        }),
+      },
+    });
+    await r.consumeStream();
+    expect(headersOf(1).get('x-portkey-provider')).toBe('openai');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(shown).toBe(0);
+    expect((await r.steps)[0].toolCalls).toEqual([]);
+  });
+
+  it('closes an empty call when the stream ends with no finish chunk and no blank line', async () => {
+    const cut = chunk({ delta: { tool_calls: [{ index: 0, id: 'toolu_3', type: 'function', function: { name: 'showChannelsCard', arguments: '' } }] } });
+    const out = await new Response(finalizeEmptyToolArgs(rawSse(cut, 64).body!)).text();
+    expect(out.startsWith(`${cut}\n\ndata: `)).toBe(true);
+    const added = JSON.parse(out.slice(`${cut}\n\ndata: `.length));
+    expect(added.choices[0].delta.tool_calls).toEqual([{ index: 0, function: { arguments: '{}' } }]);
   });
 
   it('refuses when ANTHROPIC_API_KEY is missing, naming the variable', () => {
